@@ -1,5 +1,6 @@
 package drivers
 
+/*
 type MapRow struct {
 	id string
 }
@@ -21,3 +22,4 @@ func (r MapRow) pair(key string, value interface{}) {
 
 func (r MapRow) end() {
 }
+*/

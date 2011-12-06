@@ -1,11 +1,35 @@
 package model
 
-// column types must implement io.Reader and io.Writer
+import (
+	enc "encoding/binary"
+	"strings"
+)
+
+type BaseValue interface {
+	Len() int
+	Bytes([]byte)
+	SetBytes([]byte)
+}
+
+type Pair interface {
+	Name() BaseValue
+	Value() BaseValue
+	TTL() Long
+	Timestamp() Long
+}
+
+type Row interface {
+	Key() BaseValue
+	Pairs() []Pair
+}
+
+/*type Entity struct {
+	
+}*/
+
 
 //type Bytes string	// CQL blob
 //type Ascii string	// CQL ascii
-type UTF8 string	// CQL text
-//type Long int		// CQL int, bigint
 //type UUID string	// CQL uuid
 //type Float float	// CQL float
 //type Double double	// CQL double
@@ -20,12 +44,39 @@ DecimalType	decimal	Variable-precision decimal
 CounterColumnType	counter	Distributed counter value (8-byte long)
 */
 
-func (s *UTF8) Read(p []byte) (n int, err os.Error) {
-	
+// Long
+
+type Long int64	// CQL int, bigint
+
+func (l *Long) Len() int {
+	return 8;
 }
 
-type Entity interface {
-	begin(id string)
-	pair(key string, value ColumnType)
-	end()
+func (l *Long) Bytes(b []byte)  {
+	enc.BigEndian.PutUint64(b, uint64(*l))
 }
+
+func (l *Long) SetBytes(b []byte)  {
+	*l = Long(enc.BigEndian.Uint64(b))
+}
+
+
+// UTF8
+
+type UTF8 string	// CQL text
+
+func (u *UTF8) Len() int {
+	return len(string(*u));
+}
+
+func (u *UTF8) Bytes(b []byte)  {
+	r := strings.NewReader(string(*u))
+	for n := 1 ; n > 0 ; {
+		n, _ = r.Read(b)
+	}
+}
+
+/*
+func (u *UTF8) SetBytes([]byte b)  {
+}
+*/
