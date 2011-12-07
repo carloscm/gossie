@@ -47,9 +47,9 @@ CounterColumnType	counter	Distributed counter value (8-byte long)
 
 type Long int64	// CQL int, bigint
 
-func (l Long) Bytes() []byte {
+func (l *Long) Bytes() []byte {
 	b := make([]byte, 8)
-	enc.BigEndian.PutUint64(b, uint64(l))
+	enc.BigEndian.PutUint64(b, uint64(*l))
 	return b
 }
 
@@ -62,8 +62,8 @@ func (l *Long) SetBytes(b []byte)  {
 
 type UTF8 string	// CQL text
 
-func (u UTF8) Bytes() []byte {
-	return []byte(string(u))
+func (u *UTF8) Bytes() []byte {
+	return []byte(string(*u))
 }
 
 func (u *UTF8) SetBytes(b []byte)  {

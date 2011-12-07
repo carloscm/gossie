@@ -50,12 +50,6 @@ func TestLong(t *testing.T) {
 func TestUTF8(t *testing.T) {
 
 	var u UTF8 = "cáñamo"
-	var u2 BaseValue = u
-
-	_, ok := (interface{}(u)).(BaseValue)
-	if (!ok) {
-		t.Error("UTF8 fails BaseValue type assertion")
-	}
 
 	b := u.Bytes()
 	if (len(b) != 8) {
