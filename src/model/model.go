@@ -2,12 +2,11 @@ package model
 
 import (
 	enc "encoding/binary"
-	"strings"
+	//"strings"
 )
 
 type BaseValue interface {
-	Len() int
-	Bytes([]byte)
+	Bytes() []byte
 	SetBytes([]byte)
 }
 
@@ -48,12 +47,10 @@ CounterColumnType	counter	Distributed counter value (8-byte long)
 
 type Long int64	// CQL int, bigint
 
-func (l *Long) Len() int {
-	return 8;
-}
-
-func (l *Long) Bytes(b []byte)  {
-	enc.BigEndian.PutUint64(b, uint64(*l))
+func (l Long) Bytes() []byte {
+	b := make([]byte, 8)
+	enc.BigEndian.PutUint64(b, uint64(l))
+	return b
 }
 
 func (l *Long) SetBytes(b []byte)  {
@@ -65,18 +62,10 @@ func (l *Long) SetBytes(b []byte)  {
 
 type UTF8 string	// CQL text
 
-func (u *UTF8) Len() int {
-	return len(string(*u));
+func (u UTF8) Bytes() []byte {
+	return []byte(string(u))
 }
 
-func (u *UTF8) Bytes(b []byte)  {
-	r := strings.NewReader(string(*u))
-	for n := 1 ; n > 0 ; {
-		n, _ = r.Read(b)
-	}
+func (u *UTF8) SetBytes(b []byte)  {
+	*u = UTF8(string(b[0:(len(b))]))
 }
-
-/*
-func (u *UTF8) SetBytes([]byte b)  {
-}
-*/
