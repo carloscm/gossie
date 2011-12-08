@@ -2,7 +2,6 @@ package model
 
 import (
 	enc "encoding/binary"
-	//"strings"
 )
 
 type BaseValue interface {
@@ -10,17 +9,22 @@ type BaseValue interface {
 	SetBytes([]byte)
 }
 
-type Pair interface {
-	Name() BaseValue
-	Value() BaseValue
-	TTL() Long
-	Timestamp() Long
-}
-
+/*
 type Row interface {
 	Key() BaseValue
+	SetKey(BaseValue)
 	Pairs() []Pair
 }
+
+type example struct {
+	id Bytes "KEY"
+	name Bytes
+	address Bytes
+	email Bytes
+	cookie Bytes
+}
+*/
+
 
 /*type Entity struct {
 	
@@ -58,14 +62,14 @@ func (l *Long) SetBytes(b []byte)  {
 }
 
 
-// UTF8
+// "strings" CQL blob/ascii/text
 
-type UTF8 string	// CQL text
+type Bytes string
 
-func (u *UTF8) Bytes() []byte {
+func (u *Bytes) Bytes() []byte {
 	return []byte(string(*u))
 }
 
-func (u *UTF8) SetBytes(b []byte)  {
-	*u = UTF8(string(b[0:(len(b))]))
+func (u *Bytes) SetBytes(b []byte)  {
+	*u = Bytes(string(b[0:(len(b))]))
 }

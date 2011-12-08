@@ -9,7 +9,7 @@ func TestLong(t *testing.T) {
 	var l Long = 3
 
 	b := l.Bytes()
-	if (len(b) != 8) {
+	if len(b) != 8 {
 		t.Error("Long bytes size is not 8")
 	}
 
@@ -28,7 +28,7 @@ func TestLong(t *testing.T) {
 	b[0] = 0x40;
 	b[7] = 0;
 	l.SetBytes(b)
-	if (l != 0x4000000000000000) {
+	if l != 0x4000000000000000 {
 		t.Error("Long unserialization is wrong (63 bit)")
 	}
 
@@ -41,18 +41,18 @@ func TestLong(t *testing.T) {
 	b[6] = 0xff;
 	b[7] = 0xfe;
 	l.SetBytes(b)
-	if (l != -2) {
+	if l != -2 {
 		t.Error("Long unserialization is wrong (negative)")
 	}
 
 }
 
-func TestUTF8(t *testing.T) {
+func TestBytes(t *testing.T) {
 
-	var u UTF8 = "cáñamo"
+	var u Bytes = "cáñamo"
 
 	b := u.Bytes()
-	if (len(b) != 8) {
+	if len(b) != 8 {
 		t.Error("UTF8 bytes size is not 8")
 	}
 
@@ -78,8 +78,27 @@ func TestUTF8(t *testing.T) {
 	b[7] = 0xa1
 
 	u.SetBytes(b)
-	if (u != "mocañá") {
+	if u != "mocañá" {
 		t.Error("UTF8 unserialization is wrong")
 	}
 
+}
+
+
+func TestCassandra(t *testing.T) {
+	c, err := NewConnection("127.0.0.1:9160", "Twitter")
+	if err != nil {
+		t.Fatal("Error connecting to Cassandra:", err)
+	}
+
+	op := c.Insert()
+	op.Cf("Users")
+
+	k := Bytes("user1")
+	op.Key(&k)
+
+	ct := Bytes("name")
+	vt := Bytes("hehehe")
+	op.Column(&ct, &vt)
+	op.Run()
 }
