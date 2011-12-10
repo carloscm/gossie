@@ -6,14 +6,17 @@ import (
     "fmt"
     "thrift"
     "encoding/hex"
-    Cassandra "Cassandra"
+    Cassandra "cassandra"
 )
 
 const (
     CONSISTENCY_DEFAULT = 0
-    CONSISTENCY_ONE = 1
-    CONSISTENCY_QUORUM = 2
-    CONSISTENCY_ALL = 3
+    CONSISTENCY_ZERO = 1
+    CONSISTENCY_ONE = 2
+    CONSISTENCY_QUORUM = 3
+    CONSISTENCY_ALL = 4
+    CONSISTENCY_LOCAL_QUORUM = 5
+    CONSISTENCY_EACH_QUORUM = 6
 )
 
 type Error string
@@ -114,7 +117,7 @@ func NewConnection(hostPort, keyspace string) (Connection, os.Error) {
 
     c.transport = thrift.NewTFramedTransport(transport)
     protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
-    c.client = Cassandra.NewCassandraClientFactory(transport, protocolFactory)
+    c.client = Cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
 
     fmt.Println("3")
 
@@ -125,7 +128,7 @@ func NewConnection(hostPort, keyspace string) (Connection, os.Error) {
 
     fmt.Println("4")
 
-    _, err = c.client.ExecuteCqlQuery(fmt.Sprint("USE ", keyspace), Cassandra.NONE)
+    _, _, _, _, _, err = c.client.ExecuteCqlQuery([]byte(fmt.Sprint("USE ", keyspace)), Cassandra.NONE)
     if err != nil {
         return nil, err
     }
@@ -197,7 +200,7 @@ func (o *insertOps) Run() os.Error {
     cols, vals := "", ""
     for _, cv := range o.columns {
         cols = fmt.Sprint(cols, ", ", quoteBytes(cv.column))
-        vals = fmt.Sprint(cols, ", ", quoteBytes(cv.value))
+        vals = fmt.Sprint(vals, ", ", quoteBytes(cv.value))
     }
 
     //INSERT INTO users (KEY, password) VALUES ('jsmith', 'ch@ngem3a') USING TTL 86400;
@@ -208,7 +211,7 @@ func (o *insertOps) Run() os.Error {
 
     fmt.Println(q)
 
-    _, err := o.conn.client.ExecuteCqlQuery(q, Cassandra.NONE)
+    _, _, _, _, _, err := o.conn.client.ExecuteCqlQuery([]byte(q), Cassandra.NONE)
 
     //o.columns = append(o.columns, &columnValue{ column.Bytes(), value.Bytes() } )
     return err
