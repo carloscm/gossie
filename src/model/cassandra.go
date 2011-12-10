@@ -106,34 +106,29 @@ func NewConnection(hostPort, keyspace string) (Connection, os.Error) {
         return nil, err
     }
 
-    fmt.Println("1")
-
     transport, err := thrift.NewTNonblockingSocketAddr(addr)
     if err != nil {
         return nil, err
     }
 
-    fmt.Println("2")
-
     c.transport = thrift.NewTFramedTransport(transport)
     protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
     c.client = Cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
-
-    fmt.Println("3")
 
     err = c.transport.Open()
     if err != nil {
         return nil, err
     }
 
-    fmt.Println("4")
+    ire, err := c.client.SetKeyspace(keyspace)
 
-    _, _, _, _, _, err = c.client.ExecuteCqlQuery([]byte(fmt.Sprint("USE ", keyspace)), Cassandra.NONE)
     if err != nil {
         return nil, err
     }
 
-    fmt.Println("5")
+    if ire != nil {
+        return nil, newError("Cannot set the keyspace")
+    }
 
     return c, nil
 }

@@ -94,11 +94,13 @@ func TestCassandra(t *testing.T) {
 	op := c.Insert()
 	op.Cf("Users")
 
-	k := Bytes("user2")
+	k := Bytes("user3")
 	op.Key(&k)
 
 	ct := Bytes("name")
 	vt := Bytes("hehehe")
 	op.Column(&ct, &vt)
 	op.Run()
+
+	c.Close()
 }
