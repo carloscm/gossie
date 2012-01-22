@@ -1,12 +1,11 @@
-package model
+package gossie
 
 import (
-    "net"
     "os"
     "fmt"
-    "thrift"
+    //"thrift"
     "encoding/hex"
-    Cassandra "cassandra"
+    //Cassandra "cassandra"
 )
 
 
@@ -16,7 +15,6 @@ import (
 type Query interface {
     Run() 
 }
-
 
 type Row interface {
 }
@@ -54,10 +52,10 @@ type GetRanger interface {
 
 type BatchMutator interface {
     ConsistencyLevel(int)
-    Insert(cf string, key Value, Row)
+    Insert(cf string, key Value, row Row)
     Delete(cf string, key Value)
     DeleteSlice(cf string, key Value, start, end Value, limit int)
-    DeleteColumns(cf string, key Value, Row)
+    DeleteColumns(cf string, key Value, row Row)
     Run() os.Error
 }
 
@@ -87,11 +85,13 @@ type insertOps struct {
     columns []*columnValue
 }
 
+/*
 func (c *connection) Insert() InsertOps {
     o := &insertOps{}
     o.conn = c
     return o
 }
+*/
 
 func (o *insertOps) Key(v Value) {
     o.key = v.Bytes()
@@ -140,8 +140,8 @@ recordar que timestamp es obligatorio!
 
     fmt.Println(q)
 
-    _, _, _, _, _, err := o.conn.client.ExecuteCqlQuery([]byte(q), Cassandra.NONE)
+    //_, _, _, _, _, err := o.conn.client.ExecuteCqlQuery([]byte(q), Cassandra.NONE)
 
     //o.columns = append(o.columns, &columnValue{ column.Bytes(), value.Bytes() } )
-    return err
+    return nil //err
 }

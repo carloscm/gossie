@@ -1,12 +1,10 @@
-package model
+package gossie
 
 import (
-    "net"
-    "os"
-    "fmt"
-    "thrift"
-    "encoding/hex"
-    Cassandra "cassandra"
+    //"fmt"
+    //"thrift"
+    //"encoding/hex"
+    //Cassandra "cassandra"
     enc "encoding/binary"
 )
 
@@ -38,6 +36,18 @@ type Value interface {
     SetBytes([]byte)
 }
 
+func newSchema(c connection) *Schema {
+
+    ksDef, nfe, ire, err := c.client.DescribeKeyspace(c.keyspace)
+
+    if ksDef == nil || nfe != nil || ire != nil || err != nil {
+        return nil
+    }
+
+
+    return nil
+}
+
 /*
 type Row interface {
     Key() Value
@@ -53,12 +63,6 @@ type example struct {
     cookie Bytes
 }
 */
-
-
-/*type Entity struct {
-    
-}*/
-
 
 //type Bytes string // CQL blob
 //type Ascii string // CQL ascii
@@ -90,10 +94,6 @@ func (l *Long) SetBytes(b []byte)  {
     *l = Long(enc.BigEndian.Uint64(b))
 }
 
-type longType struct {}
-func (u *longType) Validate(v Value) bool {
-
-}
 
 // "strings" CQL blob/ascii/text
 
