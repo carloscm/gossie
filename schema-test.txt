@@ -1,0 +1,30 @@
+create column family AllTypes with
+	comparator = AsciiType and
+	key_validation_class = BytesType and
+	default_validation_class = UTF8Type and
+	column_metadata = [
+		{column_name: colBytesType, validation_class: BytesType},
+		{column_name: colAsciiType, validation_class: AsciiType},
+		{column_name: colUTF8Type, validation_class: UTF8Type},
+		{column_name: colLongType, validation_class: LongType},
+		{column_name: colIntegerType, validation_class: IntegerType},
+		{column_name: colDecimalType, validation_class: DecimalType},
+		{column_name: colUUIDType, validation_class: UUIDType},
+		{column_name: colBooleanType, validation_class: BooleanType},
+		{column_name: colFloatType, validation_class: FloatType},
+		{column_name: colDoubleType, validation_class: DoubleType},
+		{column_name: colDateType, validation_class: DateType}
+	]
+;
+
+create column family Counters with
+	comparator = AsciiType and
+	key_validation_class = BytesType and
+	default_validation_class = CounterColumnType
+;
+
+create column family Composite with
+	comparator = 'CompositeType(BytesType,AsciiType,UTF8Type,LongType,IntegerType,DecimalType,UUIDType,BooleanType,FloatType,DoubleType,DateType)' and
+	key_validation_class = BytesType and
+	default_validation_class = BytesType
+;

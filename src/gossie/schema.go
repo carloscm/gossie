@@ -1,42 +1,24 @@
 package gossie
 
 import (
-    //"fmt"
+    "fmt"
     //"thrift"
     //"encoding/hex"
-    //Cassandra "cassandra"
-    enc "encoding/binary"
+    "cassandra"
 )
 
-
-/////////////////////////////////////
-// Schema
-
 type Schema struct {
-    ColumnFamilies map[string]ColumnFamily
+    ColumnFamilies map[string]*ColumnFamily
 }
 
 type ColumnFamily struct {
     DefaultComparator TypeDesc
     DefaultValidator TypeDesc
-    NamedColumns map[Value]TypeDesc
+    KeyValidator TypeDesc
+    NamedColumns map[string]TypeDesc
 }
 
-type TypeDesc struct {
-    Type
-    Components []Type
-}
-
-type Type interface {
-    Validate(Value) bool
-}
-
-type Value interface {
-    Bytes() []byte
-    SetBytes([]byte)
-}
-
-func newSchema(c connection) *Schema {
+func newSchema(c *connection) *Schema {
 
     ksDef, nfe, ire, err := c.client.DescribeKeyspace(c.keyspace)
 
@@ -44,65 +26,48 @@ func newSchema(c connection) *Schema {
         return nil
     }
 
+    cfDefs := ksDef.CfDefs
+
+
+    schema := &Schema{ColumnFamilies:make(map[string]*ColumnFamily)}
+
+    for cfDefT := range cfDefs.Iter() {
+
+        // FIXME: this is weird, but happens a lot. thrift4go problem?
+        if cfDefT == nil {
+            continue
+        }
+
+        // FIXME: add support for counter CFs
+        cfDef, _ := cfDefT.(*cassandra.CfDef)
+
+        if cfDef.ColumnType != "Standard" {
+            continue
+        }
+
+        cf := &ColumnFamily{}
+
+        cf.DefaultComparator = makeTypeDesc(cfDef.ComparatorType)
+        cf.DefaultValidator = makeTypeDesc(cfDef.DefaultValidationClass)
+        cf.KeyValidator = makeTypeDesc(cfDef.KeyValidationClass)
+
+        cf.NamedColumns = make(map[string]TypeDesc)
+
+        for colDefT := range cfDef.ColumnMetadata.Iter() {
+            // FIXME: this is weird, but happens a lot. thrift4go problem?
+            if colDefT == nil {
+                continue
+            }
+            colDef, _ := colDefT.(*cassandra.ColumnDef)
+            name := string(colDef.Name[0:(len(colDef.Name))])
+            cf.NamedColumns[name] = makeTypeDesc(colDef.ValidationClass)
+        }
+
+        schema.ColumnFamilies[cfDef.Name] = cf
+    }
+
+    //fmt.Println(schema)
 
     return nil
 }
 
-/*
-type Row interface {
-    Key() Value
-    SetKey(Value)
-    Pairs() []Pair
-}
-
-type example struct {
-    id Bytes "KEY"
-    name Bytes
-    address Bytes
-    email Bytes
-    cookie Bytes
-}
-*/
-
-//type Bytes string // CQL blob
-//type Ascii string // CQL ascii
-//type UUID string  // CQL uuid
-//type Float float  // CQL float
-//type Double double    // CQL double
-
-/*
-missing:
-IntegerType varint  Arbitrary-precision integer
-UUIDType    uuid    Type 1 or type 4 UUID
-DateType    timestamp   Date plus time, encoded as 8 bytes since epoch
-BooleanType boolean true or false
-DecimalType decimal Variable-precision decimal
-CounterColumnType   counter Distributed counter value (8-byte long)
-*/
-
-// Long
-
-type Long int64 // CQL int, bigint
-
-func (l *Long) Bytes() []byte {
-    b := make([]byte, 8)
-    enc.BigEndian.PutUint64(b, uint64(*l))
-    return b
-}
-
-func (l *Long) SetBytes(b []byte)  {
-    *l = Long(enc.BigEndian.Uint64(b))
-}
-
-
-// "strings" CQL blob/ascii/text
-
-type Bytes string
-
-func (u *Bytes) Bytes() []byte {
-    return []byte(string(*u))
-}
-
-func (u *Bytes) SetBytes(b []byte)  {
-    *u = Bytes(string(b[0:(len(b))]))
-}
