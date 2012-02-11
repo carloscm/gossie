@@ -176,7 +176,7 @@ func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) os.Error {
         //case *int:       return unmarshalInt(b, v, 4, typeDesc)
         //case *int32:     return unmarshalInt(b, v, 4, typeDesc)
         //case *int64:     return unmarshalInt(b, v, 8, typeDesc)
-        //case *string:    return unmarshalString(b, v, typeDesc)
+        case *string:    return unmarshalString(b, typeDesc, v)
     }
     return ErrorUnsupportedUnmarshaling
 }
@@ -215,6 +215,24 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
                 *value = true
             }
             return nil
+    }
+    return ErrorUnsupportedUnmarshaling
+}
+
+func unmarshalString(b []byte, typeDesc TypeDesc, value *string) os.Error {
+    switch typeDesc {
+        case BytesType, AsciiType, UTF8Type:
+            *value = string(b)
+            return nil
+
+/*
+        case LongType:
+            unmarshal into int64 is needed first
+            *value, err := strconv.Itoa64(?)
+            if err != nil {
+                return err
+            }
+            return nil*/
     }
     return ErrorUnsupportedUnmarshaling
 }

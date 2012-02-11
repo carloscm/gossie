@@ -26,11 +26,6 @@ func checkMarshal(t *testing.T, value interface{}, good []byte, typeDesc TypeDes
 func checkUnmarshal(t *testing.T, b []byte, typeDesc TypeDesc, good interface{}, value interface{}) {
 	err := Unmarshal(b, typeDesc, value)
 
-	t.Log(b)
-	t.Log(good)
-	t.Log(value)
-
-
 	if err != nil {
 		t.Error("Error marshalling integer: ", err)
 	}
@@ -43,6 +38,7 @@ func checkUnmarshal(t *testing.T, b []byte, typeDesc TypeDesc, good interface{},
 func checkFullMarshal(t *testing.T, marshalled []byte, typeDesc TypeDesc, goodValue interface{}, retValue interface{}) {
 	checkMarshal(t, goodValue, marshalled, typeDesc)
 	checkUnmarshal(t, marshalled, typeDesc, goodValue, retValue)
+	checkMarshal(t, retValue, marshalled, typeDesc)
 }
 
 func errorMarshal(t *testing.T, value interface{}, typeDesc TypeDesc) {
@@ -265,11 +261,12 @@ func TestMarshalInt(t *testing.T) {
 func TestMarshalString(t *testing.T) {
 	var b []byte
 	var v string = "cáñamo"
+	var r string
 
 	b = []byte {'c', 0xc3, 0xa1, 0xc3, 0xb1, 'a', 'm', 'o'}
-	checkMarshal(t, v, b, BytesType)
-	checkMarshal(t, v, b, AsciiType) // NOTE: this lib does not perform utf8 checking for now
-	checkMarshal(t, v, b, UTF8Type)
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, AsciiType, &v, &r) // NOTE: this lib does not perform utf8 checking for now
+	checkFullMarshal(t, b, UTF8Type, &v, &r)
 
 	errorMarshal(t, v, LongType)
 
