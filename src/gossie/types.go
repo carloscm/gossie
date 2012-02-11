@@ -51,7 +51,21 @@ type TypeDesc int
 */
 
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
+    // dereference in case we got a pointer
+    var dvalue interface{}
     switch v := value.(type) {
+        case *[]byte:   dvalue = *v
+        case *bool:     dvalue = *v
+        case *int8:     dvalue = *v
+        case *int16:    dvalue = *v
+        case *int:      dvalue = *v
+        case *int32:    dvalue = *v
+        case *int64:    dvalue = *v
+        case *string:   dvalue = *v
+        default:        dvalue = v
+    }
+
+    switch v := dvalue.(type) {
         case []byte:    return v, nil
         case bool:      return marshalBool(v, typeDesc)
         case int8:      return marshalInt(int64(v), 1, typeDesc)
@@ -153,27 +167,62 @@ func marshalString(value string, typeDesc TypeDesc) ([]byte, os.Error) {
     return nil, ErrorUnsupportedMarshaling
 }
 
+func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) os.Error {
+    switch v := value.(type) {
+        case *[]byte:    *v = b; return nil
+        case *bool:      return unmarshalBool(b, typeDesc, v)
+        //case *int8:      return unmarshalInt(b, v, 1, typeDesc)
+        //case *int16:     return unmarshalInt(b, v, 2, typeDesc)
+        //case *int:       return unmarshalInt(b, v, 4, typeDesc)
+        //case *int32:     return unmarshalInt(b, v, 4, typeDesc)
+        //case *int64:     return unmarshalInt(b, v, 8, typeDesc)
+        //case *string:    return unmarshalString(b, v, typeDesc)
+    }
+    return ErrorUnsupportedUnmarshaling
+}
+
+func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
+    switch typeDesc {
+        case BytesType, BooleanType:
+            if len(b) < 1 {
+                return ErrorUnsupportedUnmarshaling
+            }
+            if b[0] == 0 {
+                *value = false
+            } else {
+                *value = true
+            }
+            return nil
+
+        case AsciiType, UTF8Type:
+            if len(b) < 1 {
+                return ErrorUnsupportedUnmarshaling
+            }
+            if b[0] == '0' {
+                *value = false
+            } else {
+                *value = true
+            }
+            return nil
+
+        case LongType:
+            if len(b) != 8 {
+                return ErrorUnsupportedUnmarshaling
+            }
+            if b[7] == 0 {
+                *value = false
+            } else {
+                *value = true
+            }
+            return nil
+    }
+    return ErrorUnsupportedUnmarshaling
+}
+
 type Value interface {
     Bytes() []byte
     SetBytes([]byte)
-}
-
-type Bytes string
-func (u *Bytes) Bytes() []byte {
-    return []byte(string(*u))
-}
-func (u *Bytes) SetBytes(b []byte)  {
-    *u = Bytes(string(b[0:(len(b))]))
-}
-
-type Long int64
-func (l *Long) Bytes() []byte {
-    b := make([]byte, 8)
-    enc.BigEndian.PutUint64(b, uint64(*l))
-    return b
-}
-func (l *Long) SetBytes(b []byte)  {
-    *l = Long(enc.BigEndian.Uint64(b))
+    //TypeDesc() TypeDesc
 }
 
 func makeTypeDesc(cassType string) TypeDesc {

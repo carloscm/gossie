@@ -2,23 +2,47 @@ package gossie
 
 import (
 	"testing"
+	"reflect"
 )
 
 func checkMarshal(t *testing.T, value interface{}, good []byte, typeDesc TypeDesc) {
 	b, err := Marshal(value, typeDesc)
+
+
 	if err != nil {
 		t.Error("Error marshalling integer: ", err)
 	}
 	if len(good) != len(b) {
-		t.Error("Marshalled integer has wrong size, expected ", len(good), " actual ", len(b))
+		t.Fatal("Marshalled integer has wrong size, expected ", len(good), " actual ", len(b))
 	}
-	t.Log("--")
+	
 	for i := 0; i < len(good); i++ {
-		t.Log(i, good[i], b[i])
 		if good[i] != b[i] {
 			t.Error("Marshalled integer has wrong serialization, expected ", good[i], " actual ", b[i])
 		}
 	}
+}
+
+func checkUnmarshal(t *testing.T, b []byte, typeDesc TypeDesc, good interface{}, value interface{}) {
+	err := Unmarshal(b, typeDesc, value)
+
+	t.Log(b)
+	t.Log(good)
+	t.Log(value)
+
+
+	if err != nil {
+		t.Error("Error marshalling integer: ", err)
+	}
+
+	if !reflect.DeepEqual(value, good) {
+		t.Error("Unmarshalled value does not match expected ", good, " actual ", value)
+	}
+}
+
+func checkFullMarshal(t *testing.T, marshalled []byte, typeDesc TypeDesc, goodValue interface{}, retValue interface{}) {
+	checkMarshal(t, goodValue, marshalled, typeDesc)
+	checkUnmarshal(t, marshalled, typeDesc, goodValue, retValue)
 }
 
 func errorMarshal(t *testing.T, value interface{}, typeDesc TypeDesc) {
@@ -28,35 +52,73 @@ func errorMarshal(t *testing.T, value interface{}, typeDesc TypeDesc) {
 	}
 }
 
-func TestMarshalBool(t *testing.T) {
+func TestMarshalWrongType(t *testing.T) {
+	type no int
+	var v no = 1
+
+    errorMarshal(t, v, BytesType)
+    errorMarshal(t, v, AsciiType)
+    errorMarshal(t, v, UTF8Type)
+    errorMarshal(t, v, LongType)
+    errorMarshal(t, v, IntegerType)
+    errorMarshal(t, v, DecimalType)
+    errorMarshal(t, v, UUIDType)
+    errorMarshal(t, v, BooleanType)
+    errorMarshal(t, v, FloatType)
+    errorMarshal(t, v, DoubleType)
+    errorMarshal(t, v, DateType)
+}
+
+func TestMarshalBytes(t *testing.T) {
+	var b []byte
+	var v []byte
+	var r []byte
+
+	v = []byte {4, 2}
+	b = []byte {4, 2}
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, AsciiType, &v, &r)
+	checkFullMarshal(t, b, UTF8Type, &v, &r)
+	checkFullMarshal(t, b, LongType, &v, &r)
+	checkFullMarshal(t, b, IntegerType, &v, &r)
+	checkFullMarshal(t, b, DecimalType, &v, &r)
+	checkFullMarshal(t, b, UUIDType, &v, &r)
+	checkFullMarshal(t, b, BooleanType, &v, &r)
+	checkFullMarshal(t, b, FloatType, &v, &r)
+	checkFullMarshal(t, b, DoubleType, &v, &r)
+	checkFullMarshal(t, b, DateType, &v, &r)
+}
+
+func TestUnmarshalBool(t *testing.T) {
 	var b []byte
 	var v bool
+	var r bool
 
 	v = false
 
 	b = []byte {0}
-	checkMarshal(t, v, b, BytesType)
-	checkMarshal(t, v, b, BooleanType)
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, BooleanType, &v, &r)
 
 	b = []byte {'0'}
-	checkMarshal(t, v, b, AsciiType)
-	checkMarshal(t, v, b, UTF8Type)
+	checkFullMarshal(t, b, AsciiType, &v, &r)
+	checkFullMarshal(t, b, UTF8Type, &v, &r)
 
 	b = []byte {0, 0, 0, 0, 0, 0, 0, 0}
-	checkMarshal(t, v, b, LongType)
+	checkFullMarshal(t, b, LongType, &v, &r)
 
 	v = true
 
 	b = []byte {1}
-	checkMarshal(t, v, b, BytesType)
-	checkMarshal(t, v, b, BooleanType)
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, BooleanType, &v, &r)
 
 	b = []byte {'1'}
-	checkMarshal(t, v, b, AsciiType)
-	checkMarshal(t, v, b, UTF8Type)
+	checkFullMarshal(t, b, AsciiType, &v, &r)
+	checkFullMarshal(t, b, UTF8Type, &v, &r)
 
 	b = []byte {0, 0, 0, 0, 0, 0, 0, 1}
-	checkMarshal(t, v, b, LongType)
+	checkFullMarshal(t, b, LongType, &v, &r)
 
 	errorMarshal(t, v, IntegerType)
 	errorMarshal(t, v, DecimalType)
@@ -66,6 +128,7 @@ func TestMarshalBool(t *testing.T) {
 	errorMarshal(t, v, DateType)
 }
 
+
 func TestMarshalInt(t *testing.T) {
 	var b []byte
 	var v64 int64
@@ -73,6 +136,11 @@ func TestMarshalInt(t *testing.T) {
 	var vi int
 	var v16 int16
 	var v8 int8
+	/*var r64 int64
+	var r32 int32
+	var ri int
+	var r16 int16
+	var r8 int8*/
 
 	// positive
 
