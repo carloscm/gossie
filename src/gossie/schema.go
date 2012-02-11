@@ -1,7 +1,7 @@
 package gossie
 
 import (
-    "fmt"
+    //"fmt"
     //"thrift"
     //"encoding/hex"
     "cassandra"

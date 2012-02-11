@@ -6,6 +6,7 @@ import (
 
 func TestSchema(t *testing.T) {
 
+/*
 	c, err := NewConnection("127.0.0.1:9160", "TestGossie", 3000)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
@@ -13,10 +14,12 @@ func TestSchema(t *testing.T) {
 
 	schema := newSchema(c.(*connection))
 
-/*
 	if len(schema.ColumnFamilies) != 3 {
 		t.Error("Test schema must have 3 CFs")
 	}
+*/
+
+/*
 
 	if schema.ColumnFamilies["AllTypes"] == nil {
 		t.Error("Test CF AllTypes is nil")
@@ -28,7 +31,6 @@ func TestSchema(t *testing.T) {
 
     	cf.NamedColumns map[string]TypeDesc
 */	
-}
 
 /*
 	op := c.Insert()

@@ -4,11 +4,14 @@ import (
     //"fmt"
     //"cassandra"
     enc "encoding/binary"
-    "strings"
+    //"strings"
+    "strconv"
+    "os"
 )
 
 const (
-    BytesType = 1
+    _ = iota
+    BytesType
     AsciiType
     UTF8Type
     LongType
@@ -19,97 +22,140 @@ const (
     FloatType
     DoubleType
     DateType
+    CounterColumnType
 )
 
-func Marshal(value interface{}, typeDesc int) []byte {
+var (
+    ErrorUnsupportedMarshaling = os.NewError("Cannot marshal value")
+    ErrorUnsupportedUnmarshaling = os.NewError("Cannot unmarshal value")
+)
 
-    switch v := value.(type) {
-        default:
-            return nil
-
-        case bool:
-            return marshalBool(t, typeDesc)
-
-        case int:
-            return marshalInt(t, typeDesc)
-
-        case string:
-            return marshalString(t, typeDesc)
-
-    }
-}
+type TypeDesc int
 
 /*
-        case BytesType:
-        case AsciiType:
-        case UTF8Type:
-        case LongType:
-        case IntegerType:
-        case DecimalType:
-        case UUIDType:
-        case BooleanType:
-        case FloatType:
-        case DoubleType:
-        case DateType:
+    to do:
+
+    FloatType
+    DoubleType
+    IntegerType
+    DecimalType
+    UUIDType
+
+    float32
+    float64
+    all uints
+
+    maybe some more (un)marshalings, maybe something better for DateType?
+
+    more error checking, pass along strconv errors
 */
 
-func marshalBool(value bool, typeDesc int) []byte {
+func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
+    switch v := value.(type) {
+        case []byte:    return v, nil
+        case bool:      return marshalBool(v, typeDesc)
+        case int8:      return marshalInt(int64(v), 1, typeDesc)
+        case int16:     return marshalInt(int64(v), 2, typeDesc)
+        case int:       return marshalInt(int64(v), 4, typeDesc)
+        case int32:     return marshalInt(int64(v), 4, typeDesc)
+        case int64:     return marshalInt(v, 8, typeDesc)
+        case string:    return marshalString(v, typeDesc)
+    }
+    return nil, ErrorUnsupportedMarshaling
+}
+
+func marshalBool(value bool, typeDesc TypeDesc) ([]byte, os.Error) {
     switch typeDesc {
         case BytesType, BooleanType:
-            b = make([]byte, 1)
+            b := make([]byte, 1)
             if value {
                 b[0] = 1
-            } else {
-                b[0] = 0
             }
-            return b
+            return b, nil
 
         case AsciiType, UTF8Type:
-            b = make([]byte, 1)
+            b := make([]byte, 1)
             if value {
                 b[0] = '1'
             } else {
                 b[0] = '0'
             }
-            return b
+            return b, nil
 
         case LongType:
-            b = make([]byte, 8)
+            b := make([]byte, 8)
             if value {
                 b[7] = 1
-            } else {
-                b[7] = 0
             }
-            return b
-
-        /* unsuported marshalling:
-        case IntegerType:
-        case DecimalType:
-        case UUIDType:
-        case FloatType:
-        case DoubleType:
-        case DateType:
-        */
+            return b, nil
     }
-    return nil
+    return nil, ErrorUnsupportedMarshaling
 }
 
-
-func marshalInt(value int, typeDesc int) []byte {
+func marshalInt(value int64, size int, typeDesc TypeDesc) ([]byte, os.Error) {
     switch typeDesc {
-        case BytesType, BooleanType:
+
+        case LongType:
+            b := make([]byte, 8)
+            enc.BigEndian.PutUint64(b, uint64(value))
+            return b, nil
+
+        case BytesType:
+            b := make([]byte, 8)
+            enc.BigEndian.PutUint64(b, uint64(value))
+            return b[len(b)-size:], nil
+
+        case DateType:
+            if size != 8 {
+                return nil, ErrorUnsupportedMarshaling
+            }
+            b := make([]byte, 8)
+            enc.BigEndian.PutUint64(b, uint64(value))
+            return b, nil
+
+        case AsciiType, UTF8Type:
+            return marshalString(strconv.Itoa64(value), UTF8Type)
     }
-    return nil
+    return nil, ErrorUnsupportedMarshaling
 }
 
+func marshalString(value string, typeDesc TypeDesc) ([]byte, os.Error) {
+    // let cassandra check the ascii-ness of the []byte
+    switch typeDesc {
+        case BytesType, AsciiType, UTF8Type:
+            return []byte(value), nil
+
+        case LongType:
+            i, err := strconv.Atoi64(value)
+            if err != nil {
+                return nil, err
+            }
+            return marshalInt(i, 8, LongType)
+
+/* fix this!
+        case UUIDType:
+            if len(value) != 36 {
+                return nil, ErrorUnsupportedMarshaling
+            }
+            ints := strings.Split(value, "-")
+            if len(ints) != 5 {
+                return nil, ErrorUnsupportedMarshaling
+            }
+            b := marshalInt(strconv.Btoi64(ints[0], 16), 4, BytesType)
+            b = append(b, marshalInt(strconv.Btoi64(ints[1], 16), 2, BytesType))
+            b = append(b, marshalInt(strconv.Btoi64(ints[2], 16), 2, BytesType))
+            b = append(b, marshalInt(strconv.Btoi64(ints[3], 16), 2, BytesType))
+            b = append(b, marshalInt(strconv.Btoi64(ints[4], 16), 6, BytesType))
+            return b, nil
+*/
+
+    }
+    return nil, ErrorUnsupportedMarshaling
+}
 
 type Value interface {
     Bytes() []byte
     SetBytes([]byte)
-}
-
-type TypeDesc interface {
-    Validate(v Value) bool
 }
 
 type Bytes string
@@ -118,12 +164,6 @@ func (u *Bytes) Bytes() []byte {
 }
 func (u *Bytes) SetBytes(b []byte)  {
     *u = Bytes(string(b[0:(len(b))]))
-}
-
-type bytesTypeDesc struct {}
-func (u *bytesTypeDesc) Validate(v Value) bool {
-    _, ok := v.(*Bytes)
-    return ok
 }
 
 type Long int64
@@ -136,22 +176,10 @@ func (l *Long) SetBytes(b []byte)  {
     *l = Long(enc.BigEndian.Uint64(b))
 }
 
-type longTypeDesc struct {}
-func (u *longTypeDesc) Validate(v Value) bool {
-    _, ok := v.(*Long)
-    return ok
-}
-
-type compositeTypeDesc struct {
-    components []TypeDesc
-}
-func (u *compositeTypeDesc) Validate(v Value) bool {
-    return false
-}
-
 func makeTypeDesc(cassType string) TypeDesc {
 
     // not a simple class type, check for composite and parse it
+    /* disable composite support for now...
     if (strings.HasPrefix(cassType, "org.apache.cassandra.db.marshal.CompositeType(")) {
         composite := &compositeTypeDesc{}
         componentsString := cassType[strings.Index(cassType, "(")+1:len(cassType)-1]
@@ -163,26 +191,23 @@ func makeTypeDesc(cassType string) TypeDesc {
         composite.components = components
         return composite
     }
+    */
 
     // simple types
     switch cassType {
-        case "org.apache.cassandra.db.marshal.LongType":
-            return &longTypeDesc{}
+        case "org.apache.cassandra.db.marshal.BytesType":      return BytesType
+        case "org.apache.cassandra.db.marshal.AsciiType":      return AsciiType
+        case "org.apache.cassandra.db.marshal.UTF8Type":       return UTF8Type
+        case "org.apache.cassandra.db.marshal.LongType":       return LongType
+        case "org.apache.cassandra.db.marshal.IntegerType":    return IntegerType
+        case "org.apache.cassandra.db.marshal.DecimalType":    return DecimalType
+        case "org.apache.cassandra.db.marshal.UUIDType":       return UUIDType
+        case "org.apache.cassandra.db.marshal.BooleanType":    return BooleanType
+        case "org.apache.cassandra.db.marshal.FloatType":      return FloatType
+        case "org.apache.cassandra.db.marshal.DoubleType":     return DoubleType
+        case "org.apache.cassandra.db.marshal.DateType":       return DateType
     }
 
     // not a recognized type
-    return &bytesTypeDesc{}
+    return BytesType
 }
-
-//BytesType
-//AsciiType
-//UTF8Type
-//LongType
-//IntegerType  Arbitrary-precision integer
-//DecimalType decimal Variable-precision decimal
-//UUIDType
-//CounterColumnType
-//BooleanType
-//FloatType
-//DoubleType
-//DateType
