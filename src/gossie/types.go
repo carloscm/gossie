@@ -1,10 +1,10 @@
 package gossie
 
 import (
-    //"fmt"
+    "fmt"
     //"cassandra"
     enc "encoding/binary"
-    //"strings"
+    "strings"
     "strconv"
     "os"
 )
@@ -34,7 +34,48 @@ var (
 )
 
 type TypeDesc int
+
 type UUID [16]byte
+
+func (value UUID) String() string {
+    var r []string
+    var s int
+    for _, size := range [5]int{4, 2, 2, 2, 6} {
+        var v int64
+        for i := 0; i < size; i++ {
+            v = v << 8
+            v = v | int64(value[s+i])
+        }
+        r = append(r, fmt.Sprintf("%0*x", size*2, v))
+        s += size
+    }
+    return strings.Join(r, "-")
+}
+
+func NewUUID(value string) (UUID, os.Error) {
+    var r []byte
+    var ru UUID
+
+    if (len(value) != 36) {
+        return ru, ErrorUnsupportedMarshaling
+    }
+    ints := strings.Split(value, "-")
+    if len(ints) != 5 {
+        return ru, ErrorUnsupportedMarshaling
+    }
+
+    for i, size := range [5]int{4, 2, 2, 2, 6} {
+        t, err := strconv.Btoi64(ints[i], 16)
+        if err != nil {
+            return ru, ErrorUnsupportedMarshaling
+        }
+        b, _ := marshalInt(t, size, BytesType)
+        r = append(r, b...)
+    }
+
+    unmarshalUUID(r, BytesType, &ru)
+    return ru, nil
+}
 
 /*
     to do:
@@ -43,7 +84,7 @@ type UUID [16]byte
     DoubleType
     IntegerType
     DecimalType
-    UUIDType
+    CounterColumnType
 
     float32
     float64
@@ -154,24 +195,6 @@ func marshalString(value string, typeDesc TypeDesc) ([]byte, os.Error) {
                 return nil, err
             }
             return marshalInt(i, 8, LongType)
-
-/* fix this!
-        case UUIDType:
-            if len(value) != 36 {
-                return nil, ErrorUnsupportedMarshaling
-            }
-            ints := strings.Split(value, "-")
-            if len(ints) != 5 {
-                return nil, ErrorUnsupportedMarshaling
-            }
-            b := marshalInt(strconv.Btoi64(ints[0], 16), 4, BytesType)
-            b = append(b, marshalInt(strconv.Btoi64(ints[1], 16), 2, BytesType))
-            b = append(b, marshalInt(strconv.Btoi64(ints[2], 16), 2, BytesType))
-            b = append(b, marshalInt(strconv.Btoi64(ints[3], 16), 2, BytesType))
-            b = append(b, marshalInt(strconv.Btoi64(ints[4], 16), 6, BytesType))
-            return b, nil
-*/
-
     }
     return nil, ErrorUnsupportedMarshaling
 }

@@ -291,4 +291,17 @@ func TestMarshalUUID(t *testing.T) {
     errorMarshal(t, v, FloatType)
     errorMarshal(t, v, DoubleType)
     errorMarshal(t, v, DateType)
+
+    // test utility functions
+    s := "00112233-4455-6677-8899-aabbccddeeff"
+    v2, err := NewUUID(s)
+    if err != nil {
+    	t.Error("Unexpected error in NewUUID")
+    }
+	checkFullMarshal(t, b, BytesType, &v2, &r)
+
+	if v2.String() != s {
+		t.Error("Wrong UUID to string conversion ", v2.String())
+	}
+
 }
