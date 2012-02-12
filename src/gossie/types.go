@@ -28,9 +28,13 @@ const (
 var (
     ErrorUnsupportedMarshaling = os.NewError("Cannot marshal value")
     ErrorUnsupportedUnmarshaling = os.NewError("Cannot unmarshal value")
+    ErrorUnsupportedNativeTypeUnmarshaling = os.NewError("Cannot unmarshal to native type")
+    ErrorUnsupportedCassandraTypeUnmarshaling = os.NewError("Cannot unmarshal from Cassabndra type")
+    ErrorCassandraTypeSerializationUnmarshaling = os.NewError("Cassandra serialization is wrong for the type, cannot unmarshal")
 )
 
 type TypeDesc int
+type UUID [16]byte
 
 /*
     to do:
@@ -43,11 +47,14 @@ type TypeDesc int
 
     float32
     float64
+    don't assume int is int32 (tho it's prob ok)
     all uints
 
-    maybe some more (un)marshalings, maybe something better for DateType?
+    maybe add ascii/utf8 types support UUIDType, string native support?
+    maybe something better for DateType, instead of just int64 conv?
+    maybe some more (un)marshalings?
 
-    more error checking, pass along strconv errors
+    more error checking, pass along all strconv errors
 */
 
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
@@ -62,6 +69,7 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
         case *int32:    dvalue = *v
         case *int64:    dvalue = *v
         case *string:   dvalue = *v
+        case *UUID:     dvalue = *v
         default:        dvalue = v
     }
 
@@ -74,6 +82,7 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
         case int32:     return marshalInt(int64(v), 4, typeDesc)
         case int64:     return marshalInt(v, 8, typeDesc)
         case string:    return marshalString(v, typeDesc)
+        case UUID:      return marshalUUID(v, typeDesc)
     }
     return nil, ErrorUnsupportedMarshaling
 }
@@ -167,25 +176,41 @@ func marshalString(value string, typeDesc TypeDesc) ([]byte, os.Error) {
     return nil, ErrorUnsupportedMarshaling
 }
 
+func marshalUUID(value UUID, typeDesc TypeDesc) ([]byte, os.Error) {
+    switch typeDesc {
+        case BytesType, UUIDType:
+            return []byte(value[:]), nil
+    }
+    return nil, ErrorUnsupportedMarshaling
+}
+
+
 func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) os.Error {
     switch v := value.(type) {
         case *[]byte:    *v = b; return nil
         case *bool:      return unmarshalBool(b, typeDesc, v)
-        //case *int8:      return unmarshalInt(b, v, 1, typeDesc)
-        //case *int16:     return unmarshalInt(b, v, 2, typeDesc)
-        //case *int:       return unmarshalInt(b, v, 4, typeDesc)
-        //case *int32:     return unmarshalInt(b, v, 4, typeDesc)
-        //case *int64:     return unmarshalInt(b, v, 8, typeDesc)
         case *string:    return unmarshalString(b, typeDesc, v)
+        case *int8:      return unmarshalInt8(b, typeDesc, v)
+        case *int16:     return unmarshalInt16(b, typeDesc, v)
+        case *int:
+            var vt int32
+            err := unmarshalInt32(b, typeDesc, &vt)
+            if err == nil {
+                *v = int(vt)
+            }
+            return err
+        case *int32:     return unmarshalInt32(b, typeDesc, v)
+        case *int64:     return unmarshalInt64(b, typeDesc, v)
+        case *UUID:      return unmarshalUUID(b, typeDesc, v)
     }
-    return ErrorUnsupportedUnmarshaling
+    return ErrorUnsupportedNativeTypeUnmarshaling
 }
 
 func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
     switch typeDesc {
         case BytesType, BooleanType:
             if len(b) < 1 {
-                return ErrorUnsupportedUnmarshaling
+                return ErrorCassandraTypeSerializationUnmarshaling
             }
             if b[0] == 0 {
                 *value = false
@@ -196,7 +221,7 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
 
         case AsciiType, UTF8Type:
             if len(b) < 1 {
-                return ErrorUnsupportedUnmarshaling
+                return ErrorCassandraTypeSerializationUnmarshaling
             }
             if b[0] == '0' {
                 *value = false
@@ -207,7 +232,7 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
 
         case LongType:
             if len(b) != 8 {
-                return ErrorUnsupportedUnmarshaling
+                return ErrorCassandraTypeSerializationUnmarshaling
             }
             if b[7] == 0 {
                 *value = false
@@ -216,7 +241,127 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
             }
             return nil
     }
-    return ErrorUnsupportedUnmarshaling
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) os.Error {
+    switch typeDesc {
+        case LongType, BytesType, DateType:
+            if len(b) != 8 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int64(enc.BigEndian.Uint64(b))
+            return nil
+
+        case AsciiType, UTF8Type:
+            var r string
+            err := unmarshalString(b, AsciiType, &r)
+            if err != nil {
+                return err
+            }
+            *value, err = strconv.Atoi64(r)
+            if err != nil {
+                return err
+            }
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalInt32(b []byte, typeDesc TypeDesc, value *int32) os.Error {
+    switch typeDesc {
+        case LongType:
+            if len(b) != 8 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int32(enc.BigEndian.Uint64(b))
+            return nil
+
+        case BytesType:
+            if len(b) != 4 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int32(enc.BigEndian.Uint32(b))
+            return nil
+
+        case AsciiType, UTF8Type:
+            var r string
+            err := unmarshalString(b, AsciiType, &r)
+            if err != nil {
+                return err
+            }
+            i, err := strconv.Atoi(r)
+            if err != nil {
+                return err
+            }
+            *value = int32(i)
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalInt16(b []byte, typeDesc TypeDesc, value *int16) os.Error {
+    switch typeDesc {
+        case LongType:
+            if len(b) != 8 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int16(enc.BigEndian.Uint64(b))
+            return nil
+
+        case BytesType:
+            if len(b) != 2 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int16(enc.BigEndian.Uint16(b))
+            return nil
+
+        case AsciiType, UTF8Type:
+            var r string
+            err := unmarshalString(b, AsciiType, &r)
+            if err != nil {
+                return err
+            }
+            i, err := strconv.Atoi(r)
+            if err != nil {
+                return err
+            }
+            *value = int16(i)
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalInt8(b []byte, typeDesc TypeDesc, value *int8) os.Error {
+    switch typeDesc {
+        case LongType:
+            if len(b) != 8 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int8(b[7])
+            return nil
+
+        case BytesType:
+            if len(b) != 1 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            *value = int8(b[0])
+            return nil
+
+        case AsciiType, UTF8Type:
+            var r string
+            err := unmarshalString(b, AsciiType, &r)
+            if err != nil {
+                return err
+            }
+            i, err := strconv.Atoi(r)
+            if err != nil {
+                return err
+            }
+            *value = int8(i)
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
 }
 
 func unmarshalString(b []byte, typeDesc TypeDesc, value *string) os.Error {
@@ -225,16 +370,28 @@ func unmarshalString(b []byte, typeDesc TypeDesc, value *string) os.Error {
             *value = string(b)
             return nil
 
-/*
         case LongType:
-            unmarshal into int64 is needed first
-            *value, err := strconv.Itoa64(?)
+            var i int64
+            err := unmarshalInt64(b, LongType, &i)
             if err != nil {
                 return err
             }
-            return nil*/
+            *value = strconv.Itoa64(i)
+            return nil
     }
-    return ErrorUnsupportedUnmarshaling
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalUUID(b []byte, typeDesc TypeDesc, value *UUID) os.Error {
+    switch typeDesc {
+        case BytesType, UUIDType:
+            if len(b) != 16 {
+                return ErrorCassandraTypeSerializationUnmarshaling
+            }
+            copy((*value)[:], b)
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
 }
 
 type Value interface {
@@ -245,7 +402,7 @@ type Value interface {
 
 func makeTypeDesc(cassType string) TypeDesc {
 
-    // not a simple class type, check for composite and parse it
+    // check for composite and parse it
     /* disable composite support for now...
     if (strings.HasPrefix(cassType, "org.apache.cassandra.db.marshal.CompositeType(")) {
         composite := &compositeTypeDesc{}
