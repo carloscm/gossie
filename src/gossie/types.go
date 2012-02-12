@@ -2,12 +2,28 @@ package gossie
 
 import (
     "fmt"
-    //"cassandra"
     enc "encoding/binary"
     "strings"
     "strconv"
     "os"
+    "bytes"
 )
+
+/*
+    to do:
+
+    IntegerType
+    DecimalType
+
+    don't assume int is int32 (tho it's prob ok)
+    uints, support them?
+
+    maybe add ascii/utf8 types support UUIDType, string native support?
+    maybe something better for DateType, instead of just int64 conv?
+    maybe some more (un)marshalings?
+
+    more error checking, pass along all strconv errors
+*/
 
 const (
     _ = iota
@@ -29,7 +45,7 @@ var (
     ErrorUnsupportedMarshaling = os.NewError("Cannot marshal value")
     ErrorUnsupportedUnmarshaling = os.NewError("Cannot unmarshal value")
     ErrorUnsupportedNativeTypeUnmarshaling = os.NewError("Cannot unmarshal to native type")
-    ErrorUnsupportedCassandraTypeUnmarshaling = os.NewError("Cannot unmarshal from Cassabndra type")
+    ErrorUnsupportedCassandraTypeUnmarshaling = os.NewError("Cannot unmarshal from Cassandra type")
     ErrorCassandraTypeSerializationUnmarshaling = os.NewError("Cassandra serialization is wrong for the type, cannot unmarshal")
 )
 
@@ -77,27 +93,6 @@ func NewUUID(value string) (UUID, os.Error) {
     return ru, nil
 }
 
-/*
-    to do:
-
-    FloatType
-    DoubleType
-    IntegerType
-    DecimalType
-    CounterColumnType
-
-    float32
-    float64
-    don't assume int is int32 (tho it's prob ok)
-    all uints
-
-    maybe add ascii/utf8 types support UUIDType, string native support?
-    maybe something better for DateType, instead of just int64 conv?
-    maybe some more (un)marshalings?
-
-    more error checking, pass along all strconv errors
-*/
-
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
     // dereference in case we got a pointer
     var dvalue interface{}
@@ -111,6 +106,8 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
         case *int64:    dvalue = *v
         case *string:   dvalue = *v
         case *UUID:     dvalue = *v
+        case *float32:  dvalue = *v
+        case *float64:  dvalue = *v
         default:        dvalue = v
     }
 
@@ -124,6 +121,8 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
         case int64:     return marshalInt(v, 8, typeDesc)
         case string:    return marshalString(v, typeDesc)
         case UUID:      return marshalUUID(v, typeDesc)
+        case float32:   return marshalFloat32(v, typeDesc)
+        case float64:   return marshalFloat64(v, typeDesc)
     }
     return nil, ErrorUnsupportedMarshaling
 }
@@ -207,6 +206,27 @@ func marshalUUID(value UUID, typeDesc TypeDesc) ([]byte, os.Error) {
     return nil, ErrorUnsupportedMarshaling
 }
 
+func marshalFloat32(value float32, typeDesc TypeDesc) ([]byte, os.Error) {
+    switch typeDesc {
+        case BytesType, FloatType:
+            var b []byte
+            buf := bytes.NewBuffer(b)
+            enc.Write(buf, enc.BigEndian, value)
+            return buf.Bytes(), nil
+    }
+    return nil, ErrorUnsupportedMarshaling
+}
+
+func marshalFloat64(value float64, typeDesc TypeDesc) ([]byte, os.Error) {
+    switch typeDesc {
+        case BytesType, DoubleType:
+            var b []byte
+            buf := bytes.NewBuffer(b)
+            enc.Write(buf, enc.BigEndian, value)
+            return buf.Bytes(), nil
+    }
+    return nil, ErrorUnsupportedMarshaling
+}
 
 func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) os.Error {
     switch v := value.(type) {
@@ -225,6 +245,8 @@ func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) os.Error {
         case *int32:     return unmarshalInt32(b, typeDesc, v)
         case *int64:     return unmarshalInt64(b, typeDesc, v)
         case *UUID:      return unmarshalUUID(b, typeDesc, v)
+        case *float32:   return unmarshalFloat32(b, typeDesc, v)
+        case *float64:   return unmarshalFloat64(b, typeDesc, v)
     }
     return ErrorUnsupportedNativeTypeUnmarshaling
 }
@@ -269,7 +291,7 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) os.Error {
 
 func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) os.Error {
     switch typeDesc {
-        case LongType, BytesType, DateType:
+        case LongType, BytesType, DateType, CounterColumnType:
             if len(b) != 8 {
                 return ErrorCassandraTypeSerializationUnmarshaling
             }
@@ -412,6 +434,26 @@ func unmarshalUUID(b []byte, typeDesc TypeDesc, value *UUID) os.Error {
                 return ErrorCassandraTypeSerializationUnmarshaling
             }
             copy((*value)[:], b)
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalFloat32(b []byte, typeDesc TypeDesc, value *float32) os.Error {
+    switch typeDesc {
+        case BytesType, FloatType:
+            buf := bytes.NewBuffer(b)
+            enc.Read(buf, enc.BigEndian, value)
+            return nil
+    }
+    return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalFloat64(b []byte, typeDesc TypeDesc, value *float64) os.Error {
+    switch typeDesc {
+        case BytesType, DoubleType:
+            buf := bytes.NewBuffer(b)
+            enc.Read(buf, enc.BigEndian, value)
             return nil
     }
     return ErrorUnsupportedCassandraTypeUnmarshaling

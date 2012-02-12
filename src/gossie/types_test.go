@@ -293,6 +293,7 @@ func TestMarshalUUID(t *testing.T) {
     errorMarshal(t, v, DateType)
 
     // test utility functions
+
     s := "00112233-4455-6677-8899-aabbccddeeff"
     v2, err := NewUUID(s)
     if err != nil {
@@ -303,5 +304,38 @@ func TestMarshalUUID(t *testing.T) {
 	if v2.String() != s {
 		t.Error("Wrong UUID to string conversion ", v2.String())
 	}
+}
 
+func TestMarshalFloat(t *testing.T) {
+	var b []byte
+	var v32 float32 = float32(-1.01)
+	var r32 float32
+	var v64 float64 = float64(-1.01)
+	var r64 float64
+
+	b = []byte {0xbf, 0x81, 0x47, 0xae}
+	checkFullMarshal(t, b, BytesType, &v32, &r32)
+	checkFullMarshal(t, b, FloatType, &v32, &r32)
+
+	b = []byte {0xbf, 0xf0, 0x28, 0xf5, 0xc2, 0x8f, 0x5c, 0x29}
+	checkFullMarshal(t, b, BytesType, &v64, &r64)
+	checkFullMarshal(t, b, DoubleType, &v64, &r64)
+
+	errorMarshal(t, v32, LongType)
+    errorMarshal(t, v32, AsciiType)
+    errorMarshal(t, v32, UTF8Type)
+    errorMarshal(t, v32, IntegerType)
+    errorMarshal(t, v32, DecimalType)
+    errorMarshal(t, v32, BooleanType)
+    errorMarshal(t, v32, DoubleType)
+    errorMarshal(t, v32, DateType)
+
+	errorMarshal(t, v64, LongType)
+    errorMarshal(t, v64, AsciiType)
+    errorMarshal(t, v64, UTF8Type)
+    errorMarshal(t, v64, IntegerType)
+    errorMarshal(t, v64, DecimalType)
+    errorMarshal(t, v64, BooleanType)
+    errorMarshal(t, v64, FloatType)
+    errorMarshal(t, v64, DateType)
 }
