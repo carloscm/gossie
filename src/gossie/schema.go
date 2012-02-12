@@ -12,10 +12,10 @@ type Schema struct {
 }
 
 type ColumnFamily struct {
-    DefaultComparator TypeDesc
-    DefaultValidator TypeDesc
-    KeyValidator TypeDesc
-    NamedColumns map[string]TypeDesc
+    DefaultComparator TypeClass
+    DefaultValidator TypeClass
+    KeyValidator TypeClass
+    NamedColumns map[string]TypeClass
 }
 
 func newSchema(c *connection) *Schema {
@@ -38,7 +38,6 @@ func newSchema(c *connection) *Schema {
             continue
         }
 
-        // FIXME: add support for counter CFs
         cfDef, _ := cfDefT.(*cassandra.CfDef)
 
         if cfDef.ColumnType != "Standard" {
@@ -47,11 +46,11 @@ func newSchema(c *connection) *Schema {
 
         cf := &ColumnFamily{}
 
-        cf.DefaultComparator = makeTypeDesc(cfDef.ComparatorType)
-        cf.DefaultValidator = makeTypeDesc(cfDef.DefaultValidationClass)
-        cf.KeyValidator = makeTypeDesc(cfDef.KeyValidationClass)
+        cf.DefaultComparator = parseTypeClass(cfDef.ComparatorType)
+        cf.DefaultValidator = parseTypeClass(cfDef.DefaultValidationClass)
+        cf.KeyValidator = parseTypeClass(cfDef.KeyValidationClass)
 
-        cf.NamedColumns = make(map[string]TypeDesc)
+        cf.NamedColumns = make(map[string]TypeClass)
 
         for colDefT := range cfDef.ColumnMetadata.Iter() {
             // FIXME: this is weird, but happens a lot. thrift4go problem?
@@ -60,7 +59,7 @@ func newSchema(c *connection) *Schema {
             }
             colDef, _ := colDefT.(*cassandra.ColumnDef)
             name := string(colDef.Name[0:(len(colDef.Name))])
-            cf.NamedColumns[name] = makeTypeDesc(colDef.ValidationClass)
+            cf.NamedColumns[name] = parseTypeClass(colDef.ValidationClass)
         }
 
         schema.ColumnFamilies[cfDef.Name] = cf
@@ -68,6 +67,6 @@ func newSchema(c *connection) *Schema {
 
     //fmt.Println(schema)
 
-    return nil
+    return schema
 }
 

@@ -19,7 +19,7 @@ import (
     uints, support them?
 
     maybe add ascii/utf8 types support UUIDType, string native support?
-    maybe something better for DateType, instead of just int64 conv?
+    maybe something better for DateType, instead of just int64 conv (go v1)?
     maybe some more (un)marshalings?
 
     more error checking, pass along all strconv errors
@@ -39,6 +39,7 @@ const (
     DoubleType
     DateType
     CounterColumnType
+    CompositeType
 )
 
 var (
@@ -459,44 +460,42 @@ func unmarshalFloat64(b []byte, typeDesc TypeDesc, value *float64) os.Error {
     return ErrorUnsupportedCassandraTypeUnmarshaling
 }
 
-type Value interface {
-    Bytes() []byte
-    SetBytes([]byte)
-    //TypeDesc() TypeDesc
+type TypeClass struct {
+    Desc TypeDesc
+    Components []TypeClass
 }
 
-func makeTypeDesc(cassType string) TypeDesc {
+func parseTypeClass(cassType string) TypeClass {
+    r := TypeClass{Desc:BytesType}
 
     // check for composite and parse it
-    /* disable composite support for now...
     if (strings.HasPrefix(cassType, "org.apache.cassandra.db.marshal.CompositeType(")) {
-        composite := &compositeTypeDesc{}
+        r.Desc = CompositeType
         componentsString := cassType[strings.Index(cassType, "(")+1:len(cassType)-1]
         componentsSlice := strings.Split(componentsString, ",")
-        components := make([]TypeDesc, 0)
+        var components []TypeClass
         for _, component := range componentsSlice {
-            components = append(components, makeTypeDesc(component))
+            components = append(components, parseTypeClass(component))
         }
-        composite.components = components
-        return composite
+        r.Components = components
+        return r
     }
-    */
 
     // simple types
     switch cassType {
-        case "org.apache.cassandra.db.marshal.BytesType":      return BytesType
-        case "org.apache.cassandra.db.marshal.AsciiType":      return AsciiType
-        case "org.apache.cassandra.db.marshal.UTF8Type":       return UTF8Type
-        case "org.apache.cassandra.db.marshal.LongType":       return LongType
-        case "org.apache.cassandra.db.marshal.IntegerType":    return IntegerType
-        case "org.apache.cassandra.db.marshal.DecimalType":    return DecimalType
-        case "org.apache.cassandra.db.marshal.UUIDType":       return UUIDType
-        case "org.apache.cassandra.db.marshal.BooleanType":    return BooleanType
-        case "org.apache.cassandra.db.marshal.FloatType":      return FloatType
-        case "org.apache.cassandra.db.marshal.DoubleType":     return DoubleType
-        case "org.apache.cassandra.db.marshal.DateType":       return DateType
+        case "org.apache.cassandra.db.marshal.BytesType":           r.Desc = BytesType
+        case "org.apache.cassandra.db.marshal.AsciiType":           r.Desc = AsciiType
+        case "org.apache.cassandra.db.marshal.UTF8Type":            r.Desc = UTF8Type
+        case "org.apache.cassandra.db.marshal.LongType":            r.Desc = LongType
+        case "org.apache.cassandra.db.marshal.IntegerType":         r.Desc = IntegerType
+        case "org.apache.cassandra.db.marshal.DecimalType":         r.Desc = DecimalType
+        case "org.apache.cassandra.db.marshal.UUIDType":            r.Desc = UUIDType
+        case "org.apache.cassandra.db.marshal.BooleanType":         r.Desc = BooleanType
+        case "org.apache.cassandra.db.marshal.FloatType":           r.Desc = FloatType
+        case "org.apache.cassandra.db.marshal.DoubleType":          r.Desc = DoubleType
+        case "org.apache.cassandra.db.marshal.DateType":            r.Desc = DateType
+        case "org.apache.cassandra.db.marshal.CounterColumnType":   r.Desc = CounterColumnType
     }
 
-    // not a recognized type
-    return BytesType
+    return r
 }

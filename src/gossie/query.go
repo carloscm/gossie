@@ -12,6 +12,13 @@ import (
 /////////////////////////////////////
 // Queries
 
+type Value interface {
+    Bytes() []byte
+    SetBytes([]byte)
+    //TypeDesc() TypeDesc
+}
+
+
 type Query interface {
     Run() 
 }
