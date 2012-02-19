@@ -3,20 +3,31 @@ package gossie
 import (
     "net"
     "os"
-    //"fmt"
     "thrift"
-    //"encoding/hex"
-    Cassandra "cassandra"
+    "cassandra"
 )
+
+/*
+
+    to do:
+
+    failover and retry!
+
+    auth
+    more pooling options
+
+*/
 
 const (
     CONSISTENCY_DEFAULT = 0
-    CONSISTENCY_ZERO = 1
-    CONSISTENCY_ONE = 2
-    CONSISTENCY_QUORUM = 3
-    CONSISTENCY_ALL = 4
-    CONSISTENCY_LOCAL_QUORUM = 5
-    CONSISTENCY_EACH_QUORUM = 6
+    CONSISTENCY_ONE = 1
+    CONSISTENCY_QUORUM = 2
+    CONSISTENCY_LOCAL_QUORUM = 3
+    CONSISTENCY_EACH_QUORUM = 4
+    CONSISTENCY_ALL = 5
+    CONSISTENCY_ANY = 6
+    CONSISTENCY_TWO = 7
+    CONSISTENCY_THREE = 8
 )
 
 const (
@@ -44,8 +55,11 @@ func newError(e string) *Error {
 // ConnectionPool
 
 type ConnectionPool interface {
-    Acquire() Connection
-    Release(Connection)
+    Keyspace() string
+    Schema() *Schema
+    Query() Query
+    //Mutation() Mutation
+    Close()
 }
 
 type PoolOptions struct {
@@ -53,7 +67,7 @@ type PoolOptions struct {
     ReadConsistency int     // default read consistency
     WriteConsistency int    // default write consistency
     Timeout int             // socket timeout in ms
-    //Recycle int             // close the connection after Recycle seconds no matter what (it it's unused)
+    //Recycle int             // close the connection after Recycle seconds no matter what (if it's unused)
 }
 
 func (o *PoolOptions) defaults() {
@@ -68,12 +82,15 @@ type connectionPool struct {
     keyspace string
     hosts []string
     options PoolOptions
+    schema *Schema
+
+    hack *connection
 
     //available []Connection
     //inUse []Connection
 }
 
-func NewConnectionPool(keyspace string, hosts []string, options PoolOptions) (ConnectionPool, os.Error) {
+func NewConnectionPool(hosts []string, keyspace string, options PoolOptions) (ConnectionPool, os.Error) {
 
     options.defaults()
 
@@ -85,38 +102,63 @@ func NewConnectionPool(keyspace string, hosts []string, options PoolOptions) (Co
         //inUse: make([]*connection, 0, size)
     }
 
+    cp.hack, _ = newConnection(hosts[0], keyspace, cp.options.Timeout)
+
+    c := cp.acquire()
+    if (c == nil) {
+        return nil, os.NewError("Cannot acquire initial connection")
+    }
+    cp.schema = newSchema(c)
+    cp.release(c)
+
     return cp, nil
 }
 
 
-func (*connectionPool) Acquire() Connection {
-    return nil
+func (cp *connectionPool) acquire() *connection {
+    return cp.hack
 }
 
-func (*connectionPool) Release(c Connection) {
+func (cp *connectionPool) release(c *connection) {
     
 }
 
+func (cp *connectionPool) releaseWithTimeout(c *connection) {
+    
+}
+
+func (cp *connectionPool) releaseWithError(c *connection) {
+    
+}
+
+func (cp *connectionPool) Query() Query {
+    return &query{consistencyLevel:cp.options.ReadConsistency, pool:cp}
+}
+
+func (cp *connectionPool) Keyspace() string {
+    return cp.keyspace
+}
+
+func (cp *connectionPool) Schema() *Schema {
+    return cp.schema
+}
+
+
+func (cp *connectionPool) Close() {
+}
 
 /////////////////////////////////////
-// Connection
-
-type Connection interface {
-    //Execute(Query) Result
-    Close()
-    Keyspace() string
-    Client() *Cassandra.CassandraClient
-}
+// connection
 
 type connection struct {
     socket *thrift.TNonblockingSocket
     transport *thrift.TFramedTransport
-    client *Cassandra.CassandraClient
+    client *cassandra.CassandraClient
     keyspace string
     lastUsage int
 }
 
-func NewConnection(hostPort, keyspace string, timeout int) (Connection, os.Error) {
+func newConnection(hostPort, keyspace string, timeout int) (*connection, os.Error) {
 
     addr, err := net.ResolveTCPAddr("tcp", hostPort)
     if err != nil {
@@ -135,7 +177,7 @@ func NewConnection(hostPort, keyspace string, timeout int) (Connection, os.Error
 
     c.transport = thrift.NewTFramedTransport(c.socket)
     protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
-    c.client = Cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
+    c.client = cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
 
     err = c.transport.Open()
     if err != nil {
@@ -145,10 +187,12 @@ func NewConnection(hostPort, keyspace string, timeout int) (Connection, os.Error
     ire, err := c.client.SetKeyspace(keyspace)
 
     if err != nil {
+        c.close()
         return nil, err
     }
 
     if ire != nil {
+        c.close()
         return nil, newError("Cannot set the keyspace")
     }
 
@@ -157,14 +201,6 @@ func NewConnection(hostPort, keyspace string, timeout int) (Connection, os.Error
     return c, nil
 }
 
-func (c *connection) Keyspace() string {
-    return c.keyspace
-}
-
-func (c *connection) Close() {
+func (c *connection) close() {
     c.transport.Close()
-}
-
-func (c *connection) Client() *Cassandra.CassandraClient {
-    return c.client
 }

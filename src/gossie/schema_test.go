@@ -6,13 +6,13 @@ import (
 
 func TestSchema(t *testing.T) {
 
-	c, err := NewConnection("127.0.0.1:9160", "TestGossie", 3000)
+	c, err := newConnection("127.0.0.1:9160", "TestGossie", 3000)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	schema := newSchema(c.(*connection))
-	defer c.Close()
+	schema := newSchema(c)
+	defer c.close()
 
 	if len(schema.ColumnFamilies) != 3 {
 		t.Error("Test schema must have 3 CFs")

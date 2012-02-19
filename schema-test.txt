@@ -28,3 +28,5 @@ create column family Composite with
 	key_validation_class = BytesType and
 	default_validation_class = BytesType
 ;
+
+set AllTypes[utf8("a")][utf8("colUTF8Type")] = utf8("nice");

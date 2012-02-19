@@ -2,44 +2,57 @@ package gossie
 
 import (
     "os"
-    "fmt"
-    //"thrift"
-    "encoding/hex"
-    //Cassandra "cassandra"
+    "thrift"
+    "cassandra"
+//    "fmt"
 )
 
-
-/////////////////////////////////////
-// Queries
-
-type Value interface {
-    Bytes() []byte
-    SetBytes([]byte)
-    //TypeDesc() TypeDesc
+type Column struct {
+    Name []byte
+    Value []byte
+    Ttl int32
+    Timestamp int64
 }
 
+type Row struct {
+    Key []byte
+    Columns []*Column
+}
+
+type Slice struct {
+    Start []byte
+    Finish []byte
+    Count int
+    Reversed bool
+}
+
+type Range struct {
+    Start []byte
+    Finish []byte
+    Count int
+}
 
 type Query interface {
-    Run() 
+    ConsistencyLevel(int) Query
+    Cf(string) Query
+    Key([]byte) Query
+    Keys([][]byte) Query
+    Slice(*Slice) Query
+    Columns([][]byte) Query
+    Range(*Range) Query
+    // Index
+    GetOne() (*Row, os.Error)
+    //GetMany() ([]Row, os.Error)
+    //CountOne() (int, os.Error)
+    //CountMany() ([]int, os.Error)
 }
 
-type Row interface {
-}
-
-// all the get queries support column sets and slices
-type BaseGetter interface {
-    ConsistencyLevel(int)
-    Cf(string)
-    Columns([]Value)
-    Slice(start, end Value, limit int, reverse bool)
-    Run() ([]Row, os.Error)
-}
-
-// use when you know the key(s) of your rows
-type GetSlicer interface {
-    BaseGetter
-    Key(Value)
-    Keys([]Value)
+type Mutation interface {
+    Insert(cf string, row Row) Mutation
+    Delete(cf string, key []byte) Mutation
+    DeleteColumns(cf string, row Row) Mutation
+    DeleteSlice(cf string, key []byte, slice *Slice) Mutation
+    Run() os.Error
 }
 
 // use when you know the values for a secondary index and want to query by it
@@ -50,105 +63,167 @@ type GetIndexer interface {
 }
 */
 
+/*
 // use when you know a range of keys you want to iterate (when using random partitioner
 // this is only useful for iterating over an entire CF)
 type GetRanger interface {
     BaseGetter
     Range(start, end Value, limit int)
+    Get() ([]Row, os.Error)
 }
+*/
 
-type BatchMutator interface {
-    ConsistencyLevel(int)
-    Insert(cf string, key Value, row Row)
-    Delete(cf string, key Value)
-    DeleteSlice(cf string, key Value, start, end Value, limit int)
-    DeleteColumns(cf string, key Value, row Row)
-    Run() os.Error
-}
-
-type common struct {
-    readConsistency int
-    writeConsistency int
+type query struct {
+    pool *connectionPool
+    consistencyLevel int
     cf string
-}
-
-func (c *common) ConsistencyLevel(read, write int) {
-    c.readConsistency = read
-    c.writeConsistency = write
-}
-
-func (c *common) Cf(cf string) {
-    c.cf = cf
-}
-
-type columnValue struct {
-    column []byte
-    value []byte
-}
-
-type insertOps struct {
-    common
     key []byte
-    columns []*columnValue
+    setKey bool
+    keys [][]byte
+    setKeys bool
+    slice Slice
+    setSlice bool
+    columns [][]byte
+    setColumns bool
+    qrange Range
+    setRange bool
+}
+
+func (q *query) ConsistencyLevel(l int) Query {
+    q.consistencyLevel = l
+    return q
+}
+
+func (q *query) Cf(cf string) Query {
+    q.cf = cf
+    return q
+}
+
+func (q *query) Key(k []byte) Query {
+    q.key = k
+    q.setKey = true
+    return q
+}
+
+func (q *query) Keys(k [][]byte) Query {
+    q.keys = k
+    q.setKeys = true
+    return q
+}
+
+func (q *query) Slice(s *Slice) Query {
+    q.slice = *s
+    q.setSlice = true
+    return q
+}
+
+func (q *query) Columns(c [][]byte) Query {
+    copy(q.columns, c)
+    q.setColumns = true
+    return q
+}
+
+func (q *query) Range(r *Range) Query {
+    q.qrange = *r
+    q.setRange = true
+    return q
 }
 
 /*
-func (c *connection) Insert() InsertOps {
-    o := &insertOps{}
-    o.conn = c
-    return o
-}
-*/
 
-func (o *insertOps) Key(v Value) {
-    o.key = v.Bytes()
-}
-
-func (o *insertOps) Column(column, value Value) {
-    o.columns = append(o.columns, &columnValue{ column.Bytes(), value.Bytes() } )
-}
-
-func quoteBytes(v []byte) string {
-    return fmt.Sprint("'", hex.EncodeToString(v), "'")
-}
-
-func (o *insertOps) Run() os.Error {
-
-
-/*
-recordar que timestamp es obligatorio!
-
-    BatchMutate (map<'key', map<'cf', list<Mutation>>, ...)
-        Mutation:
-            ColumnOrSuperColumn -> Column -> name, value, timestamp, ttl
-            OR Deletion -> timestamp, ..., SlicePredicate
+    FIX: failover and retry!
 
 */
 
-    if o.key == nil {
-        return newError("Missing key in insert op")
+func (q *query) GetOne() (*Row, os.Error) {
+    if q.cf == "" {
+        return nil, os.NewError("No column family specified")
+    }
+    if !q.setKey {
+        return nil, os.NewError("No key or keys specified")
     }
 
-    if len(o.columns) == 0 {
-        return newError("Must pass at least one column in insert op")
+    sp := cassandra.NewSlicePredicate()
+    if q.setColumns {
+        for _, col := range q.columns {
+            sp.ColumnNames.Push(col)
+        }
+    } else if q.setSlice {
+        sr := cassandra.NewSliceRange()
+        sr.Start = q.slice.Start
+        sr.Finish = q.slice.Finish
+        sr.Count = int32(q.slice.Count)
+        sr.Reversed = q.slice.Reversed
+        sp.SliceRange = sr
+    } else {
+        sp.SliceRange = cassandra.NewSliceRange()
     }
 
-    cols, vals := "", ""
-    for _, cv := range o.columns {
-        cols = fmt.Sprint(cols, ", ", quoteBytes(cv.column))
-        vals = fmt.Sprint(vals, ", ", quoteBytes(cv.value))
+    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
+    if sp.SliceRange != nil {
+        if sp.SliceRange.Start == nil {
+            sp.SliceRange.Start = make([]byte, 0)
+        }
+        if sp.SliceRange.Finish == nil {
+            sp.SliceRange.Finish = make([]byte, 0)
+        }
     }
 
-    //INSERT INTO users (KEY, password) VALUES ('jsmith', 'ch@ngem3a') USING TTL 86400;
+    cp := cassandra.NewColumnParent()
+    cp.ColumnFamily = q.cf
 
-    
+    c := q.pool.acquire()
+    ret, ire, ue, te, err := c.client.GetSlice(q.key, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
 
-    q := fmt.Sprint("INSERT INTO ", o.cf, " (KEY", cols, ") VALUES (", quoteBytes(o.key), vals, ")")
+    if ire != nil {
+        q.pool.release(c)
+        return nil, os.NewError(ire.String())
+    }
 
-    fmt.Println(q)
+    if ue != nil {
+        q.pool.release(c)
+        return nil, os.NewError(ue.String())
+    }
 
-    //_, _, _, _, _, err := o.conn.client.ExecuteCqlQuery([]byte(q), Cassandra.NONE)
+    if te != nil {
+        q.pool.releaseWithTimeout(c)
+        return nil, os.NewError(te.String())
+    }
 
-    //o.columns = append(o.columns, &columnValue{ column.Bytes(), value.Bytes() } )
-    return nil //err
+    if err != nil {
+        q.pool.releaseWithError(c)
+        return nil, err
+    }
+
+    q.pool.release(c)
+
+    if ret != nil {
+        return rowFromTList(q.key, ret), nil
+    }
+
+    return nil, nil
+}
+
+func rowFromTList(key []byte, tl thrift.TList) *Row {
+    r := &Row{Key:key}
+    for colI := range tl.Iter() {
+        var col *cassandra.ColumnOrSuperColumn = colI.(*cassandra.ColumnOrSuperColumn)
+        if col.Column != nil {
+            c := &Column{
+                Name:col.Column.Name,
+                Value:col.Column.Value,
+                Timestamp:col.Column.Timestamp,
+                Ttl:col.Column.Ttl,
+            }
+            r.Columns = append(r.Columns, c)
+        } else if col.CounterColumn != nil {
+            v, _ := Marshal(col.CounterColumn.Value, LongType)
+            c := &Column{
+                Name:col.CounterColumn.Name,
+                Value:v,
+            }
+            r.Columns = append(r.Columns, c)
+        }
+    }
+    return r
 }
