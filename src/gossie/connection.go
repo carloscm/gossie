@@ -12,6 +12,7 @@ import (
 /*
     to do:
     auth
+    timeout while waiting for an available connection slot
     maybe more pooling options
 */
 
@@ -236,10 +237,12 @@ func (cp *connectionPool) acquire() (*connection, os.Error) {
     if s.conn == nil {
         node, err := cp.randomNode(now)
         if err != nil {
+            cp.release(nil)
             return nil, err
         }
         c, err = newConnection(node, cp.keyspace, cp.options.Timeout)
         if err != nil {
+            cp.release(nil)
             return nil, err
         }
     } else {

@@ -129,12 +129,6 @@ func (q *query) Range(r *Range) Query {
     return q
 }
 
-/*
-
-    FIX: failover and retry!
-
-*/
-
 func (q *query) GetOne() (*Row, os.Error) {
     if q.cf == "" {
         return nil, os.NewError("No column family specified")
