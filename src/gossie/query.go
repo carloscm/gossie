@@ -172,30 +172,19 @@ func (q *query) GetOne() (*Row, os.Error) {
     cp := cassandra.NewColumnParent()
     cp.ColumnFamily = q.cf
 
-    c := q.pool.acquire()
-    ret, ire, ue, te, err := c.client.GetSlice(q.key, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
-
-    if ire != nil {
-        q.pool.release(c)
-        return nil, os.NewError(ire.String())
-    }
-
-    if ue != nil {
-        q.pool.release(c)
-        return nil, os.NewError(ue.String())
-    }
-
-    if te != nil {
-        q.pool.releaseWithTimeout(c)
-        return nil, os.NewError(te.String())
-    }
+    var ret thrift.TList
+    err := q.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
+        var ire *cassandra.InvalidRequestException
+        var ue *cassandra.UnavailableException
+        var te *cassandra.TimedOutException
+        var err os.Error
+        ret, ire, ue, te, err = c.client.GetSlice(q.key, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
+        return ire, ue, te, err
+    })
 
     if err != nil {
-        q.pool.releaseWithError(c)
         return nil, err
     }
-
-    q.pool.release(c)
 
     if ret != nil {
         return rowFromTList(q.key, ret), nil

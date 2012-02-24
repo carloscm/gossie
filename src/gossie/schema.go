@@ -18,17 +18,8 @@ type ColumnFamily struct {
     NamedColumns map[string]TypeClass
 }
 
-func newSchema(c *connection) *Schema {
-
-    ksDef, nfe, ire, err := c.client.DescribeKeyspace(c.keyspace)
-
-    if ksDef == nil || nfe != nil || ire != nil || err != nil {
-        return nil
-    }
-
+func newSchema(ksDef *cassandra.KsDef) *Schema {
     cfDefs := ksDef.CfDefs
-
-
     schema := &Schema{ColumnFamilies:make(map[string]*ColumnFamily)}
 
     for cfDefT := range cfDefs.Iter() {

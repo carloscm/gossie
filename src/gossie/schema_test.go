@@ -11,7 +11,9 @@ func TestSchema(t *testing.T) {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	schema := newSchema(c)
+    ksDef, _, _, _ := c.client.DescribeKeyspace("TestGossie")
+
+	schema := newSchema(ksDef)
 	defer c.close()
 
 	if len(schema.ColumnFamilies) != 3 {
