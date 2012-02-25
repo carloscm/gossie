@@ -4,6 +4,7 @@ import (
     "os"
     "thrift"
     "cassandra"
+    "time"
 //    "fmt"
 )
 
@@ -46,32 +47,6 @@ type Query interface {
     //CountOne() (int, os.Error)
     //CountMany() ([]int, os.Error)
 }
-
-type Mutation interface {
-    Insert(cf string, row Row) Mutation
-    Delete(cf string, key []byte) Mutation
-    DeleteColumns(cf string, row Row) Mutation
-    DeleteSlice(cf string, key []byte, slice *Slice) Mutation
-    Run() os.Error
-}
-
-// use when you know the values for a secondary index and want to query by it
-/*
-type GetIndexer interface {
-    BaseGetter
-    Eq(column, value Value)
-}
-*/
-
-/*
-// use when you know a range of keys you want to iterate (when using random partitioner
-// this is only useful for iterating over an entire CF)
-type GetRanger interface {
-    BaseGetter
-    Range(start, end Value, limit int)
-    Get() ([]Row, os.Error)
-}
-*/
 
 type query struct {
     pool *connectionPool
@@ -209,4 +184,84 @@ func rowFromTList(key []byte, tl thrift.TList) *Row {
         }
     }
     return r
+}
+
+type Mutation interface {
+    Insert(cf string, row *Row) Mutation
+    //DeltaCounters(cf string, row Row) Mutation
+    //Delete(cf string, key []byte) Mutation
+    //DeleteColumns(cf string, row Row) Mutation
+    //DeleteSlice(cf string, key []byte, slice *Slice) Mutation
+    Run() os.Error
+}
+
+type mutation struct {
+    pool *connectionPool
+    consistencyLevel int
+    mutations thrift.TMap
+}
+
+func makeMutation(cp *connectionPool, cl int) *mutation {
+    return &mutation {
+        pool: cp,
+        consistencyLevel: cl,
+        mutations: thrift.NewTMap(thrift.BINARY, thrift.MAP, 1),
+    }
+}
+
+func now() int64 {
+    return time.Nanoseconds()/1000
+}
+
+func (m *mutation) Insert(cf string, row *Row) Mutation {
+    t := now()
+    key := row.Key
+    for _, col := range row.Columns {
+        c := cassandra.NewColumn()
+        c.Name = col.Name
+        c.Value = col.Value
+        c.Ttl = col.Ttl
+        if col.Timestamp > 0 {
+            c.Timestamp = col.Timestamp
+        } else {
+            c.Timestamp = t
+        }
+        cs := cassandra.NewColumnOrSuperColumn()
+        cs.Column = c
+        tm := cassandra.NewMutation()
+        tm.ColumnOrSupercolumn = cs
+
+        var cfMuts thrift.TMap
+        im, exists := m.mutations.Get(key)
+        if !exists {
+            cfMuts = thrift.NewTMap(thrift.STRING, thrift.LIST, 1)
+            m.mutations.Set(key, cfMuts)
+        } else {
+            cfMuts = im.(thrift.TMap)
+        }
+
+        var mutList thrift.TList
+        im, exists = cfMuts.Get(cf)
+        if !exists {
+            mutList = thrift.NewTList(thrift.STRUCT, 1)
+            cfMuts.Set(cf, mutList)
+        } else {
+            mutList = im.(thrift.TList)
+        }
+
+        mutList.Push(tm)
+    }
+
+    return m
+}
+
+func (m *mutation) Run() os.Error {
+    return m.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
+        var ire *cassandra.InvalidRequestException
+        var ue *cassandra.UnavailableException
+        var te *cassandra.TimedOutException
+        var err os.Error
+        ire, ue, te, err = c.client.BatchMutate(m.mutations, cassandra.ConsistencyLevel(m.consistencyLevel))
+        return ire, ue, te, err
+    })
 }

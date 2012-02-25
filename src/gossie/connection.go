@@ -57,7 +57,7 @@ type ConnectionPool interface {
     Query() Query
 
     // Mutation returns a new mutation builder for write operations
-    //Mutation() Mutation
+    Mutation() Mutation
 
     // Close all the connections in the pool
     Close()
@@ -286,6 +286,10 @@ func (cp *connectionPool) blacklist(badNode string) {
 
 func (cp *connectionPool) Query() Query {
     return &query{consistencyLevel:cp.options.ReadConsistency, pool:cp}
+}
+
+func (cp *connectionPool) Mutation() Mutation {
+    return makeMutation(cp, cp.options.WriteConsistency)
 }
 
 func (cp *connectionPool) Keyspace() string {

@@ -51,23 +51,7 @@ func TestNewConnectionPool(t *testing.T) {
 	if cp.Keyspace() != "TestGossie" {
 		t.Fatal("Invalid keyspace")
 	}
-/*
-	t.Log("with content")
-	row, err := cp.Query().Cf("AllTypes").Key([]byte("a")).GetOne()
-	t.Log(string(row.Key))
-	t.Log(string(row.Columns[0].Name))
-	t.Log(string(row.Columns[0].Value))
-	t.Log(row.Columns[0].Ttl)
-	t.Log(row.Columns[0].Timestamp)
-	t.Log(err)
 
-	t.Log("without content")
-	row, err = cp.Query().Cf("AllTypes").Key([]byte("b")).GetOne()
-	t.Log(row)
-	t.Log(err)
-
-	//t.Fatal("wut")
-*/
 	cp.Close()
 }
 
@@ -159,14 +143,4 @@ func TestRun(t *testing.T) {
     check(false, true, false, false, true)
     check(false, false, true, false, true)
     check(false, false, false, true, true)
-}
-
-
-func BenchmarkGetOne(b *testing.B) {
-	b.StopTimer()
-	cp, _ := NewConnectionPool([]string{"127.0.0.1:9160", "127.0.0.1:9170", "127.0.0.1:9180"}, "TestGossie", PoolOptions{Size:50,Timeout:3000})
-	b.StartTimer()
-    for i := 0; i < b.N; i++ {
-		cp.Query().Cf("AllTypes").Key([]byte("a")).GetOne()
-    }
 }
