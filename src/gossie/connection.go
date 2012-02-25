@@ -13,7 +13,9 @@ import (
     to do:
     auth
     timeout while waiting for an available connection slot
+    panic handling inside run()?
     maybe more pooling options
+    Close()
 */
 
 const (
@@ -37,6 +39,10 @@ const (
     DEFAULT_RECYCLE_JITTER = 10
     DEFAULT_GRACE = 5
     DEFAULT_RETRIES = 5
+)
+
+var (
+    ErrorConnectionTimeout = os.NewError("Connection timeout")
 )
 
 // ConnectionPool implements a pool of Cassandra connections to one or more nodes
@@ -183,7 +189,8 @@ func (cp *connectionPool) run(t transaction) os.Error {
 
         // the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
         if te != nil {
-            cp.blacklist(c)
+            cp.blacklist(c.node)
+            c.close()
             c = nil
             continue
         }
@@ -237,12 +244,16 @@ func (cp *connectionPool) acquire() (*connection, os.Error) {
     if s.conn == nil {
         node, err := cp.randomNode(now)
         if err != nil {
-            cp.release(nil)
+            cp.releaseEmpty()
             return nil, err
         }
         c, err = newConnection(node, cp.keyspace, cp.options.Timeout)
+        if err == ErrorConnectionTimeout {
+            cp.blacklist(node)
+            return nil, err
+        }
         if err != nil {
-            cp.release(nil)
+            cp.releaseEmpty()
             return nil, err
         }
     } else {
@@ -256,18 +267,21 @@ func (cp *connectionPool) release(c *connection) {
     cp.available <- &slot{conn:c, lastUsage:int(time.Seconds())}
 }
 
-func (cp *connectionPool) blacklist(c *connection) {
-    c.close()
+func (cp *connectionPool) releaseEmpty() {
+    cp.available <- &slot{}
+}
+
+func (cp *connectionPool) blacklist(badNode string) {
     n := len(cp.nodes)
     for i := 0; i < n; i++ {
         node := cp.nodes[i]
-        if node.node == c.node {
+        if node.node == badNode {
             node.lastFailure = int(time.Seconds())
             break
         }
         i = (i + 1) % n
     }
-    cp.available <- &slot{}
+    cp.releaseEmpty()
 }
 
 func (cp *connectionPool) Query() Query {
@@ -284,9 +298,6 @@ func (cp *connectionPool) Schema() *Schema {
 
 func (cp *connectionPool) Close() {
 }
-
-/////////////////////////////////////
-// connection
 
 type connection struct {
     socket *thrift.TNonblockingSocket
@@ -310,25 +321,37 @@ func newConnection(node, keyspace string, timeout int) (*connection, os.Error) {
         return nil, err
     }
 
-    // socket not open yet, so no error expected
-    c.socket.SetTimeout(int64(timeout) * 1000000000)
+    // socket not open yet, so no error expected. it expects nanos, we have milis, so it's 1e6
+    c.socket.SetTimeout(int64(timeout) * 1e6)
 
     c.transport = thrift.NewTFramedTransport(c.socket)
     protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
     c.client = cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
 
-    err = c.transport.Open()
+    // simulate timeout support for the underlying Dial() in .Open(). needless to say this sucks
+    // restore sanity to this for Go v1 with the new DialTimeout() func
+    ch := make(chan bool, 1)
+    go func() {
+        err = c.transport.Open()
+        ch <- true
+    } ()
+    timedOut := false
+    select {
+        case <- time.After(int64(timeout) * 1e6): timedOut = true
+        case <- ch:
+    }
+    if timedOut {
+        return nil, ErrorConnectionTimeout
+    }
     if err != nil {
         return nil, err
     }
 
     ire, err := c.client.SetKeyspace(keyspace)
-
     if err != nil {
         c.close()
         return nil, err
     }
-
     if ire != nil {
         c.close()
         return nil, os.NewError("Cannot set the keyspace")

@@ -14,7 +14,7 @@ import (
 
     CompositeType marshalling
     struct marshalling
-    map marshalling
+    map marshalling?
 
     IntegerType
     DecimalType

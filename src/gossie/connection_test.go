@@ -14,12 +14,12 @@ func TestConnection(t *testing.T) {
 		t.Fatal("Invalid connection parameters did not return error")
 	}
 
-	c, err = newConnection("127.0.0.1:9160", "NotExists", 3000)
+	c, err = newConnection("127.0.0.1:9160", "NotExists", 1000)
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
-	c, err = newConnection("127.0.0.1:9160", "TestGossie", 3000)
+	c, err = newConnection("127.0.0.1:9160", "TestGossie", 1000)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
@@ -72,126 +72,93 @@ func TestNewConnectionPool(t *testing.T) {
 }
 
 func TestAcquireRelease(t *testing.T) {
-	cpI, _ := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Grace:1})
+	var err os.Error
+	var c *connection
+
+	cpI, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Grace:1})
+	if err != nil {
+		t.Fatal("Error connecting to Cassandra:", err)
+	}
 	cp := cpI.(*connectionPool)
 
-	if len(cp.available) != 1 {
-		t.Error("Available connection slots chan has wrong size")
+    check := func (expectedAvailable int, expectedError bool) {
+		if len(cp.available) != expectedAvailable {
+			t.Error("Available connection slots chan has wrong size")
+		}
+		if !expectedError && err != nil {
+			t.Error("The error condition did not match the expected one")
+		}
 	}
 
-	c, err := cp.acquire()
-	if len(cp.available) != 0 {
-		t.Error("Available connection slots chan has wrong size after acquire")
-	}
-	if c == nil || err != nil {
-		t.Error("Normal acquire returned error")
-	}
+	check(1, false)
+
+	c, err = cp.acquire()
+	check(0, false)
 
 	cp.release(c)
-	if len(cp.available) != 1 {
-		t.Error("Available connection slots chan has wrong size after release")
-	}
+	check(1, false)
 
 	c, err = cp.acquire()
-	if len(cp.available) != 0 {
-		t.Error("Available connection slots chan has wrong size after acquire")
-	}
-	if c == nil || err != nil {
-		t.Error("Normal acquire returned error")
-	}
+	check(0, false)
 
-	cp.blacklist(c)
-	if len(cp.available) != 1 {
-		t.Error("Available connection slots chan has wrong size after blacklist")
-	}
+	cp.blacklist("127.0.0.1:9160")
+	check(1, false)
 
 	c, err = cp.acquire()
-	if len(cp.available) != 1 {
-		t.Error("Available connection slots chan has wrong size after acquire with blacklist")
-	}
-	if c != nil || err == nil {
-		t.Error("Aquire with all nodes down did not return error")
-	}
+	check(1, true)
 
-	time.Sleep(2000000000)
+	time.Sleep(2e9)
 
 	c, err = cp.acquire()
-	if len(cp.available) != 0 {
-		t.Error("Available connection slots chan has wrong size after acquire")
-	}
-	if c == nil || err != nil {
-		t.Error("Normal acquire after blacklist grace period returned error")
-	}
-
+	check(0, false)
 }
 
 func TestRun(t *testing.T) {
-	cpI, _ := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1})
+	var err os.Error
 
+	cpI, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1})
+	if err != nil {
+		t.Fatal("Error connecting to Cassandra:", err)
+	}
 	cp := cpI.(*connectionPool)
-
     var gotConnection bool
 
-    err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
-    	gotConnection = c.client != nil
-        var ire *cassandra.InvalidRequestException
-        var ue *cassandra.UnavailableException
-        var te *cassandra.TimedOutException
-        var err os.Error
-        return ire, ue, te, err
-    })
-	if !gotConnection || err != nil {
-		t.Error("Unexpected error in normal run() call")
-	}
+    check := func (_ire, _ue, _te, _err, expectedError bool) {
+	    err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
+	    	gotConnection = c.client != nil
+	        var ire *cassandra.InvalidRequestException
+	        var ue *cassandra.UnavailableException
+	        var te *cassandra.TimedOutException
+	        var err os.Error
+	        if _ire {
+	        	ire = &cassandra.InvalidRequestException{}
+	        }
+	        if _ue {
+	        	ue = &cassandra.UnavailableException{}
+	        }
+	        if _te {
+	        	te = &cassandra.TimedOutException{}
+	        }
+	        if _err {
+	        	err = os.NewError("uh")
+	        }
+	        return ire, ue, te, err
+	    })
 
-    err = cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
-    	gotConnection = c.client != nil
-        var ire *cassandra.InvalidRequestException = &cassandra.InvalidRequestException{}
-        var ue *cassandra.UnavailableException
-        var te *cassandra.TimedOutException
-        var err os.Error
-        return ire, ue, te, err
-    })
-	if !gotConnection || err == nil {
-		t.Error("Expected error in run() call did not trigger (ire)")
-	}
+		if !gotConnection {
+			t.Error("The transaction was passed a nil connection")
+		}
 
-    err = cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
-    	gotConnection = c.client != nil
-        var ire *cassandra.InvalidRequestException
-        var ue *cassandra.UnavailableException = &cassandra.UnavailableException{}
-        var te *cassandra.TimedOutException
-        var err os.Error
-        return ire, ue, te, err
-    })
-	if !gotConnection || err == nil {
-		t.Error("Expected error in run() call did not trigger (ue)")
-	}
+		if !expectedError && err != nil {
+			t.Error("The error condition did not match the expected one")
+		}
+    }
 
-    err = cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
-    	gotConnection = c.client != nil
-        var ire *cassandra.InvalidRequestException
-        var ue *cassandra.UnavailableException
-        var te *cassandra.TimedOutException = &cassandra.TimedOutException{}
-        var err os.Error
-        return ire, ue, te, err
-    })
-	if !gotConnection || err == nil {
-		t.Error("Expected error in run() call did not trigger (te)")
-	}
-
-    err = cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
-    	gotConnection = c.client != nil
-        var ire *cassandra.InvalidRequestException
-        var ue *cassandra.UnavailableException
-        var te *cassandra.TimedOutException
-        var err os.Error = os.NewError("uhh")
-        return ire, ue, te, err
-    })
-	if !gotConnection || err == nil {
-		t.Error("Expected error in run() call did not trigger (err)")
-	}
-
+    check(false, false, false, false, false)
+    check(true, false, false, false, true)
+    check(false, true, false, false, true)
+    check(false, false, true, false, true)
+    check(false, false, false, true, true)
 }
 
 
