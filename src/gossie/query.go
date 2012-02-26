@@ -164,7 +164,7 @@ func (q *query) GetOne() (*Row, os.Error) {
         return nil, err
     }
 
-    if ret != nil {
+    if ret != nil && ret.Len() > 0 {
         return rowFromTList(q.key, ret), nil
     }
 

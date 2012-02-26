@@ -3,76 +3,106 @@ package gossie
 import (
 	"testing"
 	"fmt"
+	"reflect"
 )
 
-func TestQuery(t *testing.T) {
-
-	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Timeout:1000})
-	if err != nil {
-		t.Fatal("Error connecting to Cassandra:", err)
-	}
-
-	t.Log("with content")
-	row, err := cp.Query().Cf("AllTypes").Key([]byte("a")).GetOne()
-	t.Log(string(row.Key))
-	t.Log(string(row.Columns[0].Name))
-	t.Log(string(row.Columns[0].Value))
-	t.Log(row.Columns[0].Ttl)
-	t.Log(row.Columns[0].Timestamp)
-	t.Log(err)
-
-	t.Log("without content")
-	row, err = cp.Query().Cf("AllTypes").Key([]byte("b")).GetOne()
-	t.Log(row)
-	t.Log(err)
-
-	//t.Fatal("wut")
-
-	cp.Close()
+type testColumn struct {
+	name interface{}
+	nameType TypeDesc
+	value interface{}
+	valueType TypeDesc
 }
 
-func buildAllTypesRow(key string) *Row {
+type testRow struct {
+	key interface{}
+	keyType TypeDesc
+	columns []testColumn
+}
+
+func addColumn(row *Row, c *testColumn) {
+	n, _ := Marshal(c.name, c.nameType)
+	v, _ := Marshal(c.value, c.valueType)
+	row.Columns = append(row.Columns, &Column{Name:n,Value:v})
+}
+
+func buildRow(r *testRow) *Row {
 	var row Row
-	row.Key, _ = Marshal(key, BytesType)
-	v1, _ := Marshal([]byte{1,2,3}, BytesType)
-	v2, _ := Marshal("hi!", AsciiType)
-	v3, _ := Marshal("leña al fuego", UTF8Type)
-	v4, _ := Marshal(int64(1e15), LongType)
-	u, _ := NewUUID("00112233-4455-6677-8899-aabbccddeeff")
-	v5, _ := Marshal(u, UUIDType)
-	v6, _ := Marshal(true, BooleanType)
-	v7, _ := Marshal(float32(-1.1), FloatType)
-	v8, _ := Marshal(float64(-1.00000000000000000000001), DoubleType)
-	row.Columns = []*Column{
-		&Column{Name:[]byte("colBytesType"), Value:v1},
-		&Column{Name:[]byte("colAsciiType"), Value:v2},
-		&Column{Name:[]byte("colUTF8Type"), Value:v3},
-		&Column{Name:[]byte("colLongType"), Value:v4},
-		&Column{Name:[]byte("colUUIDType"), Value:v5},
-		&Column{Name:[]byte("colBooleanType"), Value:v6},
-		&Column{Name:[]byte("colFloatType"), Value:v7},
-		&Column{Name:[]byte("colDoubleType"), Value:v8},
-		//&Column{Name:[]byte("colDateType"), Value:
+	row.Key, _ = Marshal(r.key, r.keyType)
+	for _, c := range r.columns {
+		addColumn(&row, &c)
 	}
 	return &row
+}
+
+func buildCounterTestRow(key string) *testRow {
+	return &testRow{
+		key:key, keyType:BytesType, columns:[]testColumn{
+			testColumn{"one",		AsciiType,		int64(1),		LongType},
+			testColumn{"fortytwo",	AsciiType,		int64(42),		LongType},
+			testColumn{"wtf",		AsciiType,		int64(1e15),	LongType},
+		},
+	}
 }
 
 func buildCounterRow(key string) *Row {
-	var row Row
-	row.Key, _ = Marshal(key, BytesType)
-	v1, _ := Marshal(int64(1), LongType)
-	v2, _ := Marshal(int64(42), LongType)
-	v3, _ := Marshal(int64(1e15), LongType)
-	row.Columns = []*Column{
-		&Column{Name:[]byte("one"), Value:v1},
-		&Column{Name:[]byte("fortytwo"), Value:v2},
-		&Column{Name:[]byte("wtf"), Value:v3},
-	}
-	return &row
+	return buildRow(buildCounterTestRow(key))
 }
 
-func TestMutation(t *testing.T) {
+func buildAllTypesTestRow(key string) *testRow {
+	u, _ := NewUUID("00112233-4455-6677-8899-aabbccddeeff")
+	return &testRow{
+		key:key, keyType:BytesType, columns:[]testColumn{
+			testColumn{"colAsciiType",	AsciiType,	"hi!",			AsciiType},
+			testColumn{"colBooleanType",AsciiType,	true,			BooleanType},
+			testColumn{"colBytesType",	AsciiType,	[]byte{1,2,3},	BytesType},
+			testColumn{"colDoubleType",	AsciiType,	float64(-1.1),	DoubleType},
+			testColumn{"colFloatType",	AsciiType,	float32(1.1),	FloatType},
+			testColumn{"colLongType",	AsciiType,	int64(1e15),	LongType},
+			testColumn{"colUTF8Type",	AsciiType,	"leña al fuego",UTF8Type},
+			testColumn{"colUUIDType",	AsciiType,	u, UUIDType},
+		},
+	}
+}
 
+func buildAllTypesAfterDeletesTestRow(key string) *testRow {
+	u, _ := NewUUID("00112233-4455-6677-8899-aabbccddeeff")
+	return &testRow{
+		key:key, keyType:BytesType, columns:[]testColumn{
+			testColumn{"colBytesType",	AsciiType,	[]byte{1,2,3},	BytesType},
+			testColumn{"colDoubleType",	AsciiType,	float64(-1.1),	DoubleType},
+			testColumn{"colFloatType",	AsciiType,	float32(1.1),	FloatType},
+			testColumn{"colLongType",	AsciiType,	int64(1e15),	LongType},
+			testColumn{"colUTF8Type",	AsciiType,	"leña al fuego",UTF8Type},
+			testColumn{"colUUIDType",	AsciiType,	u, UUIDType},
+		},
+	}
+}
+
+func buildAllTypesRow(key string) *Row {
+	return buildRow(buildAllTypesTestRow(key))
+}
+
+func checkRow(t *testing.T, expected *testRow, actual *Row) {
+	exKey, _ := Marshal(expected.key, expected.keyType)
+	if !reflect.DeepEqual(exKey, actual.Key) {
+		t.Error("Keys differ: ", expected.key, " vs ", actual.Key)
+	}
+	if len(expected.columns) != len(actual.Columns) {
+		t.Fatal("Number of columns differ: ", len(expected.columns), " vs ", len(actual.Columns))
+	}
+	for i, c := range expected.columns {
+		exName, _ := Marshal(c.name, c.nameType)
+		exValue, _ := Marshal(c.value, c.valueType)
+		if !reflect.DeepEqual(exName, actual.Columns[i].Name) {
+			t.Error("Column index ", i, ", named ", c.name, ", is not named the same in actual row: ", actual.Columns[i].Name)
+		}
+		if !reflect.DeepEqual(exValue, actual.Columns[i].Value) {
+			t.Error("Column index ", i, ", named ", c.name, ", has not the expected value: ", exValue, " vs ", actual.Columns[i].Value)
+		}
+	}
+}
+
+func TestMutationAndQuery(t *testing.T) {
 	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Timeout:1000})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
@@ -80,10 +110,23 @@ func TestMutation(t *testing.T) {
 
 	m := cp.Mutation()
 	for i := 0; i < 3; i++ {
-		m.Insert("AllTypes", buildAllTypesRow(fmt.Sprint("row", i)))
-		m.DeltaCounters("Counters", buildCounterRow(fmt.Sprint("row", i)))
+		key := fmt.Sprint("row", i)
+		m.Insert("AllTypes", buildAllTypesRow(key))
+		m.DeltaCounters("Counters", buildCounterRow(key))
 	}
 	err = m.Run()
+	if err != nil {
+		t.Error("Error running mutation: ", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		key := fmt.Sprint("row", i)
+		row, err := cp.Query().Cf("AllTypes").Key([]byte(key)).GetOne()
+		if err != nil {
+			t.Error("Error running query: ", err)
+		}
+		checkRow(t, buildAllTypesTestRow(key), row)
+	}
 
 	m = cp.Mutation()
 	m.Delete("AllTypes", []byte("row0"))
@@ -91,10 +134,29 @@ func TestMutation(t *testing.T) {
 	m.DeleteColumns("AllTypes", []byte("row1"), [][]byte{[]byte("colBooleanType"),[]byte("colAsciiType")})
 	m.DeleteColumns("Counters", []byte("row1"), [][]byte{[]byte("one"),[]byte("wtf")})
 	err = m.Run()
+	if err != nil {
+		t.Error("Error running mutation: ", err)
+	}
 
-	t.Log(err)
+	row, err := cp.Query().Cf("AllTypes").Key([]byte("row0")).GetOne()
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if row != nil {
+		t.Error("An expected deleted row was returned: ", row)
+	}
 
-	//t.Fatal("wut")
+	row, err = cp.Query().Cf("AllTypes").Key([]byte("row1")).GetOne()
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	checkRow(t, buildAllTypesAfterDeletesTestRow("row1"), row)
+
+	row, err = cp.Query().Cf("AllTypes").Key([]byte("row2")).GetOne()
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	checkRow(t, buildAllTypesTestRow("row2"), row)
 
 	cp.Close()
 }

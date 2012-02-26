@@ -218,6 +218,14 @@ func marshalFloat32(value float32, typeDesc TypeDesc) ([]byte, os.Error) {
             buf := bytes.NewBuffer(b)
             enc.Write(buf, enc.BigEndian, value)
             return buf.Bytes(), nil
+/*
+        case DoubleType:
+            var valueD float64 = float64(value)
+            var b []byte
+            buf := bytes.NewBuffer(b)
+            enc.Write(buf, enc.BigEndian, valueD)
+            return buf.Bytes(), nil
+*/
     }
     return nil, ErrorUnsupportedMarshaling
 }
@@ -229,6 +237,14 @@ func marshalFloat64(value float64, typeDesc TypeDesc) ([]byte, os.Error) {
             buf := bytes.NewBuffer(b)
             enc.Write(buf, enc.BigEndian, value)
             return buf.Bytes(), nil
+/*
+        case FloatType:
+            var valueF float32 = float32(value)
+            var b []byte
+            buf := bytes.NewBuffer(b)
+            enc.Write(buf, enc.BigEndian, valueF)
+            return buf.Bytes(), nil
+*/
     }
     return nil, ErrorUnsupportedMarshaling
 }
@@ -450,6 +466,14 @@ func unmarshalFloat32(b []byte, typeDesc TypeDesc, value *float32) os.Error {
             buf := bytes.NewBuffer(b)
             enc.Read(buf, enc.BigEndian, value)
             return nil
+/*
+        case DoubleType:
+            var valueD float64
+            buf := bytes.NewBuffer(b)
+            enc.Read(buf, enc.BigEndian, &valueD)
+            *value = float32(valueD)
+            return nil
+*/
     }
     return ErrorUnsupportedCassandraTypeUnmarshaling
 }
@@ -460,6 +484,14 @@ func unmarshalFloat64(b []byte, typeDesc TypeDesc, value *float64) os.Error {
             buf := bytes.NewBuffer(b)
             enc.Read(buf, enc.BigEndian, value)
             return nil
+/*
+        case FloatType:
+            var valueF float32
+            buf := bytes.NewBuffer(b)
+            enc.Read(buf, enc.BigEndian, &valueF)
+            *value = float64(valueF)
+            return nil
+*/
     }
     return ErrorUnsupportedCassandraTypeUnmarshaling
 }

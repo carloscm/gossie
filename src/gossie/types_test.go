@@ -316,10 +316,15 @@ func TestMarshalFloat(t *testing.T) {
 	b = []byte {0xbf, 0x81, 0x47, 0xae}
 	checkFullMarshal(t, b, BytesType, &v32, &r32)
 	checkFullMarshal(t, b, FloatType, &v32, &r32)
+	
+	//checkFullMarshal(t, b, FloatType, &v64, &r32)
 
 	b = []byte {0xbf, 0xf0, 0x28, 0xf5, 0xc2, 0x8f, 0x5c, 0x29}
 	checkFullMarshal(t, b, BytesType, &v64, &r64)
 	checkFullMarshal(t, b, DoubleType, &v64, &r64)
+
+	//bLossy := []byte {0xbf, 0xf0, 0x28, 0xf5, 0xc0, 0, 0, 0}
+	//checkFullMarshal(t, bLossy, DoubleType, &v32, &r64)
 
 	errorMarshal(t, v32, LongType)
     errorMarshal(t, v32, AsciiType)
