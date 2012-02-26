@@ -57,6 +57,20 @@ func buildAllTypesRow(key string) *Row {
 	return &row
 }
 
+func buildCounterRow(key string) *Row {
+	var row Row
+	row.Key, _ = Marshal(key, BytesType)
+	v1, _ := Marshal(int64(1), LongType)
+	v2, _ := Marshal(int64(42), LongType)
+	v3, _ := Marshal(int64(1e15), LongType)
+	row.Columns = []*Column{
+		&Column{Name:[]byte("one"), Value:v1},
+		&Column{Name:[]byte("fortytwo"), Value:v2},
+		&Column{Name:[]byte("wtf"), Value:v3},
+	}
+	return &row
+}
+
 func TestMutation(t *testing.T) {
 
 	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Timeout:1000})
@@ -67,8 +81,17 @@ func TestMutation(t *testing.T) {
 	m := cp.Mutation()
 	for i := 0; i < 3; i++ {
 		m.Insert("AllTypes", buildAllTypesRow(fmt.Sprint("row", i)))
+		m.DeltaCounters("Counters", buildCounterRow(fmt.Sprint("row", i)))
 	}
 	err = m.Run()
+
+	m = cp.Mutation()
+	m.Delete("AllTypes", []byte("row0"))
+	m.Delete("Counters", []byte("row0"))
+	m.DeleteColumns("AllTypes", []byte("row1"), [][]byte{[]byte("colBooleanType"),[]byte("colAsciiType")})
+	m.DeleteColumns("Counters", []byte("row1"), [][]byte{[]byte("one"),[]byte("wtf")})
+	err = m.Run()
+
 	t.Log(err)
 
 	//t.Fatal("wut")
@@ -91,7 +114,11 @@ func BenchmarkInsert(b *testing.B) {
 	row := buildAllTypesRow("row")
 	b.StartTimer()
     for i := 0; i < b.N; i++ {
-    	row.Key, _ = Marshal(fmt.Sprint("row", i), BytesType)
-		cp.Mutation().Insert("AllTypes", row).Run()
+		m := cp.Mutation()
+		for j := 0; j < 10; j++ {
+    		row.Key, _ = Marshal(fmt.Sprint("row", i+j), BytesType)
+			m.Insert("AllTypes", row)
+		}
+    	m.Run()
     }
 }

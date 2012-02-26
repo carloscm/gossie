@@ -5,7 +5,6 @@ import (
     "thrift"
     "cassandra"
     "time"
-//    "fmt"
 )
 
 type Column struct {
@@ -104,6 +103,30 @@ func (q *query) Range(r *Range) Query {
     return q
 }
 
+func sliceToCassandra(slice *Slice) *cassandra.SliceRange {
+    sr := cassandra.NewSliceRange()
+    sr.Start = slice.Start
+    sr.Finish = slice.Finish
+    sr.Count = int32(slice.Count)
+    sr.Reversed = slice.Reversed
+    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
+    if sr.Start == nil {
+        sr.Start = make([]byte, 0)
+    }
+    if sr.Finish == nil {
+        sr.Finish = make([]byte, 0)
+    }
+    return sr
+}
+
+func fullSlice() *cassandra.SliceRange {
+    sr := cassandra.NewSliceRange()
+    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
+    sr.Start = make([]byte, 0)
+    sr.Finish = make([]byte, 0)
+    return sr
+}
+
 func (q *query) GetOne() (*Row, os.Error) {
     if q.cf == "" {
         return nil, os.NewError("No column family specified")
@@ -114,28 +137,14 @@ func (q *query) GetOne() (*Row, os.Error) {
 
     sp := cassandra.NewSlicePredicate()
     if q.setColumns {
+        sp.ColumnNames = thrift.NewTList(thrift.BINARY, 1)
         for _, col := range q.columns {
             sp.ColumnNames.Push(col)
         }
     } else if q.setSlice {
-        sr := cassandra.NewSliceRange()
-        sr.Start = q.slice.Start
-        sr.Finish = q.slice.Finish
-        sr.Count = int32(q.slice.Count)
-        sr.Reversed = q.slice.Reversed
-        sp.SliceRange = sr
+        sp.SliceRange = sliceToCassandra(&q.slice)
     } else {
-        sp.SliceRange = cassandra.NewSliceRange()
-    }
-
-    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
-    if sp.SliceRange != nil {
-        if sp.SliceRange.Start == nil {
-            sp.SliceRange.Start = make([]byte, 0)
-        }
-        if sp.SliceRange.Finish == nil {
-            sp.SliceRange.Finish = make([]byte, 0)
-        }
+        sp.SliceRange = fullSlice()
     }
 
     cp := cassandra.NewColumnParent()
@@ -188,9 +197,9 @@ func rowFromTList(key []byte, tl thrift.TList) *Row {
 
 type Mutation interface {
     Insert(cf string, row *Row) Mutation
-    //DeltaCounters(cf string, row Row) Mutation
-    //Delete(cf string, key []byte) Mutation
-    //DeleteColumns(cf string, row Row) Mutation
+    DeltaCounters(cf string, row *Row) Mutation
+    Delete(cf string, key []byte) Mutation
+    DeleteColumns(cf string, key []byte, columns [][]byte) Mutation
     //DeleteSlice(cf string, key []byte, slice *Slice) Mutation
     Run() os.Error
 }
@@ -213,10 +222,32 @@ func now() int64 {
     return time.Nanoseconds()/1000
 }
 
+func (m *mutation) addMutation(cf string, key []byte) *cassandra.Mutation {
+    tm := cassandra.NewMutation()
+    var cfMuts thrift.TMap
+    im, exists := m.mutations.Get(key)
+    if !exists {
+        cfMuts = thrift.NewTMap(thrift.STRING, thrift.LIST, 1)
+        m.mutations.Set(key, cfMuts)
+    } else {
+        cfMuts = im.(thrift.TMap)
+    }
+    var mutList thrift.TList
+    im, exists = cfMuts.Get(cf)
+    if !exists {
+        mutList = thrift.NewTList(thrift.STRUCT, 1)
+        cfMuts.Set(cf, mutList)
+    } else {
+        mutList = im.(thrift.TList)
+    }
+    mutList.Push(tm)
+    return tm
+}
+
 func (m *mutation) Insert(cf string, row *Row) Mutation {
     t := now()
-    key := row.Key
     for _, col := range row.Columns {
+        tm := m.addMutation(cf, row.Key)
         c := cassandra.NewColumn()
         c.Name = col.Name
         c.Value = col.Value
@@ -228,32 +259,58 @@ func (m *mutation) Insert(cf string, row *Row) Mutation {
         }
         cs := cassandra.NewColumnOrSuperColumn()
         cs.Column = c
-        tm := cassandra.NewMutation()
         tm.ColumnOrSupercolumn = cs
-
-        var cfMuts thrift.TMap
-        im, exists := m.mutations.Get(key)
-        if !exists {
-            cfMuts = thrift.NewTMap(thrift.STRING, thrift.LIST, 1)
-            m.mutations.Set(key, cfMuts)
-        } else {
-            cfMuts = im.(thrift.TMap)
-        }
-
-        var mutList thrift.TList
-        im, exists = cfMuts.Get(cf)
-        if !exists {
-            mutList = thrift.NewTList(thrift.STRUCT, 1)
-            cfMuts.Set(cf, mutList)
-        } else {
-            mutList = im.(thrift.TList)
-        }
-
-        mutList.Push(tm)
     }
-
     return m
 }
+
+func (m *mutation) DeltaCounters(cf string, row *Row) Mutation {
+    for _, col := range row.Columns {
+        tm := m.addMutation(cf, row.Key)
+        c := cassandra.NewCounterColumn()
+        c.Name = col.Name
+        Unmarshal(col.Value, LongType, &c.Value)
+        cs := cassandra.NewColumnOrSuperColumn()
+        cs.CounterColumn = c
+        tm.ColumnOrSupercolumn = cs
+    }
+    return m
+}
+
+func (m *mutation) Delete(cf string, key []byte) Mutation {
+    tm := m.addMutation(cf, key)
+    d := cassandra.NewDeletion()
+    d.Timestamp = now()
+    tm.Deletion = d
+    return m
+}
+
+func (m *mutation) DeleteColumns(cf string, key []byte, columns [][]byte) Mutation {
+    tm := m.addMutation(cf, key)
+    d := cassandra.NewDeletion()
+    d.Timestamp = now()
+    sp := cassandra.NewSlicePredicate()
+    sp.ColumnNames = thrift.NewTList(thrift.BINARY, 1)
+    for _, name := range columns {
+        sp.ColumnNames.Push(name)
+    }
+    d.Predicate = sp
+    tm.Deletion = d
+    return m
+}
+
+/* InvalidRequestException({TStruct:InvalidRequestException Why:Deletion does not yet support SliceRange predicates.})
+func (m *mutation) DeleteSlice(cf string, key []byte, slice *Slice) Mutation {
+    tm := m.addMutation(cf, key)
+    d := cassandra.NewDeletion()
+    d.Timestamp = now()
+    sp := cassandra.NewSlicePredicate()
+    sp.SliceRange = sliceToCassandra(slice)
+    d.Predicate = sp
+    tm.Deletion = d
+    return m
+}
+*/
 
 func (m *mutation) Run() os.Error {
     return m.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
