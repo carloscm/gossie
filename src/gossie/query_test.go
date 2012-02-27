@@ -37,8 +37,8 @@ func buildRow(r *testRow) *Row {
 func buildCounterTestRow(key string) *testRow {
 	return &testRow{
 		key:key, keyType:BytesType, columns:[]testColumn{
+			testColumn{"fortytwo",	AsciiType,		int64(-42),		LongType},
 			testColumn{"one",		AsciiType,		int64(1),		LongType},
-			testColumn{"fortytwo",	AsciiType,		int64(42),		LongType},
 			testColumn{"wtf",		AsciiType,		int64(1e15),	LongType},
 		},
 	}
@@ -102,6 +102,16 @@ func checkRow(t *testing.T, expected *testRow, actual *Row) {
 	}
 }
 
+func buildIntSliceFromRow(row *Row) []int64 {
+	var r []int64
+	for _, c := range row.Columns {
+		var v int64
+		Unmarshal(c.Value, LongType, &v)
+		r = append(r, v)
+	}
+	return r
+}
+
 func TestMutationAndQuery(t *testing.T) {
 	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Timeout:1000})
 	if err != nil {
@@ -121,11 +131,39 @@ func TestMutationAndQuery(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		key := fmt.Sprint("row", i)
-		row, err := cp.Query().Cf("AllTypes").Key([]byte(key)).GetOne()
+		row, err := cp.Query().Cf("AllTypes").Get([]byte(key))
 		if err != nil {
 			t.Error("Error running query: ", err)
 		}
 		checkRow(t, buildAllTypesTestRow(key), row)
+	}
+
+	row, err := cp.Query().Cf("Counters").Get([]byte("row0"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if row == nil {
+		t.Fatal("An expected row was not returned")
+	}
+	before := buildIntSliceFromRow(row)
+
+	err = cp.Mutation().DeltaCounters("Counters", buildCounterRow("row0")).Run()
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	row, err = cp.Query().Cf("Counters").Get([]byte("row0"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if row == nil {
+		t.Fatal("An expected row was not returned")
+	}
+	after := buildIntSliceFromRow(row)
+
+	if  after[0] - before[0] != int64(-42) ||
+		after[1] - before[1] != int64(1) ||
+		after[2] - before[2] != int64(1e15) {
+		t.Error("Counter row was not updated as expected: ", before, " to ", after)
 	}
 
 	m = cp.Mutation()
@@ -138,7 +176,7 @@ func TestMutationAndQuery(t *testing.T) {
 		t.Error("Error running mutation: ", err)
 	}
 
-	row, err := cp.Query().Cf("AllTypes").Key([]byte("row0")).GetOne()
+	row, err = cp.Query().Cf("AllTypes").Get([]byte("row0"))
 	if err != nil {
 		t.Error("Error running query: ", err)
 	}
@@ -146,27 +184,77 @@ func TestMutationAndQuery(t *testing.T) {
 		t.Error("An expected deleted row was returned: ", row)
 	}
 
-	row, err = cp.Query().Cf("AllTypes").Key([]byte("row1")).GetOne()
+	row, err = cp.Query().Cf("Counters").Get([]byte("row0"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if row != nil {
+		t.Error("An expected deleted row was returned: ", row)
+	}
+
+	row, err = cp.Query().Cf("AllTypes").Get([]byte("row1"))
 	if err != nil {
 		t.Error("Error running query: ", err)
 	}
 	checkRow(t, buildAllTypesAfterDeletesTestRow("row1"), row)
 
-	row, err = cp.Query().Cf("AllTypes").Key([]byte("row2")).GetOne()
+	row, err = cp.Query().Cf("AllTypes").Get([]byte("row2"))
 	if err != nil {
 		t.Error("Error running query: ", err)
 	}
 	checkRow(t, buildAllTypesTestRow("row2"), row)
 
+	rows, err := cp.Query().Cf("AllTypes").MultiGet([][]byte{[]byte("row0"),[]byte("row1"),[]byte("row2")})
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if rows == nil {
+		t.Fatal("Expected a result in MultiGet call")
+	}
+	if len(rows) != 2 {
+		t.Error("Expected 2 rows in MultiGet call, got ", len(rows))
+	}
+	for _, row := range rows {
+		k := string(row.Key)
+		if k == "row2" {
+			checkRow(t, buildAllTypesTestRow("row2"), row)
+		} else if k == "row1" {
+			checkRow(t, buildAllTypesAfterDeletesTestRow("row1"), row)
+		} else {
+			t.Error("Unexpected row returned in MultiGet call: ", k)
+		}
+	}
+
+	rows, err = cp.Query().Cf("AllTypes").RangeGet(&Range{Count:1000})
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if rows == nil {
+		t.Fatal("Expected a result in RangeGet call")
+	}
+	if len(rows) != 2 {
+		t.Error("Expected 2 rows in RangeGet call, got ", len(rows))
+	}
+	for _, row := range rows {
+		k := string(row.Key)
+		if k == "row2" {
+			checkRow(t, buildAllTypesTestRow("row2"), row)
+		} else if k == "row1" {
+			checkRow(t, buildAllTypesAfterDeletesTestRow("row1"), row)
+		} else {
+			t.Error("Unexpected row returned in RangeGet call: ", k)
+		}
+	}
+
 	cp.Close()
 }
 
-func BenchmarkGetOne(b *testing.B) {
+func BenchmarkGet(b *testing.B) {
 	b.StopTimer()
 	cp, _ := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size:1,Timeout:1000})
 	b.StartTimer()
     for i := 0; i < b.N; i++ {
-		cp.Query().Cf("AllTypes").Key([]byte("a")).GetOne()
+		cp.Query().Cf("AllTypes").Get([]byte("a"))
     }
 }
 

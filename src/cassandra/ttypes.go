@@ -3682,11 +3682,11 @@ func NewKeyRange() *KeyRange {
 }
 
 func (p *KeyRange) IsSetStartKey() bool {
-  return p.StartKey != nil && len(p.StartKey) > 0
+  return p.StartKey != nil
 }
 
 func (p *KeyRange) IsSetEndKey() bool {
-  return p.EndKey != nil && len(p.EndKey) > 0
+  return p.EndKey != nil
 }
 
 func (p *KeyRange) IsSetStartToken() bool {
