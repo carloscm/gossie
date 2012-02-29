@@ -80,6 +80,26 @@ type Query interface {
     RangeGet(*Range) ([]*Row, os.Error)
 }
 
+// Mutation is the interface for all the write operations over Cassandra.
+// The method calls support chaining so you can build concise queries
+type Mutation interface {
+
+    // Insert adds a new row insertion to the mutation
+    Insert(cf string, row *Row) Mutation
+
+    // DeltaCounters add a new delta operation over counters
+    DeltaCounters(cf string, row *Row) Mutation
+
+    // Delete deletes a single row specified by key
+    Delete(cf string, key []byte) Mutation
+
+    // Delete deletes the passed columns from the row specified by key
+    DeleteColumns(cf string, key []byte, columns [][]byte) Mutation
+    //DeleteSlice(cf string, key []byte, slice *Slice) Mutation
+    Run() os.Error
+}
+
+
 type query struct {
     pool *connectionPool
     consistencyLevel int
@@ -349,15 +369,6 @@ func rowsFromTListKeySlice(tl thrift.TList) []*Row {
         }
     }
     return r
-}
-
-type Mutation interface {
-    Insert(cf string, row *Row) Mutation
-    DeltaCounters(cf string, row *Row) Mutation
-    Delete(cf string, key []byte) Mutation
-    DeleteColumns(cf string, key []byte, columns [][]byte) Mutation
-    //DeleteSlice(cf string, key []byte, slice *Slice) Mutation
-    Run() os.Error
 }
 
 type mutation struct {
