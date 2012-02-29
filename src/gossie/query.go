@@ -7,6 +7,7 @@ import (
     "time"
 )
 
+// Columns encapsulate the individual columns from/to Cassandra reads and writes
 type Column struct {
     Name []byte
     Value []byte
@@ -14,11 +15,13 @@ type Column struct {
     Timestamp int64
 }
 
+// Row is a Cassandra row, including its row key
 type Row struct {
     Key []byte
     Columns []*Column
 }
 
+// Slice allows to specify a range of columns to return
 type Slice struct {
     Start []byte
     End []byte
@@ -26,23 +29,54 @@ type Slice struct {
     Reversed bool
 }
 
+// Slice represents a range of rows to return, in order to be able to iterate over their keys.
+// The low level token range is not exposed. Use an empty slice to indicate if you want the first
+// or the last possible key in a range. This will allow you to iterate over an entire CF even when
+// using the random partitioner
 type Range struct {
     Start []byte
     End []byte
     Count int
 }
 
-// Read from Cassandra one or more rows.
+// Query is the interface for all read operations over Cassandra.
+// The method calls support chaining so you can build concise queries
 type Query interface {
+
+    // ConsistencyLevel sets the consistency level for this particular call.
+    // It is optional, if left uncalled it will default to your connection pool options value.
     ConsistencyLevel(int) Query
+
+    // Cf sets the column family name for the query.
+    // This method must be always called.
     Cf(string) Query
+
+    // Slice optionally sets a slice to set a range of column names and potentially iterate over the
+    // columns of the returned row(s)
     Slice(*Slice) Query
+
+    // Columns optionally filters the returned columns to only the passed set of column names
     Columns([][]byte) Query
+
+    // Index allows to set comparison operations to filter entire rows
     // Index
-    Get([]byte) (*Row, os.Error)
-    MultiGet([][]byte) ([]*Row, os.Error)
-    Count([]byte) (int, os.Error)
-    //MultiCount([]byte) ([]Row, os.Error)
+
+    // Get looks up a row with the given key and returns it, or nil in case it is not found
+    Get(key []byte) (*Row, os.Error)
+
+    // MultiGet performs a parallel Get operation for all the passed keys, and returns a slice of Row
+    // pointers to the gathered rows, which may be empty if none were found. It returns nil only on
+    // error conditions
+    MultiGet(keys [][]byte) ([]*Row, os.Error)
+
+    // Count looks up a row with the given key and returns the number of columns it has
+    Count(key []byte) (int, os.Error)
+
+    //MultiCount(keys [][]byte) ([]*Row, os.Error)
+
+    // MultiGet performs a sequential Get operation for a range of rows. See the docs for Range for an
+    // explanation. It returns a slice of Row pointers to the gathered rows, which may be empty if none
+    // were found. It returns nil only on error conditions
     RangeGet(*Range) ([]*Row, os.Error)
 }
 
@@ -194,7 +228,7 @@ func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
     }
 
     if len(keys) <= 0 {
-        return nil, nil
+        return make([]*Row, 0), nil
     }
 
     cp := q.buildColumnParent()
@@ -228,7 +262,7 @@ func (q *query) RangeGet(rang *Range) ([]*Row, os.Error) {
     }
 
     if rang == nil || rang.Count <= 0 {
-        return nil, nil
+        return make([]*Row, 0), nil
     }
 
     kr := q.buildKeyRange(rang)
@@ -281,9 +315,9 @@ func rowFromTListColumns(key []byte, tl thrift.TList) *Row {
 
 func rowsFromTMap(tm thrift.TMap) []*Row {
     if tm == nil || tm.Len() <= 0 {
-        return nil
+        return make([]*Row, 0)
     }
-    var r []*Row
+    r := make([]*Row, 0)
     for rowI := range tm.Iter() {
         // workaround some issues with the way the key->row array gets built by thrift4go
         rawKey := rowI.Key()
@@ -303,9 +337,9 @@ func rowsFromTMap(tm thrift.TMap) []*Row {
 
 func rowsFromTListKeySlice(tl thrift.TList) []*Row {
     if tl == nil || tl.Len() <= 0 {
-        return nil
+        return make([]*Row, 0)
     }
-    var r []*Row
+    r := make([]*Row, 0)
     for keySliceI := range tl.Iter() {
         keySlice := keySliceI.(*cassandra.KeySlice)
         key := keySlice.Key

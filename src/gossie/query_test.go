@@ -176,6 +176,14 @@ func TestMutationAndQuery(t *testing.T) {
 		t.Error("Error running mutation: ", err)
 	}
 
+	row, err = cp.Query().Cf("AllTypes").Get([]byte("rowNo"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if row != nil {
+		t.Error("An expected unexisting row was returned: ", row)
+	}
+
 	row, err = cp.Query().Cf("AllTypes").Get([]byte("row0"))
 	if err != nil {
 		t.Error("Error running query: ", err)
@@ -228,8 +236,18 @@ func TestMutationAndQuery(t *testing.T) {
 		t.Error("A row had an unexpected column count ", count)
 	}
 
+	rows, err := cp.Query().Cf("AllTypes").MultiGet([][]byte{[]byte("rowNo1"),[]byte("rowNo2"),[]byte("rowNo3")})
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if rows == nil {
+		t.Error("Expected a result in MultiGet call, even with 0 expected results: ", rows)
+	}
+	if len(rows) != 0 {
+		t.Error("Expected 0 rows in MultiGet call, got ", len(rows))
+	}
 
-	rows, err := cp.Query().Cf("AllTypes").MultiGet([][]byte{[]byte("row0"),[]byte("row1"),[]byte("row2")})
+	rows, err = cp.Query().Cf("AllTypes").MultiGet([][]byte{[]byte("row0"),[]byte("row1"),[]byte("row2")})
 	if err != nil {
 		t.Error("Error running query: ", err)
 	}
