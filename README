@@ -1,11 +1,7 @@
+This is for r60.3 for now, I am waiting for the official Go 1.0 release to port it
 
+Requeriments: thrift4go (the official Apache Thrift libraries are outdated and buggy, they will be updated with Go 1.0)
 
+https://github.com/pomack/thrift4go
 
-reflector
-
-key
-
-
-save
-
-interface{} goes 
+Install from the tip of master, make inside thrift4go/lib/go
