@@ -41,7 +41,7 @@ type Query interface {
     // Index
     Get([]byte) (*Row, os.Error)
     MultiGet([][]byte) ([]*Row, os.Error)
-    //Count([]byte) ([]Row, os.Error)
+    Count([]byte) (int, os.Error)
     //MultiCount([]byte) ([]Row, os.Error)
     RangeGet(*Range) ([]*Row, os.Error)
 }
@@ -117,14 +117,33 @@ func (q *query) buildPredicate() *cassandra.SlicePredicate {
     return sp
 }
 
+func (q *query) buildColumnParent() *cassandra.ColumnParent {
+    cp := cassandra.NewColumnParent()
+    cp.ColumnFamily = q.cf
+    return cp
+}
+
+func (q *query) buildKeyRange(r *Range) *cassandra.KeyRange {
+    kr := cassandra.NewKeyRange()
+    kr.StartKey = r.Start
+    kr.EndKey = r.End
+    kr.Count = int32(r.Count)
+    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
+    if kr.StartKey == nil {
+        kr.StartKey = make([]byte, 0)
+    }
+    if kr.EndKey == nil {
+        kr.EndKey = make([]byte, 0)
+    }
+    return kr
+}
+
 func (q *query) Get(key []byte) (*Row, os.Error) {
     if q.cf == "" {
         return nil, os.NewError("No column family specified")
     }
 
-    cp := cassandra.NewColumnParent()
-    cp.ColumnFamily = q.cf
-
+    cp := q.buildColumnParent()
     sp := q.buildPredicate()
 
     var ret thrift.TList
@@ -144,6 +163,31 @@ func (q *query) Get(key []byte) (*Row, os.Error) {
     return rowFromTListColumns(key, ret), nil
 }
 
+func (q *query) Count(key []byte) (int, os.Error) {
+    if q.cf == "" {
+        return 0, os.NewError("No column family specified")
+    }
+
+    cp := q.buildColumnParent()
+    sp := q.buildPredicate()
+
+    var ret int32
+    err := q.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
+        var ire *cassandra.InvalidRequestException
+        var ue *cassandra.UnavailableException
+        var te *cassandra.TimedOutException
+        var err os.Error
+        ret, ire, ue, te, err = c.client.GetCount(key, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
+        return ire, ue, te, err
+    })
+
+    if err != nil {
+        return 0, err
+    }
+
+    return int(ret), nil
+}
+
 func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
     if q.cf == "" {
         return nil, os.NewError("No column family specified")
@@ -153,9 +197,7 @@ func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
         return nil, nil
     }
 
-    cp := cassandra.NewColumnParent()
-    cp.ColumnFamily = q.cf
-
+    cp := q.buildColumnParent()
     sp := q.buildPredicate()
 
     tkeys := thrift.NewTList(thrift.BINARY, 1)
@@ -189,21 +231,8 @@ func (q *query) RangeGet(rang *Range) ([]*Row, os.Error) {
         return nil, nil
     }
 
-    kr := cassandra.NewKeyRange()
-    kr.StartKey = rang.Start
-    kr.EndKey = rang.End
-    kr.Count = int32(rang.Count)
-    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
-    if kr.StartKey == nil {
-        kr.StartKey = make([]byte, 0)
-    }
-    if kr.EndKey == nil {
-        kr.EndKey = make([]byte, 0)
-    }
-
-    cp := cassandra.NewColumnParent()
-    cp.ColumnFamily = q.cf
-
+    kr := q.buildKeyRange(rang)
+    cp := q.buildColumnParent()
     sp := q.buildPredicate()
 
     var ret thrift.TList
@@ -224,10 +253,7 @@ func (q *query) RangeGet(rang *Range) ([]*Row, os.Error) {
 }
 
 func rowFromTListColumns(key []byte, tl thrift.TList) *Row {
-    if tl == nil {
-        return nil
-    }
-    if tl.Len() <= 0 {
+    if tl == nil || tl.Len() <= 0 {
         return nil
     }
     r := &Row{Key:key}
@@ -254,41 +280,41 @@ func rowFromTListColumns(key []byte, tl thrift.TList) *Row {
 }
 
 func rowsFromTMap(tm thrift.TMap) []*Row {
-    if tm != nil && tm.Len() > 0 {
-        var r []*Row
-        for rowI := range tm.Iter() {
-            // workaround some issues with the way the key->row array gets built by thrift4go
-            rawKey := rowI.Key()
-            var key []byte
-            switch k := rawKey.(type) {
-                case []uint8: key = []byte(k)
-                case string: key = []byte(k)
-            }
-            columns := (rowI.Value()).(thrift.TList)
-            row := rowFromTListColumns(key, columns)
-            if row != nil {
-                r = append(r, row)
-            }
-        }
-        return r
+    if tm == nil || tm.Len() <= 0 {
+        return nil
     }
-    return nil
+    var r []*Row
+    for rowI := range tm.Iter() {
+        // workaround some issues with the way the key->row array gets built by thrift4go
+        rawKey := rowI.Key()
+        var key []byte
+        switch k := rawKey.(type) {
+            case []uint8: key = []byte(k)
+            case string: key = []byte(k)
+        }
+        columns := (rowI.Value()).(thrift.TList)
+        row := rowFromTListColumns(key, columns)
+        if row != nil {
+            r = append(r, row)
+        }
+    }
+    return r
 }
 
 func rowsFromTListKeySlice(tl thrift.TList) []*Row {
-    if tl != nil && tl.Len() > 0 {
-        var r []*Row
-        for keySliceI := range tl.Iter() {
-            keySlice := keySliceI.(*cassandra.KeySlice)
-            key := keySlice.Key
-            row := rowFromTListColumns(key, keySlice.Columns)
-            if row != nil {
-                r = append(r, row)
-            }
-        }
-        return r
+    if tl == nil || tl.Len() <= 0 {
+        return nil
     }
-    return nil
+    var r []*Row
+    for keySliceI := range tl.Iter() {
+        keySlice := keySliceI.(*cassandra.KeySlice)
+        key := keySlice.Key
+        row := rowFromTListColumns(key, keySlice.Columns)
+        if row != nil {
+            r = append(r, row)
+        }
+    }
+    return r
 }
 
 type Mutation interface {

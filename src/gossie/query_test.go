@@ -184,6 +184,14 @@ func TestMutationAndQuery(t *testing.T) {
 		t.Error("An expected deleted row was returned: ", row)
 	}
 
+	count, err := cp.Query().Cf("AllTypes").Count([]byte("row0"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if count > 0 {
+		t.Error("An expected deleted row had higher than 0 columns counted: ", count)
+	}
+
 	row, err = cp.Query().Cf("Counters").Get([]byte("row0"))
 	if err != nil {
 		t.Error("Error running query: ", err)
@@ -198,11 +206,28 @@ func TestMutationAndQuery(t *testing.T) {
 	}
 	checkRow(t, buildAllTypesAfterDeletesTestRow("row1"), row)
 
+	count, err = cp.Query().Cf("AllTypes").Count([]byte("row1"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if count != 6 {
+		t.Error("A row had an unexpected column count ", count)
+	}
+
 	row, err = cp.Query().Cf("AllTypes").Get([]byte("row2"))
 	if err != nil {
 		t.Error("Error running query: ", err)
 	}
 	checkRow(t, buildAllTypesTestRow("row2"), row)
+
+	count, err = cp.Query().Cf("AllTypes").Count([]byte("row2"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if count != 8 {
+		t.Error("A row had an unexpected column count ", count)
+	}
+
 
 	rows, err := cp.Query().Cf("AllTypes").MultiGet([][]byte{[]byte("row0"),[]byte("row1"),[]byte("row2")})
 	if err != nil {
