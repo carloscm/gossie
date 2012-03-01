@@ -21,6 +21,12 @@ type Row struct {
     Columns []*Column
 }
 
+// RowColumnCount stores the number of columns matched in a MultiCount query
+type RowColumnCount struct {
+    Key []byte
+    Count int
+}
+
 // Slice allows to specify a range of columns to return
 type Slice struct {
     Start []byte
@@ -64,15 +70,18 @@ type Query interface {
     // Get looks up a row with the given key and returns it, or nil in case it is not found
     Get(key []byte) (*Row, os.Error)
 
-    // MultiGet performs a parallel Get operation for all the passed keys, and returns a slice of Row
-    // pointers to the gathered rows, which may be empty if none were found. It returns nil only on
-    // error conditions
+    // MultiGet performs a parallel Get operation for all the passed keys, and returns a slice of
+    // RowColumnCounts pointers to the gathered rows, which may be empty if none were found. It returns
+    // nil only on error conditions
     MultiGet(keys [][]byte) ([]*Row, os.Error)
 
     // Count looks up a row with the given key and returns the number of columns it has
     Count(key []byte) (int, os.Error)
 
-    //MultiCount(keys [][]byte) ([]*Row, os.Error)
+    // MultiGet performs a parallel Count operation for all the passed keys, and returns a slice of Row
+    // pointers to the gathered rows, which may be empty if none were found. It returns nil only on
+    // error conditions
+    MultiCount(keys [][]byte) ([]*RowColumnCount, os.Error)
 
     // MultiGet performs a sequential Get operation for a range of rows. See the docs for Range for an
     // explanation. It returns a slice of Row pointers to the gathered rows, which may be empty if none
@@ -95,10 +104,12 @@ type Mutation interface {
 
     // Delete deletes the passed columns from the row specified by key
     DeleteColumns(cf string, key []byte, columns [][]byte) Mutation
+
     //DeleteSlice(cf string, key []byte, slice *Slice) Mutation
+
+    // Run this mutation
     Run() os.Error
 }
-
 
 type query struct {
     pool *connectionPool
@@ -242,6 +253,14 @@ func (q *query) Count(key []byte) (int, os.Error) {
     return int(ret), nil
 }
 
+func (q *query) buildMultiKeys(keys [][]byte) thrift.TList {
+    tkeys := thrift.NewTList(thrift.BINARY, 1)
+    for _, k := range keys {
+        tkeys.Push(k)
+    }
+    return tkeys
+}
+
 func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
     if q.cf == "" {
         return nil, os.NewError("No column family specified")
@@ -253,11 +272,7 @@ func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
 
     cp := q.buildColumnParent()
     sp := q.buildPredicate()
-
-    tkeys := thrift.NewTList(thrift.BINARY, 1)
-    for _, k := range keys {
-        tkeys.Push(k)
-    }
+    tk := q.buildMultiKeys(keys)
 
     var ret thrift.TMap
     err := q.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
@@ -265,7 +280,7 @@ func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
         var ue *cassandra.UnavailableException
         var te *cassandra.TimedOutException
         var err os.Error
-        ret, ire, ue, te, err = c.client.MultigetSlice(tkeys, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
+        ret, ire, ue, te, err = c.client.MultigetSlice(tk, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
         return ire, ue, te, err
     })
 
@@ -274,6 +289,36 @@ func (q *query) MultiGet(keys [][]byte) ([]*Row, os.Error) {
     }
 
     return rowsFromTMap(ret), nil
+}
+
+func (q *query) MultiCount(keys [][]byte) ([]*RowColumnCount, os.Error) {
+    if q.cf == "" {
+        return nil, os.NewError("No column family specified")
+    }
+
+    if len(keys) <= 0 {
+        return make([]*RowColumnCount, 0), nil
+    }
+
+    cp := q.buildColumnParent()
+    sp := q.buildPredicate()
+    tk := q.buildMultiKeys(keys)
+
+    var ret thrift.TMap
+    err := q.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
+        var ire *cassandra.InvalidRequestException
+        var ue *cassandra.UnavailableException
+        var te *cassandra.TimedOutException
+        var err os.Error
+        ret, ire, ue, te, err = c.client.MultigetCount(tk, cp, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
+        return ire, ue, te, err
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    return rowsColumnCountFromTMap(ret), nil
 }
 
 func (q *query) RangeGet(rang *Range) ([]*Row, os.Error) {
@@ -333,23 +378,44 @@ func rowFromTListColumns(key []byte, tl thrift.TList) *Row {
     return r
 }
 
+func keyFromTMap(e thrift.TMapElem) []byte {
+    // workaround some issues with the way the key->row array gets built by thrift4go and
+    // the cassandra IDL wrongly insisting keys are strings
+    rawKey := e.Key()
+    var key []byte
+    switch k := rawKey.(type) {
+        case []uint8: key = []byte(k)
+        case string: key = []byte(k)
+    }
+    return key
+}
+
 func rowsFromTMap(tm thrift.TMap) []*Row {
     if tm == nil || tm.Len() <= 0 {
         return make([]*Row, 0)
     }
     r := make([]*Row, 0)
     for rowI := range tm.Iter() {
-        // workaround some issues with the way the key->row array gets built by thrift4go
-        rawKey := rowI.Key()
-        var key []byte
-        switch k := rawKey.(type) {
-            case []uint8: key = []byte(k)
-            case string: key = []byte(k)
-        }
+        key := keyFromTMap(rowI)
         columns := (rowI.Value()).(thrift.TList)
         row := rowFromTListColumns(key, columns)
         if row != nil {
             r = append(r, row)
+        }
+    }
+    return r
+}
+
+func rowsColumnCountFromTMap(tm thrift.TMap) []*RowColumnCount {
+    if tm == nil || tm.Len() <= 0 {
+        return make([]*RowColumnCount, 0)
+    }
+    r := make([]*RowColumnCount, 0)
+    for rowI := range tm.Iter() {
+        key := keyFromTMap(rowI)
+        count := int((rowI.Value()).(int32))
+        if count > 0 {
+            r = append(r, &RowColumnCount{Key:key,Count:count})
         }
     }
     return r

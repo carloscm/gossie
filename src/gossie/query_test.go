@@ -268,6 +268,29 @@ func TestMutationAndQuery(t *testing.T) {
 		}
 	}
 
+	counts, err := cp.Query().Cf("AllTypes").MultiCount([][]byte{[]byte("row0"),[]byte("row1"),[]byte("row2")})
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if counts == nil {
+		t.Fatal("Expected a result in MultiCount call")
+	}
+	if len(counts) != 2 {
+		t.Error("Expected 2 rows in MultiCount call, got ", len(counts))
+	}
+	for _, count := range counts {
+		k := string(count.Key)
+		if k == "row2" && count.Count != 8 {
+			t.Error("Unexpected count in MultiCount call key row2,", count.Count,  " vs 8")
+		}
+		if k == "row1" && count.Count != 6 {
+			t.Error("Unexpected count in MultiCount call key row1,", count.Count,  " vs 6")
+		}
+		if k != "row1" && k != "row2" {
+			t.Error("Unexpected row returned in MultiCount call: ", k)
+		}
+	}
+
 	rows, err = cp.Query().Cf("AllTypes").RangeGet(&Range{Count:1000})
 	if err != nil {
 		t.Error("Error running query: ", err)
