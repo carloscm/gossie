@@ -13,14 +13,14 @@ type Schema struct {
 
 type ColumnFamily struct {
     DefaultComparator TypeClass
-    DefaultValidator TypeClass
-    KeyValidator TypeClass
-    NamedColumns map[string]TypeClass
+    DefaultValidator  TypeClass
+    KeyValidator      TypeClass
+    NamedColumns      map[string]TypeClass
 }
 
 func newSchema(ksDef *cassandra.KsDef) *Schema {
     cfDefs := ksDef.CfDefs
-    schema := &Schema{ColumnFamilies:make(map[string]*ColumnFamily)}
+    schema := &Schema{ColumnFamilies: make(map[string]*ColumnFamily)}
 
     for cfDefT := range cfDefs.Iter() {
 
@@ -60,4 +60,3 @@ func newSchema(ksDef *cassandra.KsDef) *Schema {
 
     return schema
 }
-

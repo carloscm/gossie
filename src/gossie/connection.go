@@ -10,35 +10,35 @@ import (
 )
 
 /*
-    to do:
-    auth
-    timeout while waiting for an available connection slot
-    panic handling inside run()?
-    maybe more pooling options
-    Close()
+   to do:
+   auth
+   timeout while waiting for an available connection slot
+   panic handling inside run()?
+   maybe more pooling options
+   Close()
 */
 
 const (
-    CONSISTENCY_DEFAULT = 0
-    CONSISTENCY_ONE = 1
-    CONSISTENCY_QUORUM = 2
+    CONSISTENCY_DEFAULT      = 0
+    CONSISTENCY_ONE          = 1
+    CONSISTENCY_QUORUM       = 2
     CONSISTENCY_LOCAL_QUORUM = 3
-    CONSISTENCY_EACH_QUORUM = 4
-    CONSISTENCY_ALL = 5
-    CONSISTENCY_ANY = 6
-    CONSISTENCY_TWO = 7
-    CONSISTENCY_THREE = 8
+    CONSISTENCY_EACH_QUORUM  = 4
+    CONSISTENCY_ALL          = 5
+    CONSISTENCY_ANY          = 6
+    CONSISTENCY_TWO          = 7
+    CONSISTENCY_THREE        = 8
 )
 
 const (
-    DEFAULT_SIZE = 10
-    DEFAULT_READ_CONSISTENCY = CONSISTENCY_QUORUM
+    DEFAULT_SIZE              = 10
+    DEFAULT_READ_CONSISTENCY  = CONSISTENCY_QUORUM
     DEFAULT_WRITE_CONSISTENCY = CONSISTENCY_QUORUM
-    DEFAULT_TIMEOUT = 1000
-    DEFAULT_RECYCLE = 60
-    DEFAULT_RECYCLE_JITTER = 10
-    DEFAULT_GRACE = 5
-    DEFAULT_RETRIES = 5
+    DEFAULT_TIMEOUT           = 1000
+    DEFAULT_RECYCLE           = 60
+    DEFAULT_RECYCLE_JITTER    = 10
+    DEFAULT_GRACE             = 5
+    DEFAULT_RETRIES           = 5
 )
 
 var (
@@ -65,42 +65,58 @@ type ConnectionPool interface {
 
 // PoolOptions stores the options for the creation of a ConnectionPool
 type PoolOptions struct {
-    Size int                // keep up to Size connections open and ready
-    ReadConsistency int     // default read consistency
-    WriteConsistency int    // default write consistency
-    Timeout int             // socket timeout in ms
-    Recycle int             // close connections after Recycle seconds
-    RecycleJitter int       // max jitter to add to Recycle so not all connections close at the same time
-    Grace int               // if a node is blacklisted try to contact it again after Grace seconds
-    Retries int             // retry queryes for Retries times before raising an error
+    Size             int // keep up to Size connections open and ready
+    ReadConsistency  int // default read consistency
+    WriteConsistency int // default write consistency
+    Timeout          int // socket timeout in ms
+    Recycle          int // close connections after Recycle seconds
+    RecycleJitter    int // max jitter to add to Recycle so not all connections close at the same time
+    Grace            int // if a node is blacklisted try to contact it again after Grace seconds
+    Retries          int // retry queryes for Retries times before raising an error
 }
 
 func (o *PoolOptions) defaults() {
-    if o.Size == 0 { o.Size = DEFAULT_SIZE }
-    if o.ReadConsistency == 0 { o.ReadConsistency = DEFAULT_READ_CONSISTENCY }
-    if o.WriteConsistency == 0 { o.WriteConsistency = DEFAULT_WRITE_CONSISTENCY }
-    if o.Timeout == 0 { o.Timeout = DEFAULT_TIMEOUT }
-    if o.Recycle == 0 { o.Recycle = DEFAULT_RECYCLE }
-    if o.RecycleJitter == 0 { o.RecycleJitter = DEFAULT_RECYCLE_JITTER }
-    if o.Grace == 0 { o.Grace = DEFAULT_GRACE }
-    if o.Retries == 0 { o.Retries = DEFAULT_RETRIES }
+    if o.Size == 0 {
+        o.Size = DEFAULT_SIZE
+    }
+    if o.ReadConsistency == 0 {
+        o.ReadConsistency = DEFAULT_READ_CONSISTENCY
+    }
+    if o.WriteConsistency == 0 {
+        o.WriteConsistency = DEFAULT_WRITE_CONSISTENCY
+    }
+    if o.Timeout == 0 {
+        o.Timeout = DEFAULT_TIMEOUT
+    }
+    if o.Recycle == 0 {
+        o.Recycle = DEFAULT_RECYCLE
+    }
+    if o.RecycleJitter == 0 {
+        o.RecycleJitter = DEFAULT_RECYCLE_JITTER
+    }
+    if o.Grace == 0 {
+        o.Grace = DEFAULT_GRACE
+    }
+    if o.Retries == 0 {
+        o.Retries = DEFAULT_RETRIES
+    }
 }
 
 type nodeInfo struct {
     lastFailure int
-    node string
+    node        string
 }
 
 type slot struct {
-    conn *connection
+    conn      *connection
     lastUsage int
 }
 
 type connectionPool struct {
-    keyspace string
-    options PoolOptions
-    schema *Schema
-    nodes []*nodeInfo
+    keyspace  string
+    options   PoolOptions
+    schema    *Schema
+    nodes     []*nodeInfo
     available chan *slot
 }
 
@@ -113,15 +129,15 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 
     options.defaults()
 
-    cp := &connectionPool {
-        keyspace: keyspace,
-        options: options,
-        nodes: make([]*nodeInfo, len(nodes)),
+    cp := &connectionPool{
+        keyspace:  keyspace,
+        options:   options,
+        nodes:     make([]*nodeInfo, len(nodes)),
         available: make(chan *slot, options.Size),
     }
 
     for i, n := range nodes {
-        cp.nodes[i] = &nodeInfo{node:n}
+        cp.nodes[i] = &nodeInfo{node: n}
     }
 
     for i := 0; i < options.Size; i++ {
@@ -219,7 +235,7 @@ func (cp *connectionPool) randomNode(now int) (string, os.Error) {
 
     for tries := 0; tries < n; tries++ {
         nodei := cp.nodes[i]
-        if nodei.lastFailure + cp.options.Grace < now {
+        if nodei.lastFailure+cp.options.Grace < now {
             return nodei.node, nil
         }
         i = (i + 1) % n
@@ -234,7 +250,7 @@ func (cp *connectionPool) acquire() (*connection, os.Error) {
     s := <-cp.available
 
     now := int(time.Seconds())
-    if s.lastUsage + cp.options.Recycle + (rand.Int() % cp.options.RecycleJitter) < now  {
+    if s.lastUsage+cp.options.Recycle+(rand.Int()%cp.options.RecycleJitter) < now {
         if s.conn != nil {
             s.conn.close()
         }
@@ -264,7 +280,7 @@ func (cp *connectionPool) acquire() (*connection, os.Error) {
 }
 
 func (cp *connectionPool) release(c *connection) {
-    cp.available <- &slot{conn:c, lastUsage:int(time.Seconds())}
+    cp.available <- &slot{conn: c, lastUsage: int(time.Seconds())}
 }
 
 func (cp *connectionPool) releaseEmpty() {
@@ -285,7 +301,7 @@ func (cp *connectionPool) blacklist(badNode string) {
 }
 
 func (cp *connectionPool) Query() Query {
-    return &query{consistencyLevel:cp.options.ReadConsistency, pool:cp}
+    return &query{consistencyLevel: cp.options.ReadConsistency, pool: cp}
 }
 
 func (cp *connectionPool) Mutation() Mutation {
@@ -304,11 +320,11 @@ func (cp *connectionPool) Close() {
 }
 
 type connection struct {
-    socket *thrift.TNonblockingSocket
+    socket    *thrift.TNonblockingSocket
     transport *thrift.TFramedTransport
-    client *cassandra.CassandraClient
-    node string
-    keyspace string
+    client    *cassandra.CassandraClient
+    node      string
+    keyspace  string
 }
 
 func newConnection(node, keyspace string, timeout int) (*connection, os.Error) {
@@ -318,7 +334,7 @@ func newConnection(node, keyspace string, timeout int) (*connection, os.Error) {
         return nil, err
     }
 
-    c := &connection{node:node}
+    c := &connection{node: node}
 
     c.socket, err = thrift.NewTNonblockingSocketAddr(addr)
     if err != nil {
@@ -338,11 +354,12 @@ func newConnection(node, keyspace string, timeout int) (*connection, os.Error) {
     go func() {
         err = c.transport.Open()
         ch <- true
-    } ()
+    }()
     timedOut := false
     select {
-        case <- time.After(int64(timeout) * 1e6): timedOut = true
-        case <- ch:
+    case <-time.After(int64(timeout) * 1e6):
+        timedOut = true
+    case <-ch:
     }
     if timedOut {
         return nil, ErrorConnectionTimeout

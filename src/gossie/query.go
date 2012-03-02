@@ -9,29 +9,29 @@ import (
 
 // Columns encapsulate the individual columns from/to Cassandra reads and writes
 type Column struct {
-    Name []byte
-    Value []byte
-    Ttl int32
+    Name      []byte
+    Value     []byte
+    Ttl       int32
     Timestamp int64
 }
 
 // Row is a Cassandra row, including its row key
 type Row struct {
-    Key []byte
+    Key     []byte
     Columns []*Column
 }
 
 // RowColumnCount stores the number of columns matched in a MultiCount query
 type RowColumnCount struct {
-    Key []byte
+    Key   []byte
     Count int
 }
 
 // Slice allows to specify a range of columns to return
 type Slice struct {
-    Start []byte
-    End []byte
-    Count int
+    Start    []byte
+    End      []byte
+    Count    int
     Reversed bool
 }
 
@@ -41,7 +41,7 @@ type Slice struct {
 // using the random partitioner
 type Range struct {
     Start []byte
-    End []byte
+    End   []byte
     Count int
 }
 
@@ -112,13 +112,13 @@ type Mutation interface {
 }
 
 type query struct {
-    pool *connectionPool
+    pool             *connectionPool
     consistencyLevel int
-    cf string
-    slice Slice
-    setSlice bool
-    columns [][]byte
-    setColumns bool
+    cf               string
+    slice            Slice
+    setSlice         bool
+    columns          [][]byte
+    setColumns       bool
 }
 
 func (q *query) ConsistencyLevel(l int) Query {
@@ -355,22 +355,22 @@ func rowFromTListColumns(key []byte, tl thrift.TList) *Row {
     if tl == nil || tl.Len() <= 0 {
         return nil
     }
-    r := &Row{Key:key}
+    r := &Row{Key: key}
     for colI := range tl.Iter() {
         var col *cassandra.ColumnOrSuperColumn = colI.(*cassandra.ColumnOrSuperColumn)
         if col.Column != nil {
             c := &Column{
-                Name:col.Column.Name,
-                Value:col.Column.Value,
-                Timestamp:col.Column.Timestamp,
-                Ttl:col.Column.Ttl,
+                Name:      col.Column.Name,
+                Value:     col.Column.Value,
+                Timestamp: col.Column.Timestamp,
+                Ttl:       col.Column.Ttl,
             }
             r.Columns = append(r.Columns, c)
         } else if col.CounterColumn != nil {
             v, _ := Marshal(col.CounterColumn.Value, LongType)
             c := &Column{
-                Name:col.CounterColumn.Name,
-                Value:v,
+                Name:  col.CounterColumn.Name,
+                Value: v,
             }
             r.Columns = append(r.Columns, c)
         }
@@ -384,8 +384,10 @@ func keyFromTMap(e thrift.TMapElem) []byte {
     rawKey := e.Key()
     var key []byte
     switch k := rawKey.(type) {
-        case []uint8: key = []byte(k)
-        case string: key = []byte(k)
+    case []uint8:
+        key = []byte(k)
+    case string:
+        key = []byte(k)
     }
     return key
 }
@@ -415,7 +417,7 @@ func rowsColumnCountFromTMap(tm thrift.TMap) []*RowColumnCount {
         key := keyFromTMap(rowI)
         count := int((rowI.Value()).(int32))
         if count > 0 {
-            r = append(r, &RowColumnCount{Key:key,Count:count})
+            r = append(r, &RowColumnCount{Key: key, Count: count})
         }
     }
     return r
@@ -438,21 +440,21 @@ func rowsFromTListKeySlice(tl thrift.TList) []*Row {
 }
 
 type mutation struct {
-    pool *connectionPool
+    pool             *connectionPool
     consistencyLevel int
-    mutations thrift.TMap
+    mutations        thrift.TMap
 }
 
 func makeMutation(cp *connectionPool, cl int) *mutation {
-    return &mutation {
-        pool: cp,
+    return &mutation{
+        pool:             cp,
         consistencyLevel: cl,
-        mutations: thrift.NewTMap(thrift.BINARY, thrift.MAP, 1),
+        mutations:        thrift.NewTMap(thrift.BINARY, thrift.MAP, 1),
     }
 }
 
 func now() int64 {
-    return time.Nanoseconds()/1000
+    return time.Nanoseconds() / 1000
 }
 
 func (m *mutation) addMutation(cf string, key []byte) *cassandra.Mutation {
