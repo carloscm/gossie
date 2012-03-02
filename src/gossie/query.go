@@ -7,6 +7,12 @@ import (
     "time"
 )
 
+/*
+   to do:
+   support Where for RangeGet in Cassandra 1.1
+   figure out what's the deal with get_paged_slice in 1.1 and try to implement it in a sane way
+*/
+
 // Columns encapsulate the individual columns from/to Cassandra reads and writes
 type Column struct {
     Name      []byte
@@ -28,6 +34,7 @@ type RowColumnCount struct {
 }
 
 // Slice allows to specify a range of columns to return
+// Always specify a Count value since there is an interface-mandated default of 100.
 type Slice struct {
     Start    []byte
     End      []byte
@@ -35,15 +42,37 @@ type Slice struct {
     Reversed bool
 }
 
-// Slice represents a range of rows to return, in order to be able to iterate over their keys.
+// Range represents a range of rows to return, in order to be able to iterate over their keys.
 // The low level token range is not exposed. Use an empty slice to indicate if you want the first
-// or the last possible key in a range. This will allow you to iterate over an entire CF even when
-// using the random partitioner
+// or the last possible key in a range then pass the last read row key as the new Start key in a
+// new RangeGet query to page results. This will allow you to iterate over an entire CF even when
+// using the random partitioner. Always specify a Count value since there is an interface-mandated
+// default of 100.
 type Range struct {
     Start []byte
     End   []byte
     Count int
 }
+
+// IndexedRange represents a range of rows to return for the IndexedGet method.
+// The low level token range is not exposed. Use an empty slice to indicate if you want the first key
+// in a range, then pass the last read row key as the new Start key in a new IndexedGet query to page
+// results. Always specify a Count value since there is an interface-mandated default of 100.
+type IndexedRange struct {
+    Start []byte
+    Count int
+}
+
+// Operator for Where
+type Operator int
+
+const (
+    EQ  Operator = 0
+    GTE Operator = 1
+    GT  Operator = 2
+    LTE Operator = 3
+    LT  Operator = 4
+)
 
 // Query is the interface for all read operations over Cassandra.
 // The method calls support chaining so you can build concise queries
@@ -64,8 +93,11 @@ type Query interface {
     // Columns optionally filters the returned columns to only the passed set of column names
     Columns([][]byte) Query
 
-    // Index allows to set comparison operations to filter entire rows
-    // Index
+    // Each call to this method adds a new comparison to be checked against the returned rows of
+    // IndexedGet
+    // All the comparisons are checked for every row. In the current Cassandra implementation at
+    // least one of the Where calls must use a secondary indexed column with an EQ operator.
+    Where(column []byte, op Operator, value []byte) Query
 
     // Get looks up a row with the given key and returns it, or nil in case it is not found
     Get(key []byte) (*Row, os.Error)
@@ -84,9 +116,15 @@ type Query interface {
     MultiCount(keys [][]byte) ([]*RowColumnCount, os.Error)
 
     // MultiGet performs a sequential Get operation for a range of rows. See the docs for Range for an
-    // explanation. It returns a slice of Row pointers to the gathered rows, which may be empty if none
-    // were found. It returns nil only on error conditions
+    // explanation on how to page results. It returns a slice of Row pointers to the gathered rows, which
+    // may be empty if none were found. It returns nil only on error conditions
     RangeGet(*Range) ([]*Row, os.Error)
+
+    // IndexedGet performs a sequential Get operation for a range of rows and returns only those that match
+    // the Where clauses. See the docs for Range for an explanation on how to page results. It returns a
+    // slice of Row pointers to the gathered rows, which may be empty if none were found. It returns nil only
+    // on error conditions
+    IndexedGet(*IndexedRange) ([]*Row, os.Error)
 }
 
 // Mutation is the interface for all the write operations over Cassandra.
@@ -119,6 +157,8 @@ type query struct {
     setSlice         bool
     columns          [][]byte
     setColumns       bool
+    setWhere         bool
+    expressions      thrift.TList
 }
 
 func (q *query) ConsistencyLevel(l int) Query {
@@ -140,6 +180,19 @@ func (q *query) Slice(s *Slice) Query {
 func (q *query) Columns(c [][]byte) Query {
     copy(q.columns, c)
     q.setColumns = true
+    return q
+}
+
+func (q *query) Where(column []byte, op Operator, value []byte) Query {
+    if q.expressions == nil {
+        q.expressions = thrift.NewTList(thrift.STRUCT, 1)
+    }
+    exp := cassandra.NewIndexExpression()
+    exp.ColumnName = column
+    exp.Op = cassandra.IndexOperator(op)
+    exp.Value = value
+    q.expressions.Push(exp)
+    q.setWhere = true
     return q
 }
 
@@ -201,6 +254,18 @@ func (q *query) buildKeyRange(r *Range) *cassandra.KeyRange {
         kr.EndKey = make([]byte, 0)
     }
     return kr
+}
+
+func (q *query) buildIndexClause(r *IndexedRange) *cassandra.IndexClause {
+    ic := cassandra.NewIndexClause()
+    ic.Expressions = q.expressions
+    ic.StartKey = r.Start
+    ic.Count = int32(r.Count)
+    // workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
+    if ic.StartKey == nil {
+        ic.StartKey = make([]byte, 0)
+    }
+    return ic
 }
 
 func (q *query) Get(key []byte) (*Row, os.Error) {
@@ -341,6 +406,40 @@ func (q *query) RangeGet(rang *Range) ([]*Row, os.Error) {
         var te *cassandra.TimedOutException
         var err os.Error
         ret, ire, ue, te, err = c.client.GetRangeSlices(cp, sp, kr, cassandra.ConsistencyLevel(q.consistencyLevel))
+        return ire, ue, te, err
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    return rowsFromTListKeySlice(ret), nil
+}
+
+func (q *query) IndexedGet(rang *IndexedRange) ([]*Row, os.Error) {
+    if q.cf == "" {
+        return nil, os.NewError("No column family specified")
+    }
+
+    if !q.setWhere {
+        return nil, os.NewError("At least one Where call must be made")
+    }
+
+    if rang == nil || rang.Count <= 0 {
+        return make([]*Row, 0), nil
+    }
+
+    ic := q.buildIndexClause(rang)
+    cp := q.buildColumnParent()
+    sp := q.buildPredicate()
+
+    var ret thrift.TList
+    err := q.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, os.Error) {
+        var ire *cassandra.InvalidRequestException
+        var ue *cassandra.UnavailableException
+        var te *cassandra.TimedOutException
+        var err os.Error
+        ret, ire, ue, te, err = c.client.GetIndexedSlices(cp, ic, sp, cassandra.ConsistencyLevel(q.consistencyLevel))
         return ire, ue, te, err
     })
 

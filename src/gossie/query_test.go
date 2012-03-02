@@ -312,6 +312,25 @@ func TestMutationAndQuery(t *testing.T) {
         }
     }
 
+    rows, err = cp.Query().Cf("AllTypes").Where([]byte("colAsciiType"), EQ, []byte("hi!")).IndexedGet(&IndexedRange{Count: 1000})
+    if err != nil {
+        t.Error("Error running query: ", err)
+    }
+    if rows == nil {
+        t.Fatal("Expected a result in IndexedGet call")
+    }
+    if len(rows) != 1 {
+        t.Error("Expected 1 rows in IndexedGet call, got ", len(rows))
+    }
+    for _, row := range rows {
+        k := string(row.Key)
+        if k == "row2" {
+            checkRow(t, buildAllTypesTestRow("row2"), row)
+        } else {
+            t.Error("Unexpected row returned in IndexedGet call: ", k)
+        }
+    }
+
     cp.Close()
 }
 
