@@ -48,6 +48,7 @@ const (
 
 var (
     ErrorUnsupportedMarshaling                  = os.NewError("Cannot marshal value")
+    ErrorUnsupportedNilMarshaling               = os.NewError("Cannot marshal nil")
     ErrorUnsupportedUnmarshaling                = os.NewError("Cannot unmarshal value")
     ErrorUnsupportedNativeTypeUnmarshaling      = os.NewError("Cannot unmarshal to native type")
     ErrorUnsupportedCassandraTypeUnmarshaling   = os.NewError("Cannot unmarshal from Cassandra type")
@@ -99,30 +100,68 @@ func NewUUID(value string) (UUID, os.Error) {
 }
 
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, os.Error) {
-    // dereference in case we got a pointer
+    // plain nil case
+    if value == nil {
+        return nil, ErrorUnsupportedNilMarshaling
+    }
+
+    // dereference in case we got a pointer, check for nil too
     var dvalue interface{}
     switch v := value.(type) {
     case *[]byte:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *bool:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *int8:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *int16:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *int:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *int32:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *int64:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *string:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *UUID:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *float32:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     case *float64:
+        if v == nil {
+            return nil, ErrorUnsupportedNilMarshaling
+        }
         dvalue = *v
     default:
         dvalue = v

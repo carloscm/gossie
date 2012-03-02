@@ -8,7 +8,7 @@ import (
 func checkMarshal(t *testing.T, value interface{}, good []byte, typeDesc TypeDesc) {
     b, err := Marshal(value, typeDesc)
     if err != nil {
-        t.Error("Error marshalling value: ", err)
+        t.Error("Error marshaling value: ", err)
     }
     if !reflect.DeepEqual(b, good) {
         t.Error("Marshalled value does not match expected ", good, " actual ", b)
@@ -18,7 +18,7 @@ func checkMarshal(t *testing.T, value interface{}, good []byte, typeDesc TypeDes
 func checkUnmarshal(t *testing.T, b []byte, typeDesc TypeDesc, good interface{}, value interface{}) {
     err := Unmarshal(b, typeDesc, value)
     if err != nil {
-        t.Error("Error unmarshalling value: ", err)
+        t.Error("Error unmarshaling value: ", err)
     }
     if !reflect.DeepEqual(value, good) {
         t.Error("Unmarshalled value does not match expected ", good, " actual ", value)
@@ -34,7 +34,7 @@ func checkFullMarshal(t *testing.T, marshalled []byte, typeDesc TypeDesc, goodVa
 func errorMarshal(t *testing.T, value interface{}, typeDesc TypeDesc) {
     _, err := Marshal(value, typeDesc)
     if err == nil {
-        t.Error("Error expected for marshalling, got none")
+        t.Error("Error expected for marshaling, got none")
     }
 }
 
@@ -53,6 +53,19 @@ func TestMarshalWrongType(t *testing.T) {
     errorMarshal(t, v, FloatType)
     errorMarshal(t, v, DoubleType)
     errorMarshal(t, v, DateType)
+}
+
+func TestMarshalNil(t *testing.T) {
+    _, err := Marshal(nil, BytesType)
+    if err != ErrorUnsupportedNilMarshaling {
+        t.Error("Error expected for marshaling nil value, got none")
+    }
+
+    var p *int = nil
+    _, err = Marshal(p, BytesType)
+    if err != ErrorUnsupportedNilMarshaling {
+        t.Error("Error expected for marshaling nil pointer, got none")
+    }
 }
 
 func TestMarshalBytes(t *testing.T) {
