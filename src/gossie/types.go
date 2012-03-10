@@ -31,6 +31,7 @@ import (
 
 const (
     _   = iota
+    UnknownType
     BytesType
     AsciiType
     UTF8Type
