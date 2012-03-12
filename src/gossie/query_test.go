@@ -334,6 +334,7 @@ func TestMutationAndQuery(t *testing.T) {
     cp.Close()
 }
 
+/*
 func BenchmarkGet(b *testing.B) {
     b.StopTimer()
     cp, _ := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1, Timeout: 1000})
@@ -357,3 +358,4 @@ func BenchmarkInsert(b *testing.B) {
         m.Run()
     }
 }
+*/

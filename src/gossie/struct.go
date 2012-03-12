@@ -137,7 +137,7 @@ type structMapping struct {
     key     *fieldMapping
     columns []*fieldMapping
     value   *fieldMapping
-    others  []*fieldMapping
+    others  map[string]*fieldMapping
 }
 
 var mapCache map[reflect.Type]*structMapping
@@ -175,7 +175,7 @@ func defaultCassandraType(t reflect.Type) (TypeDesc, int) {
         }
         return UnknownType, baseTypeField
     case reflect.Slice:
-        if et := t.Elem(); et.Kind() == reflect.Int8 {
+        if et := t.Elem(); et.Kind() == reflect.Uint8 {
             return BytesType, baseTypeField
         } else {
             if subTD, subKind := defaultCassandraType(et); subTD != UnknownType && subKind == baseTypeField {
@@ -263,8 +263,9 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
             fields[name] = nil, false
             sm.columns = append(sm.columns, fm)
         }
-        for _, fm := range fields {
-            sm.others = append(sm.others, fm)
+        sm.others = make(map[string]*fieldMapping)
+        for name, fm := range fields {
+            sm.others[name] = fm
         }
     } else {
         return nil, os.NewError(fmt.Sprint("No col field in struct ", t.Name()))
@@ -285,26 +286,30 @@ func getMapping(v reflect.Value) (*structMapping, os.Error) {
     return sm, err
 }
 
-func Map(source interface{}) *Row {
-
+func Map(source interface{}) (*Row, os.Error) {
     // always work with a pointer to struct
     vp := reflect.ValueOf(source)
     if vp.Kind() != reflect.Ptr {
-        return nil // error???
+        return nil, os.NewError("Passed value is not a pointer to a struct")
     }
     if vp.IsNil() {
-        return nil // error???
+        return nil, os.NewError("Passed value is not a pointer to a struct")
     }
     v := reflect.Indirect(vp)
     if v.Kind() != reflect.Struct {
-        return nil // error???
+        return nil, os.NewError("Passed value is not a pointer to a struct")
     }
 
-    sm, _ := getMapping(v)
+    sm, err := getMapping(v)
+    if err != nil {
+        return nil, err
+    }
     row := &Row{}
+
     // TODO: marshal key
+
     mapField(v, row, sm, 0, make([]byte, 0), make([]byte, 0), 0)
-    return row
+    return row, nil
 }
 
 func mapField(source reflect.Value, row *Row, sm *structMapping, component int, composite []byte, value []byte, valueIndex int) {
@@ -324,30 +329,48 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             // set value of the current composite field to the field value
             v := source.Field(fm.position)
             b, _ := Marshal(v.Interface(), fm.cassandraType)
+
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
             // TODO: actual composite serialization goes here
             composite = b
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
             mapField(source, row, sm, component+1, composite, value, valueIndex)
 
         // slice of base type
-        /*
-           case baseTypeSliceField:
-        */
-
-        // *name
-        case starNameField:
-            // iterate over non-key/col/val-referenced struct fields
-            for i, fm := range sm.others {
+        case baseTypeSliceField:
+            // iterate slice and map more columns
+            v := source.Field(fm.position)
+            n := v.Len()
+            for i := 0; i < n; i++ {
                 // set value of the current composite field to the field value
-                b, _ := Marshal(fm.name, UTF8Type)
+                vi := v.Index(i)
+                b, _ := Marshal(vi.Interface(), fm.cassandraType)
+
                 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 // TODO: actual composite serialization goes here
                 subComposite := b
                 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                mapField(source, row, sm, component+1, subComposite, value, i)
+            }
+
+        // *name
+        case starNameField:
+            // iterate over non-key/col/val-referenced struct fields and map more columns
+            for _, fm := range sm.others {
+                // set value of the current composite field to the field value
+                b, _ := Marshal(fm.name, UTF8Type)
+
+                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                // TODO: actual composite serialization goes here
+                subComposite := b
+                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+                // marshal field value and pass it to next field mapper in case it is *value
                 v := source.Field(fm.position)
                 b, _ = Marshal(v.Interface(), fm.cassandraType)
-                mapField(source, row, sm, component+1, subComposite, b, i)
+                mapField(source, row, sm, component+1, subComposite, b, valueIndex)
             }
         }
 
@@ -370,12 +393,15 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             b, _ := Marshal(v.Interface(), fm.cassandraType)
             row.Columns = append(row.Columns, &Column{Name: composite, Value: b})
 
-            // support non-slice field case?
+        case baseTypeField:
+            // set value to the passed field value
+            v := source.Field(fm.position)
+            b, _ := Marshal(v.Interface(), fm.cassandraType)
+            row.Columns = append(row.Columns, &Column{Name: composite, Value: b})
 
             // support literal case?
 
             // support zero, non-set case?
-
         }
     }
 }
