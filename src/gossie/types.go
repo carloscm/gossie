@@ -12,10 +12,6 @@ import (
 /*
    to do:
 
-   CompositeType marshalling
-   struct marshalling
-   map marshalling?
-
    IntegerType
    DecimalType
 

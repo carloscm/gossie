@@ -14,8 +14,10 @@ this is very much WIP but past 50% completion
 
 todo:
 
+    support composite key
     error checking and passing in mapField
     composite marshaling
+    name: and type: tag field modifiers to override default naming and marshaling
 
 ---
 
@@ -139,9 +141,6 @@ type structMapping struct {
     value   *fieldMapping
     others  map[string]*fieldMapping
 }
-
-var mapCache map[reflect.Type]*structMapping
-var mapCacheMutex *sync.Mutex = new(sync.Mutex)
 
 func isMarshalable(k reflect.Kind) bool {
     return k == reflect.Bool ||
@@ -273,6 +272,9 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
     return sm, nil
 }
 
+var mapCache map[reflect.Type]*structMapping
+var mapCacheMutex *sync.Mutex = new(sync.Mutex)
+
 func getMapping(v reflect.Value) (*structMapping, os.Error) {
     var sm *structMapping
     var err os.Error
@@ -308,12 +310,10 @@ func Map(source interface{}) (*Row, os.Error) {
 
     // TODO: marshal key
 
-    mapField(v, row, sm, 0, make([]byte, 0), make([]byte, 0), 0)
-    return row, nil
+    return row, mapField(v, row, sm, 0, make([]byte, 0), make([]byte, 0), 0)
 }
 
-func mapField(source reflect.Value, row *Row, sm *structMapping, component int, composite []byte, value []byte, valueIndex int) {
-
+func mapField(source reflect.Value, row *Row, sm *structMapping, component int, composite []byte, value []byte, valueIndex int) os.Error {
     // TODO error checking! marshal calls etc
 
     // check if there are components left
@@ -328,14 +328,17 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
         case baseTypeField:
             // set value of the current composite field to the field value
             v := source.Field(fm.position)
-            b, _ := Marshal(v.Interface(), fm.cassandraType)
+            b, err := Marshal(v.Interface(), fm.cassandraType)
+            if err != nil {
+                return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
+            }
 
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
             // TODO: actual composite serialization goes here
             composite = b
             // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-            mapField(source, row, sm, component+1, composite, value, valueIndex)
+            return mapField(source, row, sm, component+1, composite, value, valueIndex)
 
         // slice of base type
         case baseTypeSliceField:
@@ -345,14 +348,20 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             for i := 0; i < n; i++ {
                 // set value of the current composite field to the field value
                 vi := v.Index(i)
-                b, _ := Marshal(vi.Interface(), fm.cassandraType)
+                b, err := Marshal(vi.Interface(), fm.cassandraType)
+                if err != nil {
+                    return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
+                }
 
                 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 // TODO: actual composite serialization goes here
                 subComposite := b
                 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-                mapField(source, row, sm, component+1, subComposite, value, i)
+                err = mapField(source, row, sm, component+1, subComposite, value, i)
+                if err != nil {
+                    return err
+                }
             }
 
         // *name
@@ -360,7 +369,10 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             // iterate over non-key/col/val-referenced struct fields and map more columns
             for _, fm := range sm.others {
                 // set value of the current composite field to the field value
-                b, _ := Marshal(fm.name, UTF8Type)
+                b, err := Marshal(fm.name, UTF8Type)
+                if err != nil {
+                    return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
+                }
 
                 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 // TODO: actual composite serialization goes here
@@ -369,8 +381,15 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 
                 // marshal field value and pass it to next field mapper in case it is *value
                 v := source.Field(fm.position)
-                b, _ = Marshal(v.Interface(), fm.cassandraType)
-                mapField(source, row, sm, component+1, subComposite, b, valueIndex)
+                b, err = Marshal(v.Interface(), fm.cassandraType)
+                if err != nil {
+                    return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
+                }
+
+                err = mapField(source, row, sm, component+1, subComposite, b, valueIndex)
+                if err != nil {
+                    return err
+                }
             }
         }
 
@@ -390,13 +409,19 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             // set value to the passed value index in this slice
             vs := source.Field(fm.position)
             v := vs.Index(valueIndex)
-            b, _ := Marshal(v.Interface(), fm.cassandraType)
+            b, err := Marshal(v.Interface(), fm.cassandraType)
+            if err != nil {
+                return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
+            }
             row.Columns = append(row.Columns, &Column{Name: composite, Value: b})
 
         case baseTypeField:
             // set value to the passed field value
             v := source.Field(fm.position)
-            b, _ := Marshal(v.Interface(), fm.cassandraType)
+            b, err := Marshal(v.Interface(), fm.cassandraType)
+            if err != nil {
+                return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
+            }
             row.Columns = append(row.Columns, &Column{Name: composite, Value: b})
 
             // support literal case?
@@ -404,6 +429,8 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             // support zero, non-set case?
         }
     }
+
+    return nil
 }
 
 /*
