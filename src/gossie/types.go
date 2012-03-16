@@ -641,3 +641,13 @@ func packComposite(current, component []byte, comparator, sliceStart, inclusive 
     r = append(r, component...)
     return append(r, eoc)
 }
+
+func unpackComposite(composite []byte) [][]byte {
+    components := make([][]byte, 0)
+    for len(composite) > 0 {
+        l := enc.BigEndian.Uint16(composite[:2])
+        components = append(components, composite[2:2+l])
+        composite = composite[3+l:]
+    }
+    return components
+}

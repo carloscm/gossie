@@ -1,6 +1,6 @@
 # About
 
-Gossie is (for now) a Go library with a low level wrapper for the Cassandra 1.0 thrift bidings with with utilities for connection pooling, primitive type marshalling and easy query building (much easier to use than the generated thrift bindings). A higher level layer will be implemented on top of the current code to allow for struct marshalling into rows and composites, among other things.
+Gossie is (for now) a Go library with a low level wrapper for the Cassandra 1.0 thrift bidings with with utilities for connection pooling, primitive type marshaling and easy query building (much easier to use than the generated thrift bindings). A higher level layer will be implemented on top of the current code to allow for struct marshalling into rows and composites, among other things.
 
 
 # Requeriments
@@ -29,7 +29,7 @@ Launch a Cassandra instance in localhost:9160, create a keyspace named TestGossi
 
 # Example
 
-I will provide a full example once the higher level marshalling is implemented. For examples of the low level layer check src/gossie/query_test.go
+I will provide a full example once the higher level marshaling is implemented. For examples of the low level layer check src/gossie/query_test.go
 
 
 # License

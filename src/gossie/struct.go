@@ -17,6 +17,18 @@ todo:
     support composite key, not just composite column (is this actually in use by anybody???)
     name: and type: tag field modifiers to override default naming and marshaling
 
+    go maps support for things like
+    type s struct {
+        a    int `cf:"cfname" key:"a" col:"atts" val:"atts"`
+        atts map[string]string
+    }
+    type s2 struct {
+        a    int `cf:"cfname" key:"a" col:"b,atts" val:"atts"`
+        b    UUID
+        atts map[string]string
+    }
+    --> then think about slicing/pagging this, oops
+
     unmap
 
 ---
@@ -90,7 +102,6 @@ type fieldMapping struct {
     fieldKind     int
     position      int
     name          string
-    goType        reflect.Type
     cassandraType TypeDesc
 }
 type structMapping struct {
@@ -152,7 +163,6 @@ func newFieldMapping(pos int, sf reflect.StructField) *fieldMapping {
     fm.cassandraType, fm.fieldKind = defaultCassandraType(sf.Type)
     fm.position = pos
     fm.name = sf.Name
-    fm.goType = sf.Type
     return fm
 }
 
