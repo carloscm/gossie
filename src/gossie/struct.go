@@ -14,10 +14,10 @@ this is very much WIP but past 50% completion
 
 todo:
 
-    support composite key
-    error checking and passing in mapField
-    composite marshaling
+    support composite key, not just composite column (is this actually in use by anybody???)
     name: and type: tag field modifiers to override default naming and marshaling
+
+    unmap
 
 ---
 
@@ -75,47 +75,6 @@ type Timeline struct  {
     Author      string
     Body        string
 }
-
-
-mapField(source interface{}, row *Row, mapping *map, component int, composite []byte, value []byte)
-
-    if components left
-
-        switch type of field named by component
-            case base type
-                set value of the current composite field to the field value
-                mapField(source, row, map, component+1, composite, value)
-
-            case base type slice
-                iterate slice
-                    clone composite
-                    set value of the current composite field to the current slice value
-                    mapField(source, row, map, component+1, composite, value)
-
-            case *name
-                iterate over non-key/col/val-referenced struct fields
-                    clone composite
-                    set value of the current composite field to the struct field name
-                    value := field value
-                    mapField(source, row, map, component+1, composite, value)
-
-    else
-
-        if val: is *value
-            use passed value
-            emit column inside row with the composite plus value
-
-        else if val: is a base type slice struct field??????? <-- very useful try to support for index-like CFs
-            get the index used for the composite part slice and use it here???
-
-        else is empty
-            value is the logical zero for the CF default validator
-            emit column inside row with the composite plus value
-
-        else is constant value???
-            value is constant read from mapping?
-            emit column inside row with the composite plus value
-
 */
 
 const (
@@ -135,11 +94,12 @@ type fieldMapping struct {
     cassandraType TypeDesc
 }
 type structMapping struct {
-    cf      string
-    key     *fieldMapping
-    columns []*fieldMapping
-    value   *fieldMapping
-    others  map[string]*fieldMapping
+    cf                string
+    key               *fieldMapping
+    columns           []*fieldMapping
+    value             *fieldMapping
+    others            map[string]*fieldMapping
+    isCompositeColumn bool
 }
 
 func isMarshalable(k reflect.Kind) bool {
@@ -262,6 +222,9 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
             fields[name] = nil, false
             sm.columns = append(sm.columns, fm)
         }
+        if len(sm.columns) > 1 {
+            sm.isCompositeColumn = true
+        }
         sm.others = make(map[string]*fieldMapping)
         for name, fm := range fields {
             sm.others[name] = fm
@@ -314,7 +277,6 @@ func Map(source interface{}) (*Row, os.Error) {
 }
 
 func mapField(source reflect.Value, row *Row, sm *structMapping, component int, composite []byte, value []byte, valueIndex int) os.Error {
-    // TODO error checking! marshal calls etc
 
     // check if there are components left
     if component < len(sm.columns) {
@@ -332,12 +294,11 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             if err != nil {
                 return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
             }
-
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            // TODO: actual composite serialization goes here
-            composite = b
-            // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+            if sm.isCompositeColumn {
+                composite = packComposite(composite, b, false, false, false)
+            } else {
+                composite = b
+            }
             return mapField(source, row, sm, component+1, composite, value, valueIndex)
 
         // slice of base type
@@ -352,12 +313,12 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
                 if err != nil {
                     return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
                 }
-
-                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                // TODO: actual composite serialization goes here
-                subComposite := b
-                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+                var subComposite []byte
+                if sm.isCompositeColumn {
+                    subComposite = packComposite(composite, b, false, false, false)
+                } else {
+                    subComposite = b
+                }
                 err = mapField(source, row, sm, component+1, subComposite, value, i)
                 if err != nil {
                     return err
@@ -373,12 +334,12 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
                 if err != nil {
                     return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
                 }
-
-                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                // TODO: actual composite serialization goes here
-                subComposite := b
-                // !!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
+                var subComposite []byte
+                if sm.isCompositeColumn {
+                    subComposite = packComposite(composite, b, false, false, false)
+                } else {
+                    subComposite = b
+                }
                 // marshal field value and pass it to next field mapper in case it is *value
                 v := source.Field(fm.position)
                 b, err = Marshal(v.Interface(), fm.cassandraType)
@@ -432,46 +393,3 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 
     return nil
 }
-
-/*
-
-mapField(source interface{}, row *Row, mapping *map, component int, composite []byte, value []byte)
-
-    if components left
-
-        switch type of field named by component
-            case base type
-                set value of the current composite field to the field value
-                mapField(source, row, map, component+1, composite, value)
-
-            case base type slice
-                iterate slice
-                    clone composite
-                    set value of the current composite field to the current slice value
-                    mapField(source, row, map, component+1, composite, value)
-
-            case *name
-                iterate over non-key/col/val-referenced struct fields
-                    clone composite
-                    set value of the current composite field to the struct field name
-                    value := field value
-                    mapField(source, row, map, component+1, composite, value)
-
-    else
-
-        if val: is *value
-            use passed value
-            emit column inside row with the composite plus value
-
-        else if val: is a base type slice struct field??????? <-- very useful try to support for index-like CFs
-            get the index used for the composite part slice and use it here???
-
-        else is empty
-            value is the logical zero for the CF default validator
-            emit column inside row with the composite plus value
-
-        else is constant value???
-            value is constant read from mapping?
-            emit column inside row with the composite plus value
-
-*/

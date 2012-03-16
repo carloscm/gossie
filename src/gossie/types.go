@@ -617,3 +617,27 @@ func parseTypeClass(cassType string) TypeClass {
 
     return r
 }
+
+func packComposite(current, component []byte, comparator, sliceStart, inclusive bool) []byte {
+    var eoc byte = 0
+    if comparator {
+        if inclusive {
+            if sliceStart {
+                eoc = 0xff
+            } else {
+                eoc = 0x01
+            }
+        } else {
+            if sliceStart {
+                eoc = 0x01
+            } else {
+                eoc = 0xff
+            }
+        }
+    }
+    r := make([]byte, 2)
+    enc.BigEndian.PutUint16(r, uint16(len(component)))
+    r = append(current, r...)
+    r = append(r, component...)
+    return append(r, eoc)
+}

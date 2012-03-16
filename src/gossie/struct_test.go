@@ -91,8 +91,9 @@ func TestStructMapping(t *testing.T) {
         columns: []*fieldMapping{
             &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", goType: sampleIntT, cassandraType: LongType},
         },
-        value:  &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", goType: sampleIntT, cassandraType: LongType},
-        others: nil,
+        value:             &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", goType: sampleIntT, cassandraType: LongType},
+        others:            nil,
+        isCompositeColumn: false,
     }
     if !reflect.DeepEqual(mapA, goodA) {
         t.Error("Mapping for struct sample A does not match expected output, ", mapA, " vs ", goodA)
@@ -110,6 +111,7 @@ func TestStructMapping(t *testing.T) {
             "b": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", goType: sampleIntT, cassandraType: LongType},
             "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", goType: sampleIntT, cassandraType: LongType},
         },
+        isCompositeColumn: false,
     }
     if !reflect.DeepEqual(mapB, goodB) {
         t.Error("Mapping for struct sample B does not match expected output, ", mapB, " vs ", goodB)
@@ -127,6 +129,7 @@ func TestStructMapping(t *testing.T) {
         others: map[string]*fieldMapping{
             "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", goType: sampleIntT, cassandraType: LongType},
         },
+        isCompositeColumn: true,
     }
     if !reflect.DeepEqual(mapC, goodC) {
         t.Error("Mapping for struct sample C does not match expected output, ", mapC, " vs ", goodC)
