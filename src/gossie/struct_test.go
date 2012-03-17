@@ -12,6 +12,8 @@ todo:
 
     basically everything. real unit testing for all struct funcs
 
+    more test for name: and type:
+
 */
 
 type errNoMeta struct {
@@ -49,8 +51,8 @@ type noErrA struct {
 }
 type noErrB struct {
     a   int `cf:"cfname" key:"a" col:"*name" val:"*value"`
-    b   int
-    c   int
+    b   int `name:"z"`
+    c   int `type:"AsciiType"`
 }
 type noErrC struct {
     a   int `cf:"cfname" key:"a" col:"b,*name" val:"*value"`
@@ -116,11 +118,11 @@ func TestStructMapping(t *testing.T) {
     mapA, _ := buildMappingFromPtr(&noErrA{1, 2, 3})
     goodA := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
         },
-        value:             &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType},
+        value:             &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
         others:            nil,
         isCompositeColumn: false,
     }
@@ -129,14 +131,14 @@ func TestStructMapping(t *testing.T) {
     mapB, _ := buildMappingFromPtr(&noErrB{1, 2, 3})
     goodB := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0},
+            &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         },
-        value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0},
+        value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         others: map[string]*fieldMapping{
-            "b": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType},
-            "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType},
+            "b": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "z"},
+            "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: AsciiType, cassandraName: "c"},
         },
         isCompositeColumn: false,
     }
@@ -145,14 +147,14 @@ func TestStructMapping(t *testing.T) {
     mapC, _ := buildMappingFromPtr(&noErrC{1, 2, 3})
     goodC := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType},
-            &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
+            &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         },
-        value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0},
+        value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         others: map[string]*fieldMapping{
-            "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType},
+            "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
         },
         isCompositeColumn: true,
     }
@@ -161,11 +163,11 @@ func TestStructMapping(t *testing.T) {
     mapD, _ := buildMappingFromPtr(&noErrD{1, []int{2, 3}, []int{4, 5}})
     goodD := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeSliceField, position: 1, name: "b", cassandraType: LongType},
+            &fieldMapping{fieldKind: baseTypeSliceField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
         },
-        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "c", cassandraType: LongType},
+        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
         others:            nil,
         isCompositeColumn: false,
     }
@@ -174,12 +176,12 @@ func TestStructMapping(t *testing.T) {
     mapE, _ := buildMappingFromPtr(&noErrE{1, 2, []int{3, 4}, []int{5, 6}})
     goodE := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType},
-            &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "c", cassandraType: LongType},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
+            &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
         },
-        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "d", cassandraType: LongType},
+        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "d", cassandraType: LongType, cassandraName: "d"},
         others:            nil,
         isCompositeColumn: true,
     }
@@ -189,29 +191,27 @@ func TestStructMapping(t *testing.T) {
         [16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "c"})
     goodEComp := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "Key", cassandraType: UTF8Type},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "Key", cassandraType: UTF8Type, cassandraName: "Key"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "FBytes", cassandraType: BytesType},
-            &fieldMapping{fieldKind: baseTypeField, position: 2, name: "FBool", cassandraType: BooleanType},
-            &fieldMapping{fieldKind: baseTypeField, position: 3, name: "FInt8", cassandraType: LongType},
-            &fieldMapping{fieldKind: baseTypeField, position: 4, name: "FInt16", cassandraType: LongType},
-            &fieldMapping{fieldKind: baseTypeField, position: 5, name: "FInt32", cassandraType: LongType},
-            &fieldMapping{fieldKind: baseTypeField, position: 6, name: "FInt", cassandraType: LongType},
-            &fieldMapping{fieldKind: baseTypeField, position: 7, name: "FInt64", cassandraType: LongType},
-            &fieldMapping{fieldKind: baseTypeField, position: 8, name: "FFloat32", cassandraType: FloatType},
-            &fieldMapping{fieldKind: baseTypeField, position: 9, name: "FFloat64", cassandraType: DoubleType},
-            &fieldMapping{fieldKind: baseTypeField, position: 10, name: "FString", cassandraType: UTF8Type},
-            &fieldMapping{fieldKind: baseTypeField, position: 11, name: "FUUID", cassandraType: UUIDType},
-            &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "FBytes", cassandraType: BytesType, cassandraName: "FBytes"},
+            &fieldMapping{fieldKind: baseTypeField, position: 2, name: "FBool", cassandraType: BooleanType, cassandraName: "FBool"},
+            &fieldMapping{fieldKind: baseTypeField, position: 3, name: "FInt8", cassandraType: LongType, cassandraName: "FInt8"},
+            &fieldMapping{fieldKind: baseTypeField, position: 4, name: "FInt16", cassandraType: LongType, cassandraName: "FInt16"},
+            &fieldMapping{fieldKind: baseTypeField, position: 5, name: "FInt32", cassandraType: LongType, cassandraName: "FInt32"},
+            &fieldMapping{fieldKind: baseTypeField, position: 6, name: "FInt", cassandraType: LongType, cassandraName: "FInt"},
+            &fieldMapping{fieldKind: baseTypeField, position: 7, name: "FInt64", cassandraType: LongType, cassandraName: "FInt64"},
+            &fieldMapping{fieldKind: baseTypeField, position: 8, name: "FFloat32", cassandraType: FloatType, cassandraName: "FFloat32"},
+            &fieldMapping{fieldKind: baseTypeField, position: 9, name: "FFloat64", cassandraType: DoubleType, cassandraName: "FFloat64"},
+            &fieldMapping{fieldKind: baseTypeField, position: 10, name: "FString", cassandraType: UTF8Type, cassandraName: "FString"},
+            &fieldMapping{fieldKind: baseTypeField, position: 11, name: "FUUID", cassandraType: UUIDType, cassandraName: "FUUID"},
+            &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         },
-        value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0},
+        value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         others: map[string]*fieldMapping{
-            "Val": &fieldMapping{fieldKind: baseTypeField, position: 12, name: "Val", cassandraType: UTF8Type},
+            "Val": &fieldMapping{fieldKind: baseTypeField, position: 12, name: "Val", cassandraType: UTF8Type, cassandraName: "Val"},
         },
         isCompositeColumn: true,
     }
-    t.Log(goodEComp.key)
-    t.Log(eComp.key)
     checkMapping(t, goodEComp, eComp, "eComp")
 
 }

@@ -14,7 +14,6 @@ this is very much WIP but past 50% completion
 
 todo:
 
-    support composite key, not just composite column (is this actually in use by anybody???)
     name: and type: tag field modifiers to override default naming and marshaling
 
     go maps support for things like
@@ -30,6 +29,8 @@ todo:
     --> then think about slicing/pagging this, oops
 
     unmap
+
+    support composite key, not just composite column (is this actually in use by anybody???)
 
 ---
 
@@ -78,8 +79,6 @@ type TimelineTweet struct  {
     Body        string
 }
 
-
-
 type Timeline struct  {
     UserId      string      "cf:Timeline key:UserId col:Section,TweetId,*name val:*value"
     Section     int
@@ -102,6 +101,7 @@ type fieldMapping struct {
     fieldKind     int
     position      int
     name          string
+    cassandraName string
     cassandraType TypeDesc
 }
 type structMapping struct {
@@ -158,10 +158,18 @@ func defaultCassandraType(t reflect.Type) (TypeDesc, int) {
     return UnknownType, baseTypeField
 }
 
-func newFieldMapping(pos int, sf reflect.StructField) *fieldMapping {
+func newFieldMapping(pos int, sf reflect.StructField, overrideName, overrideType string) *fieldMapping {
     fm := &fieldMapping{}
     fm.cassandraType, fm.fieldKind = defaultCassandraType(sf.Type)
+    if overrideType != "" {
+        fm.cassandraType = parseTypeDesc(overrideType)
+    }
     fm.position = pos
+    if overrideName != "" {
+        fm.cassandraName = overrideName
+    } else {
+        fm.cassandraName = sf.Name
+    }
     fm.name = sf.Name
     return fm
 }
@@ -191,7 +199,14 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
         }
         // build a field mapping for all non-anon named fields with a suitable Kind
         if sf.Name != "" && !sf.Anonymous && isMarshalable(sf.Type.Kind()) {
-            fields[sf.Name] = newFieldMapping(i, sf)
+            var overrideName, overrideType string
+            if tagValue := sf.Tag.Get("name"); tagValue != "" {
+                overrideName = tagValue
+            }
+            if tagValue := sf.Tag.Get("type"); tagValue != "" {
+                overrideType = tagValue
+            }
+            fields[sf.Name] = newFieldMapping(i, sf, overrideName, overrideType)
         }
     }
 
@@ -265,14 +280,14 @@ func Map(source interface{}) (*Row, os.Error) {
     // always work with a pointer to struct
     vp := reflect.ValueOf(source)
     if vp.Kind() != reflect.Ptr {
-        return nil, os.NewError("Passed value is not a pointer to a struct")
+        return nil, os.NewError("Passed source is not a pointer to a struct")
     }
     if vp.IsNil() {
-        return nil, os.NewError("Passed value is not a pointer to a struct")
+        return nil, os.NewError("Passed source is not a pointer to a struct")
     }
     v := reflect.Indirect(vp)
     if v.Kind() != reflect.Struct {
-        return nil, os.NewError("Passed value is not a pointer to a struct")
+        return nil, os.NewError("Passed source is not a pointer to a struct")
     }
 
     sm, err := getMapping(v)
@@ -339,8 +354,8 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
         case starNameField:
             // iterate over non-key/col/val-referenced struct fields and map more columns
             for _, fm := range sm.others {
-                // set value of the current composite field to the field value
-                b, err := Marshal(fm.name, UTF8Type)
+                // set value of the current composite field to the field name (possibly overriden by name:)
+                b, err := Marshal(fm.cassandraName, UTF8Type)
                 if err != nil {
                     return os.NewError(fmt.Sprint("Error marshaling field", fm.name, ":", err))
                 }
@@ -403,3 +418,31 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 
     return nil
 }
+
+/*
+func Unmap(row *Row, destination interface{}) os.Error {
+    // always work with a pointer to struct
+    vp := reflect.ValueOf(destination)
+    if vp.Kind() != reflect.Ptr {
+        return nil, os.NewError("Passed destination is not a pointer to a struct")
+    }
+    if vp.IsNil() {
+        return nil, os.NewError("Passed destination is not a pointer to a struct")
+    }
+    v := reflect.Indirect(vp)
+    if v.Kind() != reflect.Struct {
+        return nil, os.NewError("Passed destination is not a pointer to a struct")
+    }
+
+    sm, err := getMapping(v)
+    if err != nil {
+        return nil, err
+    }
+
+    // TODO: unmarshal key
+    n := len(row.Columns)
+    for i, c := range row.Columns {
+
+    }
+}
+*/

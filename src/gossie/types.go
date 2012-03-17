@@ -12,6 +12,8 @@ import (
 /*
    to do:
 
+   ReversedType
+
    IntegerType
    DecimalType
 
@@ -571,6 +573,36 @@ type TypeClass struct {
     Components []TypeClass
 }
 
+func parseTypeDesc(cassType string) TypeDesc {
+    switch cassType {
+    case "BytesType", "org.apache.cassandra.db.marshal.BytesType":
+        return BytesType
+    case "AsciiType", "org.apache.cassandra.db.marshal.AsciiType":
+        return AsciiType
+    case "UTF8Type", "org.apache.cassandra.db.marshal.UTF8Type":
+        return UTF8Type
+    case "LongType", "org.apache.cassandra.db.marshal.LongType":
+        return LongType
+    case "IntegerType", "org.apache.cassandra.db.marshal.IntegerType":
+        return IntegerType
+    case "DecimalType", "org.apache.cassandra.db.marshal.DecimalType":
+        return DecimalType
+    case "UUIDType", "org.apache.cassandra.db.marshal.UUIDType":
+        return UUIDType
+    case "BooleanType", "org.apache.cassandra.db.marshal.BooleanType":
+        return BooleanType
+    case "FloatType", "org.apache.cassandra.db.marshal.FloatType":
+        return FloatType
+    case "DoubleType", "org.apache.cassandra.db.marshal.DoubleType":
+        return DoubleType
+    case "DateType", "org.apache.cassandra.db.marshal.DateType":
+        return DateType
+    case "CounterColumnType", "org.apache.cassandra.db.marshal.CounterColumnType":
+        return CounterColumnType
+    }
+    return BytesType
+}
+
 func parseTypeClass(cassType string) TypeClass {
     r := TypeClass{Desc: BytesType}
 
@@ -587,33 +619,7 @@ func parseTypeClass(cassType string) TypeClass {
         return r
     }
 
-    // simple types
-    switch cassType {
-    case "org.apache.cassandra.db.marshal.BytesType":
-        r.Desc = BytesType
-    case "org.apache.cassandra.db.marshal.AsciiType":
-        r.Desc = AsciiType
-    case "org.apache.cassandra.db.marshal.UTF8Type":
-        r.Desc = UTF8Type
-    case "org.apache.cassandra.db.marshal.LongType":
-        r.Desc = LongType
-    case "org.apache.cassandra.db.marshal.IntegerType":
-        r.Desc = IntegerType
-    case "org.apache.cassandra.db.marshal.DecimalType":
-        r.Desc = DecimalType
-    case "org.apache.cassandra.db.marshal.UUIDType":
-        r.Desc = UUIDType
-    case "org.apache.cassandra.db.marshal.BooleanType":
-        r.Desc = BooleanType
-    case "org.apache.cassandra.db.marshal.FloatType":
-        r.Desc = FloatType
-    case "org.apache.cassandra.db.marshal.DoubleType":
-        r.Desc = DoubleType
-    case "org.apache.cassandra.db.marshal.DateType":
-        r.Desc = DateType
-    case "org.apache.cassandra.db.marshal.CounterColumnType":
-        r.Desc = CounterColumnType
-    }
+    r.Desc = parseTypeDesc(cassType)
 
     return r
 }
