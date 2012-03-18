@@ -30,62 +30,7 @@ todo:
 
     unmap
 
-    support composite key, not just composite column (is this actually in use by anybody???)
-
----
-
-in CQL:
-CREATE TABLE timeline (
-    user_id varchar,
-    tweet_id uuid,
-    author varchar,
-    body varchar,
-    PRIMARY KEY (user_id, tweet_id)
-);
-
-represents a single column in a single row
-type TimelineTweetAtt struct  {
-    UserId      string      "cf:Timelines key:UserId col:TweetId,Att val:Content"
-    TweetId     UUID
-    Att         string
-    Content     string
-}
-
-represents a range of columns with single values for the first composite and the row key, and a range over the second comp,
-storing only the comp name, not the col value
-type TimelineTweetAttNames struct  {
-    UserId      string      "cf:Timelines key:UserId col:TweetId,Atts val:"
-    TweetId     UUID
-    Atts        []string
-}
-
-same but with a second slice holding the values
-type TimelineTweetAttNames struct  {
-    UserId      string      "cf:Timelines key:UserId col:TweetId,AttNames val:AttValues"
-    TweetId     UUID
-    AttNames    []string
-    AttValues   []string
-}
-
-
-
-another way for mapping a single tweet with struct fields instead of slices
-*name means "any field name inside the struct that is not mentioned in the mapping for other purpose"
-*value means "the value of the struct field for the selected *name mapping"
-type TimelineTweet struct  {
-    UserId      string      "cf:Timelines key:UserId col:TweetId,*name val:*value"
-    TweetId     UUID
-    Author      string
-    Body        string
-}
-
-type Timeline struct  {
-    UserId      string      "cf:Timeline key:UserId col:Section,TweetId,*name val:*value"
-    Section     int
-    TweetId     UUID
-    Author      string
-    Body        string
-}
+    support composite key and composite values, not just composite column names (are those actually in use by anybody???)
 */
 
 const (
@@ -111,20 +56,6 @@ type structMapping struct {
     value             *fieldMapping
     others            map[string]*fieldMapping
     isCompositeColumn bool
-}
-
-func isMarshalable(k reflect.Kind) bool {
-    return k == reflect.Bool ||
-        k == reflect.Int ||
-        k == reflect.Int8 ||
-        k == reflect.Int16 ||
-        k == reflect.Int32 ||
-        k == reflect.Int64 ||
-        k == reflect.Float32 ||
-        k == reflect.Float64 ||
-        k == reflect.Array ||
-        k == reflect.Slice ||
-        k == reflect.String
 }
 
 func defaultCassandraType(t reflect.Type) (TypeDesc, int) {
@@ -161,6 +92,10 @@ func defaultCassandraType(t reflect.Type) (TypeDesc, int) {
 func newFieldMapping(pos int, sf reflect.StructField, overrideName, overrideType string) *fieldMapping {
     fm := &fieldMapping{}
     fm.cassandraType, fm.fieldKind = defaultCassandraType(sf.Type)
+    // signal an invalid Go base type
+    if fm.cassandraType == UnknownType {
+        return nil
+    }
     if overrideType != "" {
         fm.cassandraType = parseTypeDesc(overrideType)
     }
@@ -197,9 +132,13 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
                 meta[key] = tagValue
             }
         }
-        // build a field mapping for all non-anon named fields with a suitable Kind
-        if sf.Name != "" && !sf.Anonymous && isMarshalable(sf.Type.Kind()) {
-            fields[sf.Name] = newFieldMapping(i, sf, sf.Tag.Get("name"), sf.Tag.Get("type"))
+        // build a field mapping for all non-anon named fields with a suitable Go type
+        if sf.Name != "" && !sf.Anonymous {
+            if fm := newFieldMapping(i, sf, sf.Tag.Get("name"), sf.Tag.Get("type")); fm == nil {
+                continue
+            } else {
+                fields[sf.Name] = fm
+            }
         }
     }
 
@@ -235,12 +174,20 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
 
     if meta["col"] != "" {
         colNames := strings.Split(meta["col"], ",")
-        for _, name := range colNames {
+        for i, name := range colNames {
+            isLast := i == (len(colNames) - 1)
             var fm *fieldMapping
             if name == "*name" {
-                fm = &fieldMapping{fieldKind: starNameField}
+                if !isLast {
+                    return nil, os.NewError(fmt.Sprint("*name can only be used in the last position of a composite, error in struct:", t.Name()))
+                } else {
+                    fm = &fieldMapping{fieldKind: starNameField}
+                }
             } else if fm, found = fields[name]; !found {
                 return nil, os.NewError(fmt.Sprint("Referenced column field ", name, " does not exist in struct ", t.Name()))
+            }
+            if fm.fieldKind == baseTypeSliceField && !isLast {
+                return nil, os.NewError(fmt.Sprint("Slice struct fields can only be used in the last position of a composite, error in struct:", t.Name()))
             }
             fields[name] = nil, false
             sm.columns = append(sm.columns, fm)
@@ -426,30 +373,60 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
     return nil
 }
 
-/*
 func Unmap(row *Row, destination interface{}) os.Error {
     // always work with a pointer to struct
     vp := reflect.ValueOf(destination)
     if vp.Kind() != reflect.Ptr {
-        return nil, os.NewError("Passed destination is not a pointer to a struct")
+        return os.NewError("Passed destination is not a pointer to a struct")
     }
     if vp.IsNil() {
-        return nil, os.NewError("Passed destination is not a pointer to a struct")
+        return os.NewError("Passed destination is not a pointer to a struct")
     }
     v := reflect.Indirect(vp)
     if v.Kind() != reflect.Struct {
-        return nil, os.NewError("Passed destination is not a pointer to a struct")
+        return os.NewError("Passed destination is not a pointer to a struct")
     }
 
     sm, err := getMapping(v)
     if err != nil {
-        return nil, err
+        return err
     }
 
-    // TODO: unmarshal key
-    n := len(row.Columns)
-    for i, c := range row.Columns {
-
+    // unmarshal key
+    vk := v.Field(sm.key.position)
+    if !vk.CanAddr() {
+        return os.NewError("Cannot obtain pointer to key field")
     }
-}
+    vkp := vk.Addr()
+    err = Unmarshal(row.Key, sm.key.cassandraType, vkp.Interface())
+    if err != nil {
+        return os.NewError(fmt.Sprint("Error unmarshaling key field", sm.key.name, ":", err))
+    }
+
+    // unmarshal col/values
+    //n := len(row.Columns)
+    //for i, c := range row.Columns {
+
+/*
+    for each row.Columns
+        for each sm.columns
+            case baseTypeField
+                (potentially not the last component of a composite)
+                set struct field value to unmarshaled row column component
+            case baseTypeSliceField:
+                (this is for sure the last component of a composite)
+                append struct field slice value to unmarshaled row column component
+                --> call field setter based on val:
+            case starNameField:
+                (this is for sure the last component of a composite)
+                lookup filed named unmarshaled row column component as string
+                --> call field setter based on val:
+            
+
 */
+
+    //}
+
+    return nil
+}
+
