@@ -137,7 +137,7 @@ func TestStructMapping(t *testing.T) {
         },
         value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         others: map[string]*fieldMapping{
-            "b": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "z"},
+            "z": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "z"},
             "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: AsciiType, cassandraName: "c"},
         },
         isCompositeColumn: false,
@@ -222,6 +222,9 @@ func TestMap(t *testing.T) {
     row, err := Map(ec)
     if err != nil {
         t.Fatal("Unexpected error in test map:", err)
+    }
+    if !reflect.DeepEqual([]byte{97}, row.Key) {
+        t.Error("Invalid key for test row")
     }
     if len(row.Columns) != 1 {
         t.Error("Expected number of columns is 1, got ", len(row.Columns))

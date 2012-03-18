@@ -199,21 +199,17 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
         }
         // build a field mapping for all non-anon named fields with a suitable Kind
         if sf.Name != "" && !sf.Anonymous && isMarshalable(sf.Type.Kind()) {
-            var overrideName, overrideType string
-            if tagValue := sf.Tag.Get("name"); tagValue != "" {
-                overrideName = tagValue
-            }
-            if tagValue := sf.Tag.Get("type"); tagValue != "" {
-                overrideType = tagValue
-            }
-            fields[sf.Name] = newFieldMapping(i, sf, overrideName, overrideType)
+            fields[sf.Name] = newFieldMapping(i, sf, sf.Tag.Get("name"), sf.Tag.Get("type"))
         }
     }
 
     // pass 2: struct data for each meta field
     if name := meta["cf"]; name != "" {
-        sm.cf = name
+        sm.cf = meta["cf"]
+    } else {
+        return nil, os.NewError(fmt.Sprint("No cf field in struct ", t.Name()))
     }
+
     if name := meta["key"]; name != "" {
         if sm.key, found = fields[name]; !found {
             return nil, os.NewError(fmt.Sprint("Referenced key field ", name, " does not exist in struct ", t.Name()))
@@ -225,6 +221,7 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
     } else {
         return nil, os.NewError(fmt.Sprint("No key field in struct ", t.Name()))
     }
+
     if name := meta["val"]; (name != "") || (name == "*value") {
         if name == "*value" {
             sm.value = &fieldMapping{fieldKind: starValueField}
@@ -235,6 +232,7 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
     } else {
         return nil, os.NewError(fmt.Sprint("No val field in struct ", t.Name()))
     }
+
     if meta["col"] != "" {
         colNames := strings.Split(meta["col"], ",")
         for _, name := range colNames {
@@ -247,16 +245,15 @@ func newStructMapping(t reflect.Type) (*structMapping, os.Error) {
             fields[name] = nil, false
             sm.columns = append(sm.columns, fm)
         }
-        if len(sm.columns) > 1 {
-            sm.isCompositeColumn = true
-        }
+        sm.isCompositeColumn = len(sm.columns) > 1
         sm.others = make(map[string]*fieldMapping)
-        for name, fm := range fields {
-            sm.others[name] = fm
+        for _, fm := range fields {
+            sm.others[fm.cassandraName] = fm
         }
     } else {
         return nil, os.NewError(fmt.Sprint("No col field in struct ", t.Name()))
     }
+
     return sm, nil
 }
 
@@ -271,6 +268,9 @@ func getMapping(v reflect.Value) (*structMapping, os.Error) {
     mapCacheMutex.Lock()
     if sm, found = mapCache[t]; !found {
         sm, err = newStructMapping(t)
+        if err != nil {
+            mapCache[t] = sm
+        }
     }
     mapCacheMutex.Unlock()
     return sm, err
@@ -296,8 +296,15 @@ func Map(source interface{}) (*Row, os.Error) {
     }
     row := &Row{}
 
-    // TODO: marshal key
+    // marshal key
+    vk := v.Field(sm.key.position)
+    b, err := Marshal(vk.Interface(), sm.key.cassandraType)
+    if err != nil {
+        return nil, os.NewError(fmt.Sprint("Error marshaling key field", sm.key.name, ":", err))
+    }
+    row.Key = b
 
+    // marshal columns and values
     return row, mapField(v, row, sm, 0, make([]byte, 0), make([]byte, 0), 0)
 }
 
