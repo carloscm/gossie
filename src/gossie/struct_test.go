@@ -240,4 +240,15 @@ func TestMap(t *testing.T) {
     if !reflect.DeepEqual(value, row.Columns[0].Value) {
         t.Error("Invalid value in test row")
     }
+
+    destEC := &everythingComp{}
+    err = Unmap(row, destEC)
+    if err != nil {
+        t.Fatal("Unexpected error in test unmap:", err)
+    }
+
+    if !reflect.DeepEqual(ec, destEC) {
+        t.Error("Original and unmapped struct does not match")
+    }
+
 }
