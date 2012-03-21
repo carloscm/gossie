@@ -10,7 +10,7 @@ import (
 
 todo:
 
-    basically everything. real unit testing for all struct funcs
+    much more testing on struct mapping
 
     more test for name: and type:
 
@@ -216,39 +216,51 @@ func TestStructMapping(t *testing.T) {
 
 }
 
+func checkMap(t *testing.T, expectedStruct interface{}, expectedRow *Row) {
+    resultRow, err := Map(expectedStruct)
+    if err != nil {
+        t.Error("Error mapping struct: ", err)
+    }
+    if !reflect.DeepEqual(resultRow, expectedRow) {
+        t.Error("Mapped struct does not match expected ", expectedRow, " actual ", resultRow)
+    }
+}
+
+func checkUnmap(t *testing.T, expectedRow *Row, resultStruct interface{}, expectedStruct interface{}) {
+    err := Unmap(expectedRow, resultStruct)
+    if err != nil {
+        t.Error("Error umapping struct: ", err)
+    }
+    if !reflect.DeepEqual(resultStruct, expectedStruct) {
+        t.Error("Unmapped struct does not match expected ", expectedStruct, " actual ", resultStruct)
+    }
+}
+
+func checkFullMap(t *testing.T, expectedRow *Row, resultStruct interface{}, expectedStruct interface{}) {
+    checkMap(t, expectedStruct, expectedRow)
+    checkUnmap(t, expectedRow, resultStruct, expectedStruct)
+    checkMap(t, resultStruct, expectedRow)
+}
+
 func TestMap(t *testing.T) {
-    ec := &everythingComp{"a", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "b",
+
+    expectedStruct := &everythingComp{"a", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "b",
         [16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "c"}
-    row, err := Map(ec)
-    if err != nil {
-        t.Fatal("Unexpected error in test map:", err)
-    }
-    if !reflect.DeepEqual([]byte{97}, row.Key) {
-        t.Error("Invalid key for test row")
-    }
-    if len(row.Columns) != 1 {
-        t.Error("Expected number of columns is 1, got ", len(row.Columns))
-    }
-    name := []byte{0, 2, 1, 2, 0, 0, 1, 1, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 8, 0, 0, 0,
-        0, 0, 0, 0, 5, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4, 65, 0, 0, 0, 0, 0,
-        8, 64, 34, 0, 0, 0, 0, 0, 0, 0, 0, 1, 98, 0, 0, 16, 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204,
-        221, 238, 255, 0, 0, 3, 86, 97, 108, 0}
-    value := []byte{99}
-    if !reflect.DeepEqual(name, row.Columns[0].Name) {
-        t.Error("Invalid composite column name in for test row")
-    }
-    if !reflect.DeepEqual(value, row.Columns[0].Value) {
-        t.Error("Invalid value in test row")
+
+    resultStruct := &everythingComp{}
+
+    expectedRow := &Row{
+        Key: []byte{97},
+        Columns: []*Column{
+            &Column{
+                Name: []byte{0, 2, 1, 2, 0, 0, 1, 1, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 8, 0, 0, 0,
+                    0, 0, 0, 0, 5, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4, 65, 0, 0, 0, 0, 0,
+                    8, 64, 34, 0, 0, 0, 0, 0, 0, 0, 0, 1, 98, 0, 0, 16, 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204,
+                    221, 238, 255, 0, 0, 3, 86, 97, 108, 0},
+                Value: []byte{99},
+            },
+        },
     }
 
-    destEC := &everythingComp{}
-    err = Unmap(row, destEC)
-    if err != nil {
-        t.Fatal("Unexpected error in test unmap:", err)
-    }
-
-    if !reflect.DeepEqual(ec, destEC) {
-        t.Error("Original and unmapped struct does not match")
-    }
-
+    checkFullMap(t, expectedRow, resultStruct, expectedStruct)
 }

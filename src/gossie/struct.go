@@ -377,10 +377,10 @@ func Unmap(row *Row, destination interface{}) os.Error {
     // always work with a pointer to struct
     vp := reflect.ValueOf(destination)
     if vp.Kind() != reflect.Ptr {
-        return os.NewError("Passed destination is not a pointer to a struct")
+        return os.NewError("Passed destination is not a pointer")
     }
     if vp.IsNil() {
-        return os.NewError("Passed destination is not a pointer to a struct")
+        return os.NewError("Passed destination is a nil pointer")
     }
     v := reflect.Indirect(vp)
     if v.Kind() != reflect.Struct {
@@ -404,8 +404,11 @@ func Unmap(row *Row, destination interface{}) os.Error {
     }
 
     // unmarshal col/values
-    setField := func(fm *fieldMapping, b []byte) os.Error {
+    setField := func(fm *fieldMapping, b []byte, index int) os.Error {
         vfield := v.Field(fm.position)
+        if index >= 0 {
+            vfield = vfield.Index(index)
+        }
         if !vfield.CanAddr() {
             return os.NewError(fmt.Sprint("Cannot obtain pointer to field ", vfield.Type().Name(), " in struct ", v.Type().Name()))
         }
@@ -417,7 +420,15 @@ func Unmap(row *Row, destination interface{}) os.Error {
         return nil
     }
 
-    for _, column := range row.Columns {
+    prepareSlice := func(fm *fieldMapping, n int) {
+        vfield := v.Field(fm.position)
+        t := vfield.Type().Elem()
+        s := reflect.MakeSlice(t, n, n)
+        vfield.Set(s)
+    }
+
+    rowLength := len(row.Columns)
+    for i, column := range row.Columns {
         var components [][]byte
         if sm.isCompositeColumn {
             components = unpackComposite(column.Name)
@@ -427,13 +438,27 @@ func Unmap(row *Row, destination interface{}) os.Error {
         if len(components) != len(sm.columns) {
             return os.NewError(fmt.Sprint("Returned number of components in composite column name does not match struct col: component in struct ", v.Type().Name()))
         }
+
+        // prepare slice components and value
+        for _, fm := range sm.columns {
+            if fm.fieldKind == baseTypeSliceField {
+                prepareSlice(fm, rowLength)
+            }
+        }
+        if sm.value.fieldKind == baseTypeSliceField {
+            prepareSlice(sm.value, rowLength)
+        }
+
+        // iterate over column name components and set them, plus values
         for j, b := range components {
             fm := sm.columns[j]
             switch fm.fieldKind {
+
             case baseTypeField:
-                if err = setField(fm, b); err != nil {
+                if err = setField(fm, b, -1); err != nil {
                     return err
                 }
+
             case starNameField:
                 var name string
                 err = Unmarshal(b, UTF8Type, &name)
@@ -441,32 +466,21 @@ func Unmap(row *Row, destination interface{}) os.Error {
                     return os.NewError(fmt.Sprint("Error unmarshaling composite field as UTF8Type for *name in struct ", v.Type().Name(), ", error: ", err))
                 }
                 if valueFM, found := sm.others[name]; found {
-                    if err = setField(valueFM, column.Value); err != nil {
+                    if err = setField(valueFM, column.Value, -1); err != nil {
                         return err
                     }
                 }
-            //case baseTypeSliceField:
+
+            case baseTypeSliceField:
+                if err = setField(fm, b, i); err != nil {
+                    return err
+                }
+                if err = setField(sm.value, column.Value, -1); err != nil {
+                    return err
+                }
             }
         }
     }
-/*
-    for each row.Columns
-        for each sm.columns
-            case baseTypeField
-                (potentially not the last component of a composite)
-                set struct field value to unmarshaled row column component
-            case baseTypeSliceField:
-                (this is for sure the last component of a composite)
-                append struct field slice value to unmarshaled row column component
-                --> call field setter based on val:
-            case starNameField:
-                (this is for sure the last component of a composite)
-                lookup filed named unmarshaled row column component as string
-                --> call field setter based on val:
-            
-
-*/
 
     return nil
 }
-
