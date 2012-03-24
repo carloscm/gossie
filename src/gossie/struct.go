@@ -14,8 +14,6 @@ this is very much WIP but past 50% completion
 
 todo:
 
-    name: and type: tag field modifiers to override default naming and marshaling
-
     go maps support for things like
     type s struct {
         a    int `cf:"cfname" key:"a" col:"atts" val:"atts"`
@@ -27,8 +25,6 @@ todo:
         atts map[string]string
     }
     --> then think about slicing/pagging this, oops
-
-    unmap
 
     support composite key and composite values, not just composite column names (are those actually in use by anybody???)
 */
@@ -236,6 +232,9 @@ func Map(source interface{}) (*Row, os.Error) {
     if v.Kind() != reflect.Struct {
         return nil, os.NewError("Passed source is not a pointer to a struct")
     }
+    if !v.CanSet() {
+        return nil, os.NewError("Cannot modify the passed struct instance")
+    }
 
     sm, err := getMapping(v)
     if err != nil {
@@ -356,7 +355,7 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
             row.Columns = append(row.Columns, &Column{Name: composite, Value: b})
 
         case baseTypeField:
-            // set value to the passed field value
+            // set value to the field value
             v := source.Field(fm.position)
             b, err := Marshal(v.Interface(), fm.cassandraType)
             if err != nil {
@@ -413,6 +412,7 @@ func Unmap(row *Row, destination interface{}) os.Error {
             return os.NewError(fmt.Sprint("Cannot obtain pointer to field ", vfield.Type().Name(), " in struct ", v.Type().Name()))
         }
         vfieldp := vfield.Addr()
+
         err = Unmarshal(b, fm.cassandraType, vfieldp.Interface())
         if err != nil {
             return os.NewError(fmt.Sprint("Error unmarshaling composite field ", vfield.Type().Name(), " in struct ", v.Type().Name(), ", error: ", err))
@@ -422,12 +422,23 @@ func Unmap(row *Row, destination interface{}) os.Error {
 
     prepareSlice := func(fm *fieldMapping, n int) {
         vfield := v.Field(fm.position)
-        t := vfield.Type().Elem()
+        t := vfield.Type()
         s := reflect.MakeSlice(t, n, n)
         vfield.Set(s)
     }
 
     rowLength := len(row.Columns)
+
+    // prepare slice components and value
+    for _, fm := range sm.columns {
+        if fm.fieldKind == baseTypeSliceField {
+            prepareSlice(fm, rowLength)
+        }
+    }
+    if sm.value.fieldKind == baseTypeSliceField {
+        prepareSlice(sm.value, rowLength)
+    }
+
     for i, column := range row.Columns {
         var components [][]byte
         if sm.isCompositeColumn {
@@ -437,16 +448,6 @@ func Unmap(row *Row, destination interface{}) os.Error {
         }
         if len(components) != len(sm.columns) {
             return os.NewError(fmt.Sprint("Returned number of components in composite column name does not match struct col: component in struct ", v.Type().Name()))
-        }
-
-        // prepare slice components and value
-        for _, fm := range sm.columns {
-            if fm.fieldKind == baseTypeSliceField {
-                prepareSlice(fm, rowLength)
-            }
-        }
-        if sm.value.fieldKind == baseTypeSliceField {
-            prepareSlice(sm.value, rowLength)
         }
 
         // iterate over column name components and set them, plus values
@@ -475,7 +476,20 @@ func Unmap(row *Row, destination interface{}) os.Error {
                 if err = setField(fm, b, i); err != nil {
                     return err
                 }
+            }
+        }
+
+        // set value field for the non-*name cases
+        if sm.value != nil {
+            switch sm.value.fieldKind {
+
+            case baseTypeField:
                 if err = setField(sm.value, column.Value, -1); err != nil {
+                    return err
+                }
+
+            case baseTypeSliceField:
+                if err = setField(sm.value, column.Value, i); err != nil {
                     return err
                 }
             }

@@ -17,58 +17,69 @@ todo:
 */
 
 type errNoMeta struct {
-    a int
+    A int
 }
 type errNoMetaKeyColVal struct {
-    a int `cf:"cfname"`
+    A int `cf:"cfname"`
 }
 type errNoMetaColVal struct {
-    a int `cf:"cfname" key:"a"`
+    A int `cf:"cfname" key:"A"`
 }
 type errNoMetaVal struct {
-    a   int `cf:"cfname" key:"a" col:"b"`
-    b   int
+    A   int `cf:"cfname" key:"A" col:"B"`
+    B   int
 }
 type errInvKey struct {
-    a   int `cf:"cfname" key:"z" col:"b" val:"c"`
-    b   int
-    c   int
+    A   int `cf:"cfname" key:"Z" col:"B" val:"C"`
+    B   int
+    C   int
 }
 type errInvCol struct {
-    a   int `cf:"cfname" key:"a" col:"z" val:"c"`
-    b   int
-    c   int
+    A   int `cf:"cfname" key:"A" col:"Z" val:"C"`
+    B   int
+    C   int
 }
 type errInvVal struct {
-    a   int `cf:"cfname" key:"a" col:"b" val:"z"`
-    b   int
-    c   int
+    A   int `cf:"cfname" key:"A" col:"B" val:"Z"`
+    B   int
+    C   int
+}
+type errStarNameNotLast struct {
+    A   int `cf:"cfname" key:"A" col:"*name,B" val:"*value"`
+    B   int
+    C   int
+}
+type errSliceNotLast struct {
+    A   int `cf:"cfname" key:"A" col:"C,B" val:"D"`
+    B   int
+    C   []int
+    D   []int
 }
 type noErrA struct {
-    a   int `cf:"cfname" key:"a" col:"b" val:"c"`
-    b   int
-    c   int
+    A   int `cf:"cfname" key:"A" col:"B" val:"C"`
+    B   int
+    C   int
 }
 type noErrB struct {
-    a   int `cf:"cfname" key:"a" col:"*name" val:"*value"`
-    b   int `name:"z"`
-    c   int `type:"AsciiType"`
+    A   int `cf:"cfname" key:"A" col:"*name" val:"*value"`
+    B   int `name:"Z"`
+    C   int `type:"AsciiType"`
 }
 type noErrC struct {
-    a   int `cf:"cfname" key:"a" col:"b,*name" val:"*value"`
-    b   int
-    c   int
+    A   int `cf:"cfname" key:"A" col:"B,*name" val:"*value"`
+    B   int
+    C   int
 }
 type noErrD struct {
-    a   int `cf:"cfname" key:"a" col:"b" val:"c"`
-    b   []int
-    c   []int
+    A   int `cf:"cfname" key:"A" col:"B" val:"C"`
+    B   []int
+    C   []int
 }
 type noErrE struct {
-    a   int `cf:"cfname" key:"a" col:"b,c" val:"d"`
-    b   int
-    c   []int
-    d   []int
+    A   int `cf:"cfname" key:"A" col:"B,C" val:"D"`
+    B   int
+    C   []int
+    D   []int
 }
 type everythingComp struct {
     Key      string `cf:"cfname" key:"Key" col:"FBytes,FBool,FInt8,FInt16,FInt32,FInt,FInt64,FFloat32,FFloat64,FString,FUUID,*name" val:"*value"`
@@ -114,15 +125,17 @@ func TestStructMapping(t *testing.T) {
     structMapMustError(t, &errInvKey{})
     structMapMustError(t, &errInvCol{})
     structMapMustError(t, &errInvVal{})
+    structMapMustError(t, &errStarNameNotLast{})
+    structMapMustError(t, &errSliceNotLast{})
 
     mapA, _ := buildMappingFromPtr(&noErrA{1, 2, 3})
     goodA := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
         },
-        value:             &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
+        value:             &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
         others:            nil,
         isCompositeColumn: false,
     }
@@ -131,14 +144,14 @@ func TestStructMapping(t *testing.T) {
     mapB, _ := buildMappingFromPtr(&noErrB{1, 2, 3})
     goodB := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
         columns: []*fieldMapping{
             &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         },
         value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         others: map[string]*fieldMapping{
-            "z": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "z"},
-            "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: AsciiType, cassandraName: "c"},
+            "Z": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "Z"},
+            "C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: AsciiType, cassandraName: "C"},
         },
         isCompositeColumn: false,
     }
@@ -147,14 +160,14 @@ func TestStructMapping(t *testing.T) {
     mapC, _ := buildMappingFromPtr(&noErrC{1, 2, 3})
     goodC := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
             &fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         },
         value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
         others: map[string]*fieldMapping{
-            "c": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
+            "C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
         },
         isCompositeColumn: true,
     }
@@ -163,11 +176,11 @@ func TestStructMapping(t *testing.T) {
     mapD, _ := buildMappingFromPtr(&noErrD{1, []int{2, 3}, []int{4, 5}})
     goodD := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeSliceField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
+            &fieldMapping{fieldKind: baseTypeSliceField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
         },
-        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
+        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
         others:            nil,
         isCompositeColumn: false,
     }
@@ -176,19 +189,19 @@ func TestStructMapping(t *testing.T) {
     mapE, _ := buildMappingFromPtr(&noErrE{1, 2, []int{3, 4}, []int{5, 6}})
     goodE := &structMapping{
         cf:  "cfname",
-        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "a", cassandraType: LongType, cassandraName: "a"},
+        key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
         columns: []*fieldMapping{
-            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "b", cassandraType: LongType, cassandraName: "b"},
-            &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "c", cassandraType: LongType, cassandraName: "c"},
+            &fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
+            &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
         },
-        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "d", cassandraType: LongType, cassandraName: "d"},
+        value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "D", cassandraType: LongType, cassandraName: "D"},
         others:            nil,
         isCompositeColumn: true,
     }
     checkMapping(t, goodE, mapE, "mapE")
 
-    eComp, _ := buildMappingFromPtr(&everythingComp{"a", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "b",
-        [16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "c"})
+    eComp, _ := buildMappingFromPtr(&everythingComp{"A", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "B",
+        [16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "C"})
     goodEComp := &structMapping{
         cf:  "cfname",
         key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "Key", cassandraType: UTF8Type, cassandraName: "Key"},
@@ -216,51 +229,117 @@ func TestStructMapping(t *testing.T) {
 
 }
 
-func checkMap(t *testing.T, expectedStruct interface{}, expectedRow *Row) {
+type structTestShell struct {
+    expectedStruct interface{}
+    resultStruct   interface{}
+    expectedRow    *Row
+    name           string
+}
+
+func (shell *structTestShell) checkMap(t *testing.T, expectedStruct interface{}) {
     resultRow, err := Map(expectedStruct)
     if err != nil {
         t.Error("Error mapping struct: ", err)
     }
-    if !reflect.DeepEqual(resultRow, expectedRow) {
-        t.Error("Mapped struct does not match expected ", expectedRow, " actual ", resultRow)
+    if !reflect.DeepEqual(resultRow, shell.expectedRow) {
+        t.Error("Mapped struct ", shell.name, " does not match expected row ", shell.expectedRow, " actual ", resultRow)
     }
 }
 
-func checkUnmap(t *testing.T, expectedRow *Row, resultStruct interface{}, expectedStruct interface{}) {
-    err := Unmap(expectedRow, resultStruct)
+func (shell *structTestShell) checkUnmap(t *testing.T) interface{} {
+    err := Unmap(shell.expectedRow, shell.resultStruct)
     if err != nil {
         t.Error("Error umapping struct: ", err)
     }
-    if !reflect.DeepEqual(resultStruct, expectedStruct) {
-        t.Error("Unmapped struct does not match expected ", expectedStruct, " actual ", resultStruct)
+    if !reflect.DeepEqual(shell.resultStruct, shell.expectedStruct) {
+        t.Error("Unmapped struct ", shell.name, " does not match expected instance ", shell.expectedStruct, " actual ", shell.resultStruct)
     }
+    return shell.resultStruct
 }
 
-func checkFullMap(t *testing.T, expectedRow *Row, resultStruct interface{}, expectedStruct interface{}) {
-    checkMap(t, expectedStruct, expectedRow)
-    checkUnmap(t, expectedRow, resultStruct, expectedStruct)
-    checkMap(t, resultStruct, expectedRow)
+func (shell *structTestShell) checkFullMap(t *testing.T) {
+    shell.checkMap(t, shell.expectedStruct)
+    intermediateStruct := shell.checkUnmap(t)
+    shell.checkMap(t, intermediateStruct)
 }
 
 func TestMap(t *testing.T) {
 
-    expectedStruct := &everythingComp{"a", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "b",
-        [16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "c"}
+    shells := []*structTestShell{
+        &structTestShell{
+            name:           "noErrA",
+            expectedStruct: &noErrA{1, 2, 3},
+            resultStruct:   &noErrA{},
+            expectedRow: &Row{
+                Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+                Columns: []*Column{
+                    &Column{
+                        Name:  []byte{0, 0, 0, 0, 0, 0, 0, 2},
+                        Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
+                    },
+                },
+            },
+        },
 
-    resultStruct := &everythingComp{}
+        &structTestShell{
+            name:           "noErrB",
+            expectedStruct: &noErrB{1, 2, 3},
+            resultStruct:   &noErrB{},
+            expectedRow: &Row{
+                Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+                Columns: []*Column{
+                    &Column{
+                        Name:  []byte{67},
+                        Value: []byte{51},
+                    },
+                    &Column{
+                        Name:  []byte{90},
+                        Value: []byte{0, 0, 0, 0, 0, 0, 0, 2},
+                    },
+                },
+            },
+        },
 
-    expectedRow := &Row{
-        Key: []byte{97},
-        Columns: []*Column{
-            &Column{
-                Name: []byte{0, 2, 1, 2, 0, 0, 1, 1, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 8, 0, 0, 0,
-                    0, 0, 0, 0, 5, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4, 65, 0, 0, 0, 0, 0,
-                    8, 64, 34, 0, 0, 0, 0, 0, 0, 0, 0, 1, 98, 0, 0, 16, 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204,
-                    221, 238, 255, 0, 0, 3, 86, 97, 108, 0},
-                Value: []byte{99},
+        &structTestShell{
+            name:           "noErrE",
+            expectedStruct: &noErrE{1, 2, []int{5, 6}, []int{7, 8}},
+            resultStruct:   &noErrE{},
+            expectedRow: &Row{
+                Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+                Columns: []*Column{
+                    &Column{
+                        Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 5, 0},
+                        Value: []byte{0, 0, 0, 0, 0, 0, 0, 7},
+                    },
+                    &Column{
+                        Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0},
+                        Value: []byte{0, 0, 0, 0, 0, 0, 0, 8},
+                    },
+                },
+            },
+        },
+
+        &structTestShell{
+            name: "everythingComp",
+            expectedStruct: &everythingComp{"a", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "b",
+                [16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "c"},
+            resultStruct: &everythingComp{},
+            expectedRow: &Row{
+                Key: []byte{97},
+                Columns: []*Column{
+                    &Column{
+                        Name: []byte{0, 2, 1, 2, 0, 0, 1, 1, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 8, 0, 0, 0,
+                            0, 0, 0, 0, 5, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4, 65, 0, 0, 0, 0, 0,
+                            8, 64, 34, 0, 0, 0, 0, 0, 0, 0, 0, 1, 98, 0, 0, 16, 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204,
+                            221, 238, 255, 0, 0, 3, 86, 97, 108, 0},
+                        Value: []byte{99},
+                    },
+                },
             },
         },
     }
 
-    checkFullMap(t, expectedRow, resultStruct, expectedStruct)
+    for _, shell := range shells {
+        shell.checkFullMap(t)
+    }
 }
