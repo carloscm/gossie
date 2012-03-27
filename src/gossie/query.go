@@ -115,7 +115,7 @@ type Query interface {
     // error conditions
     MultiCount(keys [][]byte) ([]*RowColumnCount, os.Error)
 
-    // MultiGet performs a sequential Get operation for a range of rows. See the docs for Range for an
+    // RangeGet performs a sequential Get operation for a range of rows. See the docs for Range for an
     // explanation on how to page results. It returns a slice of Row pointers to the gathered rows, which
     // may be empty if none were found. It returns nil only on error conditions
     RangeGet(*Range) ([]*Row, os.Error)

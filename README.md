@@ -1,7 +1,6 @@
 # About
 
-Gossie is (for now) a Go library with a low level wrapper for the Cassandra 1.0 thrift bidings with with utilities for connection pooling, primitive type marshaling and easy query building (much easier to use than the generated thrift bindings). A higher level layer will be implemented on top of the current code to allow for struct marshalling into rows and composites, among other things.
-
+Gossie is a Go library with a low level wrapper for the Cassandra 1.0 Thrift bindings with utilities for connection pooling, primitive type marshaling and easy query building. It also includes a higher level layer that allows mapping structs to Cassandra column famlilies, with support for advanced features like composite column names.
 
 # Requeriments
 
@@ -15,7 +14,7 @@ Once Go 1.0 is released the author will submit a new version of the Go Thrift li
 
 # Installing
 
-There is no need to generate a Cassandra biding, I am providing one with Gossie (and the whole point is not to have to use it!)
+There is no need to generate a Cassandra Thrift biding, I am providing one with Gossie (and the whole point is not to have to use it!)
 
 I am using godag, a "go command"-like wrapper for compiling/linking/etc so there is no Makefile in Gossie. I do not plan on providing one, and Go 1.0 would make it obsolete anyway.
 
@@ -26,10 +25,62 @@ Gossie is written in Go r60.3 for now. I am waiting for the official Go 1.0 rele
 
 Launch a Cassandra instance in localhost:9160, create a keyspace named TestGossie, and execute the provided schema-test.txt to create the test column families. Now you can run the Gossie tests.
 
+# Quickstart
 
-# Example
+### Connection pooling
 
-I will provide a full example once the higher level marshaling is implemented. For examples of the low level layer check src/gossie/query_test.go
+To create a connection use the method NewConnectionPool, passing a list of nodes, the desired keyspace, and a PoolOptions with the various connection options you can tune.
+
+```Go
+pool := NewConnectionPool([]string{"localhost:9160"}, "Example", PoolOptions{Size: 50, Timeout: 3000})
+````
+
+The pool uses a simple randomized rule for connecting to the passed nodes, always keeping the total number of connections under PoolOptions.Size but without any guarantees on the number of connections per host. It has automatic failover and retry of operations.
+
+### Low level queries
+
+The Query and Mutation interfaces allow for low level queries to Cassandra and they follow the semantics of the native Thrift operations, but wrapped with much easier to use functions based on method chaining.
+
+```Go
+err = pool.Mutation().Insert("MyColumnFamily", row).Run()
+row, err = pool.Query().Cf("MyColumnFamily").Get(id)
+rows, err = pool.Query().Cf("MyColumnFamily").Where([]byte("MyIndexedColumn"), EQ, []byte("hi!")).IndexedGet(&IndexedRange{Count: 1000})
+````
+
+### Type marshaling
+
+The low level interface is based on passing []byte values for everything, mirroring the Thrift API. For this reason the functions Marshal and Unmarshal provide for type conversion between native Go types and native Cassandra types.
+
+### Struct maping
+
+The first part of the high level Gossie interface is the Map/Unmap functions. These functions allow to convert Go structs into Row-s, and they have support of advanced features like comparators or overriding column names and types.
+
+```Go
+/*
+In CQL 3.0:
+CREATE TABLE timeline (
+    user_id varchar,
+    tweet_id uuid,
+    author varchar,
+    body varchar,
+    PRIMARY KEY (user_id, tweet_id)
+);
+*/
+
+// In Gossie:
+type Timeline struct {
+	UserID  string  `cf:"Timeline" key:"UserID" col:"TweetID,*name" val:"*value"`
+	TweetID UUID
+	Author  string
+	Body    string
+}
+
+row, err = Map(&Timeline{"userid", ..., "Author Name", "Hey this thing rocks!"})
+````
+
+### High level queries
+
+Coming soon!
 
 
 # License

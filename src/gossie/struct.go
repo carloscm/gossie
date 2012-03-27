@@ -10,8 +10,6 @@ import (
 
 /*
 
-this is very much WIP but past 50% completion
-
 todo:
 
     go maps support for things like
