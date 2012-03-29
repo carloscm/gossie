@@ -180,7 +180,7 @@ func TestStructMapping(t *testing.T) {
 			&fieldMapping{fieldKind: baseTypeSliceField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
 		},
 		value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
-        others:            make(map[string]*fieldMapping, 0),
+		others:            make(map[string]*fieldMapping, 0),
 		isCompositeColumn: false,
 	}
 	checkMapping(t, goodD, mapD, "mapD")
@@ -194,7 +194,7 @@ func TestStructMapping(t *testing.T) {
 			&fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
 		},
 		value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "D", cassandraType: LongType, cassandraName: "D"},
-        others:            make(map[string]*fieldMapping, 0),
+		others:            make(map[string]*fieldMapping, 0),
 		isCompositeColumn: true,
 	}
 	checkMapping(t, goodE, mapE, "mapE")
