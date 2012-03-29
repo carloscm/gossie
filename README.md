@@ -7,18 +7,32 @@ Gossie is a Go library with a low level wrapper for the Cassandra 1.0 Thrift bin
 The official Apache Thrift libraries for Go are outdated and buggy. For now the active development happens in thrift4go:
 https://github.com/pomack/thrift4go
 
-Install from the tip of master, make inside thrift4go/lib/go for installing the Thrift Go library.
-
-Once Go 1.0 is released the author will submit a new version of the Go Thrift libraries/generator to Apache.
-
+Installing thrift4go under GOPATH in Go 1:
+```
+1) cd lib/go/src
+2) cp -R thrift $GOPATH/src
+3) go install thrift
+```
 
 # Installing
 
 There is no need to generate a Cassandra Thrift biding, I am providing one with Gossie (and the whole point is not to have to use it!)
 
-I am using godag, a "go command"-like wrapper for compiling/linking/etc so there is no Makefile in Gossie. I do not plan on providing one, and Go 1.0 would make it obsolete anyway.
+For application usage copy the sources to your GOPATH/src and issue a go install to build and copy the libraries:
 
-Gossie is written in Go r60.3 for now. I am waiting for the official Go 1.0 release to port it.
+```
+1) cp -R src/* $GOPATH/src
+2) go install cassandra gossie
+```
+
+If you want to fork and do development on Gossie itself the main command you need to run is something like (from the root of the Gossie folder):
+
+```
+# locally install inside a pkg folder the depedencies, ie the cassandra bindings
+GOPATH=$GOPATH:`pwd` go test -i gossie
+# actually build and run the gossie tests
+GOPATH=$GOPATH:`pwd` go test gossie
+```
 
 
 # Running the tests
@@ -53,7 +67,7 @@ The low level interface is based on passing []byte values for everything, mirror
 
 ### Struct maping
 
-The first part of the high level Gossie interface is the Map/Unmap functions. These functions allow to convert Go structs into Row-s, and they have support of advanced features like comparators or overriding column names and types.
+The first part of the high level Gossie interface is the Map/Unmap functions. These functions allow to convert Go structs into Row-s, and they have support of advanced features like composites or overriding column names and types.
 
 ```Go
 /*
