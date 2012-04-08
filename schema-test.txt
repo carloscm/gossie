@@ -28,3 +28,9 @@ create column family Composite with
 	key_validation_class = BytesType and
 	default_validation_class = BytesType
 ;
+
+create column family Reasonable with
+	comparator = 'CompositeType(LongType,AsciiType)' and
+	key_validation_class = UTF8Type and
+	default_validation_class = BytesType
+;

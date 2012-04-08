@@ -16,7 +16,7 @@ func TestSchema(t *testing.T) {
 	schema := newSchema(ksDef)
 	defer c.close()
 
-	if len(schema.ColumnFamilies) != 3 {
+	if len(schema.ColumnFamilies) != 4 {
 		t.Error("Test schema must have 3 CFs")
 	}
 

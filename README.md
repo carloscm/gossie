@@ -8,6 +8,7 @@ The official Apache Thrift libraries for Go are outdated and buggy. For now the 
 https://github.com/pomack/thrift4go
 
 Installing thrift4go under GOPATH in Go 1:
+
 ```
 1) cd lib/go/src
 2) cp -R thrift $GOPATH/src
@@ -18,7 +19,7 @@ Installing thrift4go under GOPATH in Go 1:
 
 There is no need to generate a Cassandra Thrift biding, I am providing one with Gossie (and the whole point is not to have to use it!)
 
-For application usage copy the sources to your GOPATH/src and issue a go install to build and copy the libraries:
+For application usage copy the sources to your $GOPATH/src and issue a go install to build and copy the libraries:
 
 ```
 1) cp -R src/* $GOPATH/src
@@ -74,7 +75,7 @@ The first part of the high level Gossie interface is the Map/Unmap functions. Th
 In CQL 3.0:
 CREATE TABLE timeline (
     user_id varchar,
-    tweet_id uuid,
+    tweet_id bigint,
     author varchar,
     body varchar,
     PRIMARY KEY (user_id, tweet_id)
@@ -84,17 +85,46 @@ CREATE TABLE timeline (
 // In Gossie:
 type Timeline struct {
 	UserID  string  `cf:"Timeline" key:"UserID" col:"TweetID,*name" val:"*value"`
-	TweetID UUID
+	TweetID int64
 	Author  string
 	Body    string
 }
 
-row, err = Map(&Timeline{"userid", ..., "Author Name", "Hey this thing rocks!"})
+row, err = Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
 ````
 
-### High level queries
+### Cursors
 
-Coming soon!
+As a convenient wrapper over Map/Unmap and the Query/Mutation interfaces Gossie provides the Cursor interface. This wrapper implements a classic database cursor over rows and composite row slices. Example:
+
+```Go
+
+type Timeline struct {
+	UserID  string  `cf:"Timeline" key:"UserID" col:"TweetID,*name" val:"*value"`
+	TweetID int64
+	Author  string
+	Body    string
+}
+
+// initialize a cursor over a struct instance. we can reuse both the cursor and the struct for all operations
+tweet := &Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
+cursor := pool.Cursor(tweet)
+
+// write a single tweet
+cursor.Write()
+
+// read a single tweet. this will implicitly use the key field for the row key, and will add a slice operation
+// if the struct has fixed composite columns
+tweet.Read(1)
+
+// change the row key and the fixed composite filed and read a different tweet, reusing both the struct and the cursor
+tweet.UserID = "anotheruser"
+tweet.TweetID = 20000000000001
+cursor.Read(1)
+// tweet now contains the just read tweet
+````
+
+Comming soon: range reads for composites with buffering and paging
 
 
 # License

@@ -7,6 +7,15 @@ import (
 	"cassandra"
 )
 
+/*
+to do:
+    generate CQL schema from tagged Go structs
+    validate tagged Go structs against schemas
+    handle ReversedType
+    handle type options
+	handle composited column names in the schema (is this in use/allowed?)
+*/
+
 type Schema struct {
 	ColumnFamilies map[string]*ColumnFamily
 }

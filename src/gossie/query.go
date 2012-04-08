@@ -140,7 +140,7 @@ type Mutation interface {
 	// Delete deletes a single row specified by key
 	Delete(cf string, key []byte) Mutation
 
-	// Delete deletes the passed columns from the row specified by key
+	// DeleteColumns deletes the passed columns from the row specified by key
 	DeleteColumns(cf string, key []byte, columns [][]byte) Mutation
 
 	//DeleteSlice(cf string, key []byte, slice *Slice) Mutation

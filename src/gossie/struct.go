@@ -12,6 +12,14 @@ import (
 
 todo:
 
+	allow some form of "custom composite" to support common use cases like row keys in the form (read as ascii) 111:222:333.
+	-> maybe support it via optional callables over the passed interface? OnMapKey/etc
+
+	allow to reuse the same fields as both key and col component
+
+	OR: introduce special key field tags to use during sharding, since the "row key" concept losses meaning in this case,
+	since it is managed by the lib
+
     go maps support for things like
     type s struct {
         a    int `cf:"cfname" key:"a" col:"atts" val:"atts"`
@@ -50,6 +58,8 @@ type structMapping struct {
 	value             *fieldMapping
 	others            map[string]*fieldMapping
 	isCompositeColumn bool
+	isSliceColumn     bool
+	isStarNameColumn  bool
 }
 
 func defaultCassandraType(t reflect.Type) (TypeDesc, int) {
@@ -175,13 +185,17 @@ func newStructMapping(t reflect.Type) (*structMapping, error) {
 				if !isLast {
 					return nil, errors.New(fmt.Sprint("*name can only be used in the last position of a composite, error in struct ", t.Name()))
 				} else {
+					sm.isStarNameColumn = true
 					fm = &fieldMapping{fieldKind: starNameField}
 				}
 			} else if fm, found = fields[name]; !found {
 				return nil, errors.New(fmt.Sprint("Referenced column field ", name, " does not exist in struct ", t.Name()))
 			}
-			if fm.fieldKind == baseTypeSliceField && !isLast {
-				return nil, errors.New(fmt.Sprint("Slice struct fields can only be used in the last position of a composite, error in struct ", t.Name()))
+			if fm.fieldKind == baseTypeSliceField {
+				sm.isSliceColumn = true
+				if !isLast {
+					return nil, errors.New(fmt.Sprint("Slice struct fields can only be used in the last position of a composite, error in struct ", t.Name()))
+				}
 			}
 			delete(fields, name)
 			sm.columns = append(sm.columns, fm)
@@ -207,6 +221,9 @@ func getMapping(v reflect.Value) (*structMapping, error) {
 	found := false
 	t := v.Type()
 	mapCacheMutex.Lock()
+	if mapCache == nil {
+		mapCache = make(map[reflect.Type]*structMapping)
+	}
 	if sm, found = mapCache[t]; !found {
 		sm, err = newStructMapping(t)
 		if err != nil {
@@ -217,7 +234,16 @@ func getMapping(v reflect.Value) (*structMapping, error) {
 	return sm, err
 }
 
-func Map(source interface{}) (*Row, error) {
+type mappedStruct struct {
+	source interface{}
+	v      reflect.Value
+	sm     *structMapping
+}
+
+func newMappedStruct(source interface{}) (*mappedStruct, error) {
+	ms := &mappedStruct{source: source}
+	var err error
+
 	// always work with a pointer to struct
 	vp := reflect.ValueOf(source)
 	if vp.Kind() != reflect.Ptr {
@@ -226,38 +252,63 @@ func Map(source interface{}) (*Row, error) {
 	if vp.IsNil() {
 		return nil, errors.New("Passed source is not a pointer to a struct")
 	}
-	v := reflect.Indirect(vp)
-	if v.Kind() != reflect.Struct {
+	ms.v = reflect.Indirect(vp)
+	if ms.v.Kind() != reflect.Struct {
 		return nil, errors.New("Passed source is not a pointer to a struct")
 	}
-	if !v.CanSet() {
+	if !ms.v.CanSet() {
 		return nil, errors.New("Cannot modify the passed struct instance")
 	}
 
-	sm, err := getMapping(v)
+	ms.sm, err = getMapping(ms.v)
 	if err != nil {
 		return nil, err
 	}
+
+	return ms, nil
+}
+
+func (ms *mappedStruct) marshalKey() ([]byte, error) {
+	vk := ms.v.Field(ms.sm.key.position)
+	b, err := Marshal(vk.Interface(), ms.sm.key.cassandraType)
+	if err != nil {
+		return nil, errors.New(fmt.Sprint("Error marshaling key field ", ms.sm.key.name, ":", err))
+	}
+	return b, nil
+}
+
+func internalMap(source interface{}) (*Row, *mappedStruct, error) {
+	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
+	ms, err := newMappedStruct(source)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// allocate new row to return
 	row := &Row{}
 
-	// marshal key
-	vk := v.Field(sm.key.position)
-	b, err := Marshal(vk.Interface(), sm.key.cassandraType)
+	// marshal the key field
+	b, err := ms.marshalKey()
 	if err != nil {
-		return nil, errors.New(fmt.Sprint("Error marshaling key field ", sm.key.name, ":", err))
+		return nil, nil, err
 	}
 	row.Key = b
 
 	// marshal columns and values
-	return row, mapField(v, row, sm, 0, make([]byte, 0), make([]byte, 0), 0)
+	return row, ms, ms.mapField(row, 0, make([]byte, 0), make([]byte, 0), 0)
 }
 
-func mapField(source reflect.Value, row *Row, sm *structMapping, component int, composite []byte, value []byte, valueIndex int) error {
+func Map(source interface{}) (*Row, error) {
+	row, _, err := internalMap(source)
+	return row, err
+}
+
+func (ms *mappedStruct) mapField(row *Row, component int, composite []byte, value []byte, valueIndex int) error {
 
 	// check if there are components left
-	if component < len(sm.columns) {
+	if component < len(ms.sm.columns) {
 
-		fm := sm.columns[component]
+		fm := ms.sm.columns[component]
 
 		// switch type of field named by component
 		switch fm.fieldKind {
@@ -265,22 +316,22 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 		// base type
 		case baseTypeField:
 			// set value of the current composite field to the field value
-			v := source.Field(fm.position)
+			v := ms.v.Field(fm.position)
 			b, err := Marshal(v.Interface(), fm.cassandraType)
 			if err != nil {
 				return errors.New(fmt.Sprint("Error marshaling field ", fm.name, ":", err))
 			}
-			if sm.isCompositeColumn {
+			if ms.sm.isCompositeColumn {
 				composite = packComposite(composite, b, false, false, false)
 			} else {
 				composite = b
 			}
-			return mapField(source, row, sm, component+1, composite, value, valueIndex)
+			return ms.mapField(row, component+1, composite, value, valueIndex)
 
 		// slice of base type
 		case baseTypeSliceField:
 			// iterate slice and map more columns
-			v := source.Field(fm.position)
+			v := ms.v.Field(fm.position)
 			n := v.Len()
 			for i := 0; i < n; i++ {
 				// set value of the current composite field to the field value
@@ -290,12 +341,12 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 					return errors.New(fmt.Sprint("Error marshaling field ", fm.name, ":", err))
 				}
 				var subComposite []byte
-				if sm.isCompositeColumn {
+				if ms.sm.isCompositeColumn {
 					subComposite = packComposite(composite, b, false, false, false)
 				} else {
 					subComposite = b
 				}
-				err = mapField(source, row, sm, component+1, subComposite, value, i)
+				err = ms.mapField(row, component+1, subComposite, value, i)
 				if err != nil {
 					return err
 				}
@@ -304,26 +355,26 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 		// *name
 		case starNameField:
 			// iterate over non-key/col/val-referenced struct fields and map more columns
-			for _, fm := range sm.others {
+			for _, fm := range ms.sm.others {
 				// set value of the current composite field to the field name (possibly overriden by name:)
 				b, err := Marshal(fm.cassandraName, UTF8Type)
 				if err != nil {
 					return errors.New(fmt.Sprint("Error marshaling field ", fm.name, ":", err))
 				}
 				var subComposite []byte
-				if sm.isCompositeColumn {
+				if ms.sm.isCompositeColumn {
 					subComposite = packComposite(composite, b, false, false, false)
 				} else {
 					subComposite = b
 				}
 				// marshal field value and pass it to next field mapper in case it is *value
-				v := source.Field(fm.position)
+				v := ms.v.Field(fm.position)
 				b, err = Marshal(v.Interface(), fm.cassandraType)
 				if err != nil {
 					return errors.New(fmt.Sprint("Error marshaling field ", fm.name, ":", err))
 				}
 
-				err = mapField(source, row, sm, component+1, subComposite, b, valueIndex)
+				err = ms.mapField(row, component+1, subComposite, b, valueIndex)
 				if err != nil {
 					return err
 				}
@@ -333,7 +384,7 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 	} else {
 		// no components left, emit column
 
-		fm := sm.value
+		fm := ms.sm.value
 
 		// switch type of value field
 		switch fm.fieldKind {
@@ -344,7 +395,7 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 
 		case baseTypeSliceField:
 			// set value to the passed value index in this slice
-			vs := source.Field(fm.position)
+			vs := ms.v.Field(fm.position)
 			v := vs.Index(valueIndex)
 			b, err := Marshal(v.Interface(), fm.cassandraType)
 			if err != nil {
@@ -354,7 +405,7 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 
 		case baseTypeField:
 			// set value to the field value
-			v := source.Field(fm.position)
+			v := ms.v.Field(fm.position)
 			b, err := Marshal(v.Interface(), fm.cassandraType)
 			if err != nil {
 				return errors.New(fmt.Sprint("Error marshaling field ", fm.name, ":", err))
@@ -371,55 +422,45 @@ func mapField(source reflect.Value, row *Row, sm *structMapping, component int, 
 }
 
 func Unmap(row *Row, destination interface{}) error {
-	// always work with a pointer to struct
-	vp := reflect.ValueOf(destination)
-	if vp.Kind() != reflect.Ptr {
-		return errors.New("Passed destination is not a pointer")
-	}
-	if vp.IsNil() {
-		return errors.New("Passed destination is a nil pointer")
-	}
-	v := reflect.Indirect(vp)
-	if v.Kind() != reflect.Struct {
-		return errors.New("Passed destination is not a pointer to a struct")
-	}
 
-	sm, err := getMapping(v)
+	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
+	ms, err := newMappedStruct(destination)
 	if err != nil {
 		return err
 	}
 
 	// unmarshal key
-	vk := v.Field(sm.key.position)
+	vk := ms.v.Field(ms.sm.key.position)
 	if !vk.CanAddr() {
 		return errors.New("Cannot obtain pointer to key field")
 	}
 	vkp := vk.Addr()
-	err = Unmarshal(row.Key, sm.key.cassandraType, vkp.Interface())
+	err = Unmarshal(row.Key, ms.sm.key.cassandraType, vkp.Interface())
 	if err != nil {
-		return errors.New(fmt.Sprint("Error unmarshaling key field ", sm.key.name, ":", err))
+		return errors.New(fmt.Sprint("Error unmarshaling key field ", ms.sm.key.name, ":", err))
 	}
 
 	// unmarshal col/values
+
 	setField := func(fm *fieldMapping, b []byte, index int) error {
-		vfield := v.Field(fm.position)
+		vfield := ms.v.Field(fm.position)
 		if index >= 0 {
 			vfield = vfield.Index(index)
 		}
 		if !vfield.CanAddr() {
-			return errors.New(fmt.Sprint("Cannot obtain pointer to field ", vfield.Type().Name(), " in struct ", v.Type().Name()))
+			return errors.New(fmt.Sprint("Cannot obtain pointer to field ", vfield.Type().Name(), " in struct ", ms.v.Type().Name()))
 		}
 		vfieldp := vfield.Addr()
 
 		err = Unmarshal(b, fm.cassandraType, vfieldp.Interface())
 		if err != nil {
-			return errors.New(fmt.Sprint("Error unmarshaling composite field ", vfield.Type().Name(), " in struct ", v.Type().Name(), ", error: ", err))
+			return errors.New(fmt.Sprint("Error unmarshaling composite field ", vfield.Type().Name(), " in struct ", ms.v.Type().Name(), ", error: ", err))
 		}
 		return nil
 	}
 
 	prepareSlice := func(fm *fieldMapping, n int) {
-		vfield := v.Field(fm.position)
+		vfield := ms.v.Field(fm.position)
 		t := vfield.Type()
 		s := reflect.MakeSlice(t, n, n)
 		vfield.Set(s)
@@ -428,29 +469,29 @@ func Unmap(row *Row, destination interface{}) error {
 	rowLength := len(row.Columns)
 
 	// prepare slice components and value
-	for _, fm := range sm.columns {
+	for _, fm := range ms.sm.columns {
 		if fm.fieldKind == baseTypeSliceField {
 			prepareSlice(fm, rowLength)
 		}
 	}
-	if sm.value.fieldKind == baseTypeSliceField {
-		prepareSlice(sm.value, rowLength)
+	if ms.sm.value.fieldKind == baseTypeSliceField {
+		prepareSlice(ms.sm.value, rowLength)
 	}
 
 	for i, column := range row.Columns {
 		var components [][]byte
-		if sm.isCompositeColumn {
+		if ms.sm.isCompositeColumn {
 			components = unpackComposite(column.Name)
 		} else {
 			components = [][]byte{column.Name}
 		}
-		if len(components) != len(sm.columns) {
-			return errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct col: component in struct ", v.Type().Name()))
+		if len(components) != len(ms.sm.columns) {
+			return errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct col: component in struct ", ms.v.Type().Name()))
 		}
 
 		// iterate over column name components and set them, plus values
 		for j, b := range components {
-			fm := sm.columns[j]
+			fm := ms.sm.columns[j]
 			switch fm.fieldKind {
 
 			case baseTypeField:
@@ -462,9 +503,9 @@ func Unmap(row *Row, destination interface{}) error {
 				var name string
 				err = Unmarshal(b, UTF8Type, &name)
 				if err != nil {
-					return errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for *name in struct ", v.Type().Name(), ", error: ", err))
+					return errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for *name in struct ", ms.v.Type().Name(), ", error: ", err))
 				}
-				if valueFM, found := sm.others[name]; found {
+				if valueFM, found := ms.sm.others[name]; found {
 					if err = setField(valueFM, column.Value, -1); err != nil {
 						return err
 					}
@@ -478,16 +519,16 @@ func Unmap(row *Row, destination interface{}) error {
 		}
 
 		// set value field for the non-*name cases
-		if sm.value != nil {
-			switch sm.value.fieldKind {
+		if ms.sm.value != nil {
+			switch ms.sm.value.fieldKind {
 
 			case baseTypeField:
-				if err = setField(sm.value, column.Value, -1); err != nil {
+				if err = setField(ms.sm.value, column.Value, -1); err != nil {
 					return err
 				}
 
 			case baseTypeSliceField:
-				if err = setField(sm.value, column.Value, i); err != nil {
+				if err = setField(ms.sm.value, column.Value, i); err != nil {
 					return err
 				}
 			}

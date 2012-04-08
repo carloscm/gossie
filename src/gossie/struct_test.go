@@ -9,9 +9,9 @@ import (
 
 todo:
 
-    much more testing on struct mapping
+    more testing on struct mapping, more cases, more automation
 
-    more test for name: and type:
+    more tests for name: and type:
 
 */
 
@@ -153,6 +153,8 @@ func TestStructMapping(t *testing.T) {
 			"C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: AsciiType, cassandraName: "C"},
 		},
 		isCompositeColumn: false,
+		isSliceColumn:     false,
+		isStarNameColumn:  true,
 	}
 	checkMapping(t, goodB, mapB, "mapB")
 
@@ -169,6 +171,8 @@ func TestStructMapping(t *testing.T) {
 			"C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
 		},
 		isCompositeColumn: true,
+		isSliceColumn:     false,
+		isStarNameColumn:  true,
 	}
 	checkMapping(t, goodC, mapC, "mapC")
 
@@ -182,6 +186,8 @@ func TestStructMapping(t *testing.T) {
 		value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
 		others:            make(map[string]*fieldMapping, 0),
 		isCompositeColumn: false,
+		isSliceColumn:     true,
+		isStarNameColumn:  false,
 	}
 	checkMapping(t, goodD, mapD, "mapD")
 
@@ -196,6 +202,8 @@ func TestStructMapping(t *testing.T) {
 		value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "D", cassandraType: LongType, cassandraName: "D"},
 		others:            make(map[string]*fieldMapping, 0),
 		isCompositeColumn: true,
+		isSliceColumn:     true,
+		isStarNameColumn:  false,
 	}
 	checkMapping(t, goodE, mapE, "mapE")
 
@@ -223,6 +231,8 @@ func TestStructMapping(t *testing.T) {
 			"Val": &fieldMapping{fieldKind: baseTypeField, position: 12, name: "Val", cassandraType: UTF8Type, cassandraName: "Val"},
 		},
 		isCompositeColumn: true,
+		isSliceColumn:     false,
+		isStarNameColumn:  true,
 	}
 	checkMapping(t, goodEComp, eComp, "eComp")
 
