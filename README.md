@@ -91,6 +91,7 @@ type Timeline struct {
 }
 
 row, err = Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
+err = pool.Mutation().Insert("Timeline", row).Run()
 ````
 
 ### Cursors
@@ -98,30 +99,21 @@ row, err = Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thin
 As a convenient wrapper over Map/Unmap and the Query/Mutation interfaces Gossie provides the Cursor interface. This wrapper implements a classic database cursor over rows and composite row slices. Example:
 
 ```Go
-
-type Timeline struct {
-	UserID  string  `cf:"Timeline" key:"UserID" col:"TweetID,*name" val:"*value"`
-	TweetID int64
-	Author  string
-	Body    string
-}
-
-// initialize a cursor over a struct instance. we can reuse both the cursor and the struct for all operations
-tweet := &Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
-cursor := pool.Cursor(tweet)
+// initialize a cursor
+cursor := pool.Cursor()
 
 // write a single tweet
-cursor.Write()
+tweet := &Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
+err = cursor.Write(tweet)
 
-// read a single tweet. this will implicitly use the key field for the row key, and will add a slice operation
-// if the struct has fixed composite columns
-tweet.Read(1)
+// read a single tweet. this will implicitly use the key field for the row key, and will add a slice
+// operation if the struct has fixed composite columns
+err = tweet.Read(tweet)
 
-// change the row key and the fixed composite filed and read a different tweet, reusing both the struct and the cursor
-tweet.UserID = "anotheruser"
-tweet.TweetID = 20000000000001
-cursor.Read(1)
-// tweet now contains the just read tweet
+// init a new struct instance with just the key and composite fields to read a different tweet
+tweet2 := &Timeline{"userid", 10000000000004}
+err = cursor.Read(tweet2)
+// tweet no
 ````
 
 Comming soon: range reads for composites with buffering and paging

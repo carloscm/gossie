@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+/*
+
+todo:
+
+	since most of the Cursor interface is still in flux the current tests are minimal
+
+*/
+
 type ReasonableOne struct {
 	Username string `cf:"Reasonable" key:"Username" col:"TweetID,*name" val:"*value"`
 	TweetID  int64
@@ -28,25 +36,45 @@ func TestRead(t *testing.T) {
 		Body:     "hey this thing appears to work, nice!",
 	}
 
-	cursor := cp.Cursor(ro)
-	err = cursor.Write()
+	cursor := cp.Cursor()
+	err = cursor.Write(ro)
 	if err != nil {
 		t.Error("Writing struct:", err)
 	}
 
 	ro2 := &ReasonableOne{
 		Username: "testuser",
+		TweetID:  100000000000003,
+		Lat:      2.00002,
+		Lon:      1.11,
+		Body:     "more words",
+	}
+	err = cursor.Write(ro2)
+	if err != nil {
+		t.Error("Writing struct:", err)
+	}
+
+	ro3 := &ReasonableOne{
+		Username: "testuser",
 		TweetID:  100000000000002,
 	}
-
-	cursor2 := cp.Cursor(ro2)
-	err = cursor2.Read(1)
+	err = cursor.Read(ro3)
 	if err != nil {
-		t.Error("Reading struct:", err)
+		t.Fatal("Reading struct:", err)
 	}
-
-	if !reflect.DeepEqual(ro, ro2) {
+	if !reflect.DeepEqual(ro, ro3) {
 		t.Error("Read does not match Write")
 	}
 
+	ro3 = &ReasonableOne{
+		Username: "testuser",
+		TweetID:  100000000000003,
+	}
+	err = cursor.Read(ro3)
+	if err != nil {
+		t.Fatal("Reading struct:", err)
+	}
+	if !reflect.DeepEqual(ro2, ro3) {
+		t.Error("Read does not match Write")
+	}
 }

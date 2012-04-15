@@ -63,6 +63,7 @@ type noErrB struct {
 	A int `cf:"cfname" key:"A" col:"*name" val:"*value"`
 	B int `name:"Z"`
 	C int `type:"AsciiType"`
+	D int
 }
 type noErrC struct {
 	A int `cf:"cfname" key:"A" col:"B,*name" val:"*value"`
@@ -140,17 +141,18 @@ func TestStructMapping(t *testing.T) {
 	}
 	checkMapping(t, goodA, mapA, "mapA")
 
-	mapB, _ := buildMappingFromPtr(&noErrB{1, 2, 3})
+	mapB, _ := buildMappingFromPtr(&noErrB{1, 2, 3, 4})
 	goodB := &structMapping{
 		cf:  "cfname",
 		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
 		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
+			&fieldMapping{fieldKind: starNameField, position: 0, name: "*name", cassandraType: 0, cassandraName: ""},
 		},
-		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
+		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "*value", cassandraType: 0, cassandraName: ""},
 		others: map[string]*fieldMapping{
 			"Z": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "Z"},
 			"C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: AsciiType, cassandraName: "C"},
+			"D": &fieldMapping{fieldKind: baseTypeField, position: 3, name: "D", cassandraType: LongType, cassandraName: "D"},
 		},
 		isCompositeColumn: false,
 		isSliceColumn:     false,
@@ -164,9 +166,9 @@ func TestStructMapping(t *testing.T) {
 		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
 		columns: []*fieldMapping{
 			&fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
-			&fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
+			&fieldMapping{fieldKind: starNameField, position: 0, name: "*name", cassandraType: 0, cassandraName: ""},
 		},
-		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
+		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "*value", cassandraType: 0, cassandraName: ""},
 		others: map[string]*fieldMapping{
 			"C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
 		},
@@ -224,9 +226,9 @@ func TestStructMapping(t *testing.T) {
 			&fieldMapping{fieldKind: baseTypeField, position: 9, name: "FFloat64", cassandraType: DoubleType, cassandraName: "FFloat64"},
 			&fieldMapping{fieldKind: baseTypeField, position: 10, name: "FString", cassandraType: UTF8Type, cassandraName: "FString"},
 			&fieldMapping{fieldKind: baseTypeField, position: 11, name: "FUUID", cassandraType: UUIDType, cassandraName: "FUUID"},
-			&fieldMapping{fieldKind: starNameField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
+			&fieldMapping{fieldKind: starNameField, position: 0, name: "*name", cassandraType: 0, cassandraName: ""},
 		},
-		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "", cassandraType: 0, cassandraName: ""},
+		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "*value", cassandraType: 0, cassandraName: ""},
 		others: map[string]*fieldMapping{
 			"Val": &fieldMapping{fieldKind: baseTypeField, position: 12, name: "Val", cassandraType: UTF8Type, cassandraName: "Val"},
 		},
@@ -245,13 +247,13 @@ type structTestShell struct {
 	name           string
 }
 
-func (shell *structTestShell) checkMap(t *testing.T, expectedStruct interface{}) {
+func (shell *structTestShell) checkMap(t *testing.T, expectedStruct interface{}, round int) {
 	resultRow, err := Map(expectedStruct)
 	if err != nil {
 		t.Error("Error mapping struct: ", err)
 	}
 	if !reflect.DeepEqual(resultRow, shell.expectedRow) {
-		t.Error("Mapped struct ", shell.name, " does not match expected row ", shell.expectedRow, " actual ", resultRow)
+		t.Error("(Round ", round, ") Mapped struct ", shell.name, " does not match expected row ", shell.expectedRow, " actual ", resultRow)
 	}
 }
 
@@ -267,12 +269,15 @@ func (shell *structTestShell) checkUnmap(t *testing.T) interface{} {
 }
 
 func (shell *structTestShell) checkFullMap(t *testing.T) {
-	shell.checkMap(t, shell.expectedStruct)
+	shell.checkMap(t, shell.expectedStruct, 1)
 	intermediateStruct := shell.checkUnmap(t)
-	shell.checkMap(t, intermediateStruct)
+	shell.checkMap(t, intermediateStruct, 2)
 }
 
 func TestMap(t *testing.T) {
+
+	// CAVEAT: column ordering is not deterministic for this kind of Map/Unmap roundtrip
+	// something needs to be done to test these structs with independent order over the columns
 
 	shells := []*structTestShell{
 		&structTestShell{
@@ -292,7 +297,7 @@ func TestMap(t *testing.T) {
 
 		&structTestShell{
 			name:           "noErrB",
-			expectedStruct: &noErrB{1, 2, 3},
+			expectedStruct: &noErrB{1, 2, 3, 4},
 			resultStruct:   &noErrB{},
 			expectedRow: &Row{
 				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
@@ -300,6 +305,10 @@ func TestMap(t *testing.T) {
 					&Column{
 						Name:  []byte{67},
 						Value: []byte{51},
+					},
+					&Column{
+						Name:  []byte{68},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
 					},
 					&Column{
 						Name:  []byte{90},

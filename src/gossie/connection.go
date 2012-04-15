@@ -60,7 +60,7 @@ type ConnectionPool interface {
 	Mutation() Mutation
 
 	// Cursor returns a high level interface for read and write operations over structs
-	Cursor(interface{}) Cursor
+	Cursor() Cursor
 
 	// Close all the connections in the pool
 	Close()
@@ -311,8 +311,8 @@ func (cp *connectionPool) Mutation() Mutation {
 	return makeMutation(cp, cp.options.WriteConsistency)
 }
 
-func (cp *connectionPool) Cursor(source interface{}) Cursor {
-	return makeCursor(cp, source)
+func (cp *connectionPool) Cursor() Cursor {
+	return makeCursor(cp)
 }
 
 func (cp *connectionPool) Keyspace() string {

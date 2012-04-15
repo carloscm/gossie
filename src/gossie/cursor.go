@@ -22,51 +22,42 @@ todo:
 
 */
 
+var (
+	ErrorNotFound = errors.New("Row (plus any composites) not found")
+)
+
 // Cursor is a simple cursor-based interface for reading and writing structs from a Cassandra column family.
 type Cursor interface {
 
-	// Read rows (or slices of a row) to fill up the struct.
-	//
-	// For limit == 1 a single get operation will be issued. If a composite is present then this operation will
-	// issue a slice with an exact match for the composite value
-	//
-	// For limit > 1, and for structs with no composite, a range get operation will be issued, the result buffered
-	// internally in the Cursor, and the first returned row unmapped into the struct. Next() is then available for
-	// paging inside the returned results and will issue new range get operations when neede. Please note that row
-	// range get is unordered in most Cassandra configurations. TO DO
-	//
-	// If the struct has a composite column name then this operation will issue a single row get, but with a slice
-	// predicate that allows for iteration over the row with Next()/Prev() TO DO
-	Read(limit int) error
-
+	//Search(...)
 	//Next() bool
 	//Prev() bool
-
 	//First()
 
+	// Read a single row (or slice of a row) to fill up the struct.
+	// A single get operation will be issued. If a composite is present then this operation will issue a slice with
+	// an exact match for the composite value with the field values present in the struct
+	Read(interface{}) error
+
 	// Write a single row (or slice of a row) with the data currently in the struct.
-	Write() error
+	Write(interface{}) error
 
 	//Delete()
 }
 
 type cursor struct {
-	source interface{}
-	pool   *connectionPool
-	//position int
-	//buffer []interface{}
+	pool *connectionPool
 }
 
-func makeCursor(cp *connectionPool, source interface{}) (c *cursor) {
+func makeCursor(cp *connectionPool) (c *cursor) {
 	return &cursor{
-		source: source,
-		pool:   cp,
+		pool: cp,
 	}
 }
 
-func (c *cursor) Write() error {
+func (c *cursor) Write(source interface{}) error {
 
-	row, ms, err := internalMap(c.source)
+	row, ms, err := internalMap(source)
 	if err != nil {
 		return err
 	}
@@ -78,26 +69,20 @@ func (c *cursor) Write() error {
 	return nil
 }
 
-func (c *cursor) Read(limit int) error {
-	if limit < 0 {
-		return errors.New("Limit is less than 1, nothing to read")
-	}
+func (c *cursor) Read(source interface{}) error {
 
 	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
-	ms, err := newMappedStruct(c.source)
+	ms, err := newMappedStruct(source)
 	if err != nil {
 		return err
 	}
 
 	// sanity checks
-	if !ms.sm.isStarNameColumn && !ms.sm.isSliceColumn {
-		return errors.New(fmt.Sprint("Struct ", ms.v.Type().Name(), " has no *name nor slice field in its col tag, nothing to read"))
-	}
 	if ms.sm.isSliceColumn {
 		return errors.New(fmt.Sprint("Slice field in col tag is unsuported in Cursor for now, check back soon!"))
 	}
 
-	// marshal the key field for the key to look up
+	// marshal the key field
 	key, err := ms.marshalKey()
 	if err != nil {
 		return err
@@ -106,41 +91,55 @@ func (c *cursor) Read(limit int) error {
 	// start building the query
 	q := c.pool.Query().Cf(ms.sm.cf)
 
+	// build a slice composite comparator if needed
+	if ms.sm.isCompositeColumn {
+		// iterate over the components and set an equality comparison for every simple field
+		start := make([]byte, 0)
+		end := make([]byte, 0)
+		var component int
+		for component = 0; component < len(ms.sm.columns); component++ {
+			fm := ms.sm.columns[component]
+			if fm.fieldKind != baseTypeField {
+				break
+			}
+			b, err := ms.mapColumn(baseTypeField, fm, 0)
+			if err != nil {
+				return err
+			}
+			start = packComposite(start, b, eocEquals)
+			end = packComposite(end, b, eocGreater)
+		}
+
+		/*if component < len(ms.sm.columns) {
+		    // we still got one to go, this means the last one was an iterable non-fixed type (*name or go slice)
+		    //fm := ms.sm.columns[component]
+		    // TODO: this will only work for *name
+		    b := make([]byte, 0)
+		    start = packComposite(start, b, o[6], o[7], o[8])
+		    end = packComposite(end, b, o[9], o[10], o[11])
+		}*/
+
+		// TODO: fix hardcoded number of columns
+		q.Slice(&Slice{Start: start, End: end, Count: 100})
+	}
+
 	//isCompositeColumn bool
 	//isSliceColumn bool
 	//isStarNameColumn bool
 
-	if limit == 1 {
+	row, err := q.Get(key)
 
-		if ms.sm.isCompositeColumn {
-			return errors.New(fmt.Sprint("Cursor composite support will be implemented soon!"))
-			/*
+	if err != nil {
+		return err
+	}
 
-			   // we only want a single result so issue an exact match composite comparator slice
-			   start := make([]byte, 0)
-			   start = packComposite(start, component []byte, true, true, true)
+	if row == nil {
+		return ErrorNotFound
+	}
 
-			   packComposite(start, component []byte, true, sliceStart, inclusive bool) []byte {
-
-			   s := &Slice{
-			       Start:
-			       End:
-			       Count: 1
-			   }
-			   q.Slice(s)
-			*/
-
-		}
-		row, err := q.Get(key)
-		if err != nil {
-			return err
-		}
-		err = Unmap(row, c.source)
-		if err != nil {
-			return err
-		}
-	} else {
-		return errors.New(fmt.Sprint("Limit > 1 will be implemented soon!"))
+	err = Unmap(row, source)
+	if err != nil {
+		return err
 	}
 
 	return nil
