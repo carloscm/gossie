@@ -47,7 +47,7 @@ Launch a Cassandra instance in localhost:9160, create a keyspace named TestGossi
 To create a connection use the method NewConnectionPool, passing a list of nodes, the desired keyspace, and a PoolOptions with the various connection options you can tune.
 
 ```Go
-pool := NewConnectionPool([]string{"localhost:9160"}, "Example", PoolOptions{Size: 50, Timeout: 3000})
+pool := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", PoolOptions{Size: 50, Timeout: 3000})
 ````
 
 The pool uses a simple randomized rule for connecting to the passed nodes, always keeping the total number of connections under PoolOptions.Size but without any guarantees on the number of connections per host. It has automatic failover and retry of operations.
@@ -90,7 +90,7 @@ type Timeline struct {
 	Body    string
 }
 
-row, err = Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
+row, err = gossie.Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
 err = pool.Mutation().Insert("Timeline", row).Run()
 ````
 
@@ -108,12 +108,13 @@ err = cursor.Write(tweet)
 
 // read a single tweet. this will implicitly use the key field for the row key, and will add a slice
 // operation if the struct has fixed composite columns
-err = tweet.Read(tweet)
+err = cursor.Read(tweet)
 
 // init a new struct instance with just the key and composite fields to read a different tweet
 tweet2 := &Timeline{"userid", 10000000000004}
 err = cursor.Read(tweet2)
-// tweet no
+// tweet2 now contains the row with key "userid" sliced by the first comparator field equaled to
+// 10000000000004, or gossie.ErrorNotFound was returned in case it was not found
 ````
 
 Comming soon: range reads for composites with buffering and paging
