@@ -18,71 +18,27 @@ todo:
 type errNoMeta struct {
 	A int
 }
-type errNoMetaKeyColVal struct {
+type errNoMetaKey struct {
 	A int `cf:"cfname"`
 }
-type errNoMetaColVal struct {
-	A int `cf:"cfname" key:"A"`
-}
-type errNoMetaVal struct {
-	A int `cf:"cfname" key:"A" col:"B"`
-	B int
-}
 type errInvKey struct {
-	A int `cf:"cfname" key:"Z" col:"B" val:"C"`
+	A int `cf:"cfname" key:"Z"`
 	B int
 	C int
-}
-type errInvCol struct {
-	A int `cf:"cfname" key:"A" col:"Z" val:"C"`
-	B int
-	C int
-}
-type errInvVal struct {
-	A int `cf:"cfname" key:"A" col:"B" val:"Z"`
-	B int
-	C int
-}
-type errStarNameNotLast struct {
-	A int `cf:"cfname" key:"A" col:"*name,B" val:"*value"`
-	B int
-	C int
-}
-type errSliceNotLast struct {
-	A int `cf:"cfname" key:"A" col:"C,B" val:"D"`
-	B int
-	C []int
-	D []int
 }
 type noErrA struct {
-	A int `cf:"cfname" key:"A" col:"B" val:"C"`
+	A int `cf:"cfname" key:"A"`
 	B int
 	C int
 }
 type noErrB struct {
-	A int `cf:"cfname" key:"A" col:"*name" val:"*value"`
-	B int `name:"Z"`
+	A int `cf:"cfname" key:"A,B"`
+	B int
 	C int `type:"AsciiType"`
-	D int
-}
-type noErrC struct {
-	A int `cf:"cfname" key:"A" col:"B,*name" val:"*value"`
-	B int
-	C int
-}
-type noErrD struct {
-	A int `cf:"cfname" key:"A" col:"B" val:"C"`
-	B []int
-	C []int
-}
-type noErrE struct {
-	A int `cf:"cfname" key:"A" col:"B,C" val:"D"`
-	B int
-	C []int
-	D []int
+	D int `name:"Z"`
 }
 type everythingComp struct {
-	Key      string `cf:"cfname" key:"Key" col:"FBytes,FBool,FInt8,FInt16,FInt32,FInt,FInt64,FFloat32,FFloat64,FString,FUUID,*name" val:"*value"`
+	Key      string `cf:"cfname" key:"Key,FBytes,FBool,FInt8,FInt16,FInt32,FInt,FInt64,FFloat32,FFloat64,FString,FUUID"`
 	FBytes   []byte
 	FBool    bool
 	FInt8    int8
@@ -97,17 +53,17 @@ type everythingComp struct {
 	Val      string
 }
 
-func buildMappingFromPtr(instance interface{}) (*structMapping, error) {
+func buildMappingFromPtr(instance interface{}) (*mapping, error) {
 	valuePtr := reflect.ValueOf(instance)
 	value := reflect.Indirect(valuePtr)
 	typ := value.Type()
-	return newStructMapping(typ)
+	return newMapping(typ)
 }
 
 func structMapMustError(t *testing.T, instance interface{}) {
 	_, err := buildMappingFromPtr(instance)
 	if err == nil {
-		t.Error("Expected error calling newStructMapping, got none")
+		t.Error("Expected error calling newMapping, got none")
 	}
 }
 
@@ -119,122 +75,76 @@ func checkMapping(t *testing.T, expected, actual interface{}, name string) {
 
 func TestStructMapping(t *testing.T) {
 	structMapMustError(t, &errNoMeta{})
-	structMapMustError(t, &errNoMetaKeyColVal{})
-	structMapMustError(t, &errNoMetaColVal{})
-	structMapMustError(t, &errNoMetaVal{})
+	structMapMustError(t, &errNoMetaKey{})
 	structMapMustError(t, &errInvKey{})
-	structMapMustError(t, &errInvCol{})
-	structMapMustError(t, &errInvVal{})
-	structMapMustError(t, &errStarNameNotLast{})
-	structMapMustError(t, &errSliceNotLast{})
 
-	mapA, _ := buildMappingFromPtr(&noErrA{1, 2, 3})
-	goodA := &structMapping{
-		cf:  "cfname",
-		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
-		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
+	mapA, err := buildMappingFromPtr(&noErrA{1, 2, 3})
+	goodA := &mapping{
+		cf:        "cfname",
+		key:       &field{index: []int{0}, name: "A", cassandraType: LongType, cassandraName: "A"},
+		composite: []*field{},
+		values: []*field{
+			&field{index: []int{1}, name: "B", cassandraType: LongType, cassandraName: "B"},
+			&field{index: []int{2}, name: "C", cassandraType: LongType, cassandraName: "C"},
 		},
-		value:             &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
-		others:            make(map[string]*fieldMapping, 0),
-		isCompositeColumn: false,
+		namedValues: map[string]*field{
+			"B": &field{index: []int{1}, name: "B", cassandraType: LongType, cassandraName: "B"},
+			"C": &field{index: []int{2}, name: "C", cassandraType: LongType, cassandraName: "C"},
+		},
+	}
+	if err != nil {
+		t.Fatal("Unexpected error calling mapA newMapping:", err)
 	}
 	checkMapping(t, goodA, mapA, "mapA")
 
-	mapB, _ := buildMappingFromPtr(&noErrB{1, 2, 3, 4})
-	goodB := &structMapping{
+	mapB, err := buildMappingFromPtr(&noErrB{1, 2, 3, 4})
+	goodB := &mapping{
 		cf:  "cfname",
-		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
-		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: starNameField, position: 0, name: "*name", cassandraType: 0, cassandraName: ""},
+		key: &field{index: []int{0}, name: "A", cassandraType: LongType, cassandraName: "A"},
+		composite: []*field{
+			&field{index: []int{1}, name: "B", cassandraType: LongType, cassandraName: "B"},
 		},
-		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "*value", cassandraType: 0, cassandraName: ""},
-		others: map[string]*fieldMapping{
-			"Z": &fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "Z"},
-			"C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: AsciiType, cassandraName: "C"},
-			"D": &fieldMapping{fieldKind: baseTypeField, position: 3, name: "D", cassandraType: LongType, cassandraName: "D"},
+		values: []*field{
+			&field{index: []int{2}, name: "C", cassandraType: AsciiType, cassandraName: "C"},
+			&field{index: []int{3}, name: "D", cassandraType: LongType, cassandraName: "Z"},
 		},
-		isCompositeColumn: false,
-		isSliceColumn:     false,
-		isStarNameColumn:  true,
+		namedValues: map[string]*field{
+			"C": &field{index: []int{2}, name: "C", cassandraType: AsciiType, cassandraName: "C"},
+			"Z": &field{index: []int{3}, name: "D", cassandraType: LongType, cassandraName: "Z"},
+		},
+	}
+	if err != nil {
+		t.Fatal("Unexpected error calling mapB newMapping:", err)
 	}
 	checkMapping(t, goodB, mapB, "mapB")
 
-	mapC, _ := buildMappingFromPtr(&noErrC{1, 2, 3})
-	goodC := &structMapping{
-		cf:  "cfname",
-		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
-		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
-			&fieldMapping{fieldKind: starNameField, position: 0, name: "*name", cassandraType: 0, cassandraName: ""},
-		},
-		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "*value", cassandraType: 0, cassandraName: ""},
-		others: map[string]*fieldMapping{
-			"C": &fieldMapping{fieldKind: baseTypeField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
-		},
-		isCompositeColumn: true,
-		isSliceColumn:     false,
-		isStarNameColumn:  true,
-	}
-	checkMapping(t, goodC, mapC, "mapC")
-
-	mapD, _ := buildMappingFromPtr(&noErrD{1, []int{2, 3}, []int{4, 5}})
-	goodD := &structMapping{
-		cf:  "cfname",
-		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
-		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: baseTypeSliceField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
-		},
-		value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
-		others:            make(map[string]*fieldMapping, 0),
-		isCompositeColumn: false,
-		isSliceColumn:     true,
-		isStarNameColumn:  false,
-	}
-	checkMapping(t, goodD, mapD, "mapD")
-
-	mapE, _ := buildMappingFromPtr(&noErrE{1, 2, []int{3, 4}, []int{5, 6}})
-	goodE := &structMapping{
-		cf:  "cfname",
-		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
-		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: baseTypeField, position: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
-			&fieldMapping{fieldKind: baseTypeSliceField, position: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
-		},
-		value:             &fieldMapping{fieldKind: baseTypeSliceField, position: 3, name: "D", cassandraType: LongType, cassandraName: "D"},
-		others:            make(map[string]*fieldMapping, 0),
-		isCompositeColumn: true,
-		isSliceColumn:     true,
-		isStarNameColumn:  false,
-	}
-	checkMapping(t, goodE, mapE, "mapE")
-
-	eComp, _ := buildMappingFromPtr(&everythingComp{"A", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "B",
+	eComp, err := buildMappingFromPtr(&everythingComp{"A", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "B",
 		[16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "C"})
-	goodEComp := &structMapping{
+	goodEComp := &mapping{
 		cf:  "cfname",
-		key: &fieldMapping{fieldKind: baseTypeField, position: 0, name: "Key", cassandraType: UTF8Type, cassandraName: "Key"},
-		columns: []*fieldMapping{
-			&fieldMapping{fieldKind: baseTypeField, position: 1, name: "FBytes", cassandraType: BytesType, cassandraName: "FBytes"},
-			&fieldMapping{fieldKind: baseTypeField, position: 2, name: "FBool", cassandraType: BooleanType, cassandraName: "FBool"},
-			&fieldMapping{fieldKind: baseTypeField, position: 3, name: "FInt8", cassandraType: LongType, cassandraName: "FInt8"},
-			&fieldMapping{fieldKind: baseTypeField, position: 4, name: "FInt16", cassandraType: LongType, cassandraName: "FInt16"},
-			&fieldMapping{fieldKind: baseTypeField, position: 5, name: "FInt32", cassandraType: LongType, cassandraName: "FInt32"},
-			&fieldMapping{fieldKind: baseTypeField, position: 6, name: "FInt", cassandraType: LongType, cassandraName: "FInt"},
-			&fieldMapping{fieldKind: baseTypeField, position: 7, name: "FInt64", cassandraType: LongType, cassandraName: "FInt64"},
-			&fieldMapping{fieldKind: baseTypeField, position: 8, name: "FFloat32", cassandraType: FloatType, cassandraName: "FFloat32"},
-			&fieldMapping{fieldKind: baseTypeField, position: 9, name: "FFloat64", cassandraType: DoubleType, cassandraName: "FFloat64"},
-			&fieldMapping{fieldKind: baseTypeField, position: 10, name: "FString", cassandraType: UTF8Type, cassandraName: "FString"},
-			&fieldMapping{fieldKind: baseTypeField, position: 11, name: "FUUID", cassandraType: UUIDType, cassandraName: "FUUID"},
-			&fieldMapping{fieldKind: starNameField, position: 0, name: "*name", cassandraType: 0, cassandraName: ""},
+		key: &field{index: []int{0}, name: "Key", cassandraType: UTF8Type, cassandraName: "Key"},
+		composite: []*field{
+			&field{index: []int{1}, name: "FBytes", cassandraType: BytesType, cassandraName: "FBytes"},
+			&field{index: []int{2}, name: "FBool", cassandraType: BooleanType, cassandraName: "FBool"},
+			&field{index: []int{3}, name: "FInt8", cassandraType: LongType, cassandraName: "FInt8"},
+			&field{index: []int{4}, name: "FInt16", cassandraType: LongType, cassandraName: "FInt16"},
+			&field{index: []int{5}, name: "FInt32", cassandraType: LongType, cassandraName: "FInt32"},
+			&field{index: []int{6}, name: "FInt", cassandraType: LongType, cassandraName: "FInt"},
+			&field{index: []int{7}, name: "FInt64", cassandraType: LongType, cassandraName: "FInt64"},
+			&field{index: []int{8}, name: "FFloat32", cassandraType: FloatType, cassandraName: "FFloat32"},
+			&field{index: []int{9}, name: "FFloat64", cassandraType: DoubleType, cassandraName: "FFloat64"},
+			&field{index: []int{10}, name: "FString", cassandraType: UTF8Type, cassandraName: "FString"},
+			&field{index: []int{11}, name: "FUUID", cassandraType: UUIDType, cassandraName: "FUUID"},
 		},
-		value: &fieldMapping{fieldKind: starValueField, position: 0, name: "*value", cassandraType: 0, cassandraName: ""},
-		others: map[string]*fieldMapping{
-			"Val": &fieldMapping{fieldKind: baseTypeField, position: 12, name: "Val", cassandraType: UTF8Type, cassandraName: "Val"},
+		values: []*field{
+			&field{index: []int{12}, name: "Val", cassandraType: UTF8Type, cassandraName: "Val"},
 		},
-		isCompositeColumn: true,
-		isSliceColumn:     false,
-		isStarNameColumn:  true,
+		namedValues: map[string]*field{
+			"Val": &field{index: []int{12}, name: "Val", cassandraType: UTF8Type, cassandraName: "Val"},
+		},
+	}
+	if err != nil {
+		t.Fatal("Unexpected error calling eComp newMapping:", err)
 	}
 	checkMapping(t, goodEComp, eComp, "eComp")
 
@@ -276,9 +186,6 @@ func (shell *structTestShell) checkFullMap(t *testing.T) {
 
 func TestMap(t *testing.T) {
 
-	// CAVEAT: column ordering is not deterministic for this kind of Map/Unmap roundtrip
-	// something needs to be done to test these structs with independent order over the columns
-
 	shells := []*structTestShell{
 		&structTestShell{
 			name:           "noErrA",
@@ -288,7 +195,11 @@ func TestMap(t *testing.T) {
 				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
 				Columns: []*Column{
 					&Column{
-						Name:  []byte{0, 0, 0, 0, 0, 0, 0, 2},
+						Name:  []byte{'B'},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 2},
+					},
+					&Column{
+						Name:  []byte{'C'},
 						Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
 					},
 				},
@@ -303,35 +214,12 @@ func TestMap(t *testing.T) {
 				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
 				Columns: []*Column{
 					&Column{
-						Name:  []byte{67},
-						Value: []byte{51},
+						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'C', 0},
+						Value: []byte{'3'},
 					},
 					&Column{
-						Name:  []byte{68},
+						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'Z', 0},
 						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
-					},
-					&Column{
-						Name:  []byte{90},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 2},
-					},
-				},
-			},
-		},
-
-		&structTestShell{
-			name:           "noErrE",
-			expectedStruct: &noErrE{1, 2, []int{5, 6}, []int{7, 8}},
-			resultStruct:   &noErrE{},
-			expectedRow: &Row{
-				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
-				Columns: []*Column{
-					&Column{
-						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 5, 0},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 7},
-					},
-					&Column{
-						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 8},
 					},
 				},
 			},

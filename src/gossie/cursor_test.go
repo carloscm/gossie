@@ -14,7 +14,7 @@ todo:
 */
 
 type ReasonableOne struct {
-	Username string `cf:"Reasonable" key:"Username" col:"TweetID,*name" val:"*value"`
+	Username string `cf:"Reasonable" key:"Username,TweetID"`
 	TweetID  int64
 	Lat      float32
 	Lon      float32

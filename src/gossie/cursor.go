@@ -2,7 +2,6 @@ package gossie
 
 import (
 	"errors"
-	"fmt"
 )
 
 /*
@@ -11,8 +10,6 @@ todo:
 
     buffering for slicing and range get
     Next/Prev for the buffering with autopaging
-
-    isSliceColumn == true
 
     Search() and interface(s) for indexed get
 
@@ -57,12 +54,12 @@ func makeCursor(cp *connectionPool) (c *cursor) {
 
 func (c *cursor) Write(source interface{}) error {
 
-	row, ms, err := internalMap(source)
+	row, mi, err := internalMap(source)
 	if err != nil {
 		return err
 	}
 
-	if err = c.pool.Mutation().Insert(ms.sm.cf, row).Run(); err != nil {
+	if err = c.pool.Mutation().Insert(mi.m.cf, row).Run(); err != nil {
 		return err
 	}
 
@@ -72,60 +69,37 @@ func (c *cursor) Write(source interface{}) error {
 func (c *cursor) Read(source interface{}) error {
 
 	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
-	ms, err := newMappedStruct(source)
+	mi, err := newMappedInstance(source)
 	if err != nil {
 		return err
 	}
 
 	// sanity checks
-	if ms.sm.isSliceColumn {
-		return errors.New(fmt.Sprint("Slice field in col tag is unsuported in Cursor for now, check back soon!"))
-	}
-
 	// marshal the key field
-	key, err := ms.marshalKey()
+	key, err := mi.m.key.marshalValue(&mi.v)
 	if err != nil {
 		return err
 	}
 
 	// start building the query
-	q := c.pool.Query().Cf(ms.sm.cf)
+	q := c.pool.Query().Cf(mi.m.cf)
 
 	// build a slice composite comparator if needed
-	if ms.sm.isCompositeColumn {
+	if len(mi.m.composite) > 0 {
 		// iterate over the components and set an equality comparison for every simple field
 		start := make([]byte, 0)
 		end := make([]byte, 0)
-		var component int
-		for component = 0; component < len(ms.sm.columns); component++ {
-			fm := ms.sm.columns[component]
-			if fm.fieldKind != baseTypeField {
-				break
-			}
-			b, err := ms.mapColumn(baseTypeField, fm, 0)
+		for _, f := range mi.m.composite {
+			b, err := f.marshalValue(&mi.v)
 			if err != nil {
 				return err
 			}
-			start = packComposite(start, b, eocEquals)
-			end = packComposite(end, b, eocGreater)
+			start = append(start, packComposite(b, eocEquals)...)
+			end = append(end, packComposite(b, eocGreater)...)
 		}
-
-		/*if component < len(ms.sm.columns) {
-		    // we still got one to go, this means the last one was an iterable non-fixed type (*name or go slice)
-		    //fm := ms.sm.columns[component]
-		    // TODO: this will only work for *name
-		    b := make([]byte, 0)
-		    start = packComposite(start, b, o[6], o[7], o[8])
-		    end = packComposite(end, b, o[9], o[10], o[11])
-		}*/
-
 		// TODO: fix hardcoded number of columns
 		q.Slice(&Slice{Start: start, End: end, Count: 100})
 	}
-
-	//isCompositeColumn bool
-	//isSliceColumn bool
-	//isStarNameColumn bool
 
 	row, err := q.Get(key)
 

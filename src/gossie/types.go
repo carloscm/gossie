@@ -631,10 +631,9 @@ const (
 	eocLower   byte = 0xff
 )
 
-func packComposite(current, component []byte, eoc byte) []byte {
+func packComposite(component []byte, eoc byte) []byte {
 	r := make([]byte, 2)
 	enc.BigEndian.PutUint16(r, uint16(len(component)))
-	r = append(current, r...)
 	r = append(r, component...)
 	return append(r, eoc)
 }

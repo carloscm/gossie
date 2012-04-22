@@ -1,6 +1,7 @@
 # About
 
-Gossie is a Go library with a low level wrapper for the Cassandra 1.0 Thrift bindings with utilities for connection pooling, primitive type marshaling and easy query building. It also includes a higher level layer that allows mapping structs to Cassandra column famlilies, with support for advanced features like composite column names.
+Gossie is a Go library for Apache Cassandra. It includes a wrapper for the Cassandra 1.0 Thrift bindings with utilities for connection pooling, primitive type marshaling and easy query building. It also includes a higher level layer that allows mapping structs to Cassandra column famlilies, with support for advanced features like composite column names.
+
 
 # Requeriments
 
@@ -14,6 +15,7 @@ Installing thrift4go under GOPATH in Go 1:
 2) cp -R thrift $GOPATH/src
 3) go install thrift
 ```
+
 
 # Installing
 
@@ -39,6 +41,7 @@ GOPATH=$GOPATH:`pwd` go test gossie
 # Running the tests
 
 Launch a Cassandra instance in localhost:9160, create a keyspace named TestGossie, and execute the provided schema-test.txt to create the test column families. Now you can run the Gossie tests.
+
 
 # Quickstart
 
@@ -68,23 +71,23 @@ The low level interface is based on passing []byte values for everything, mirror
 
 ### Struct maping
 
-The first part of the high level Gossie interface is the Map/Unmap functions. These functions allow to convert Go structs into Row-s, and they have support of advanced features like composites or overriding column names and types.
+The first part of the high level Gossie interface is the Map/Unmap functions. These functions allow to convert Go structs into Rows, and they have support of advanced features like composites or overriding column names and types.
 
 ```Go
 /*
 In CQL 3.0:
-CREATE TABLE timeline (
-    user_id varchar,
-    tweet_id bigint,
-    author varchar,
-    body varchar,
-    PRIMARY KEY (user_id, tweet_id)
+CREATE TABLE Timeline (
+    UserID varchar,
+    TweetID bigint,
+    Author varchar,
+    Body varchar,
+    PRIMARY KEY (UserID, TweetID)
 );
 */
 
 // In Gossie:
 type Timeline struct {
-	UserID  string  `cf:"Timeline" key:"UserID" col:"TweetID,*name" val:"*value"`
+	UserID  string  `cf:"Timeline" key:"UserID,TweetID"`
 	TweetID int64
 	Author  string
 	Body    string
@@ -93,6 +96,10 @@ type Timeline struct {
 row, err = gossie.Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
 err = pool.Mutation().Insert("Timeline", row).Run()
 ````
+
+The `cf` field tag names the column family of this struct, and the `key` field tag starts by naming the field that represents the row key, followed by zero or more fields that represent the components of a composite column name. Any other field not referenced in the `key` will be used as a column value, and its name used as a the column name, or appended to the end of the composite as the last component, if the struct had a composite. The `cf` and `key` field tags can appear at any field in the struct.
+
+The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on.
 
 ### Cursors
 
@@ -117,7 +124,15 @@ err = cursor.Read(tweet2)
 // 10000000000004, or gossie.ErrorNotFound was returned in case it was not found
 ````
 
-Comming soon: range reads for composites with buffering and paging
+
+# Planned features
+
+- Cursor: range reads for composites with buffering and paging
+- Cursor: secondary index read with buffering and paging
+- Cursor: multiget reads with buffering and paging
+- Cursor: batching writes
+- High level mapping for Go slices
+- High level mapping for Go maps
 
 
 # License
