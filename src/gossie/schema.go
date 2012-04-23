@@ -1,9 +1,6 @@
 package gossie
 
 import (
-	//"fmt"
-	//"thrift"
-	//"encoding/hex"
 	"cassandra"
 )
 
@@ -64,8 +61,6 @@ func newSchema(ksDef *cassandra.KsDef) *Schema {
 
 		schema.ColumnFamilies[cfDef.Name] = cf
 	}
-
-	//fmt.Println(schema)
 
 	return schema
 }

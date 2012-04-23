@@ -7,6 +7,9 @@ import (
 	"net"
 	"thrift"
 	"time"
+	"strings"
+	"strconv"
+	"fmt"
 )
 
 /*
@@ -39,6 +42,10 @@ const (
 	DEFAULT_RECYCLE_JITTER    = 10
 	DEFAULT_GRACE             = 5
 	DEFAULT_RETRIES           = 5
+)
+
+const (
+	LOWEST_COMPATIBLE_VERSION = 19
 )
 
 var (
@@ -304,15 +311,15 @@ func (cp *connectionPool) blacklist(badNode string) {
 }
 
 func (cp *connectionPool) Query() Query {
-	return &query{consistencyLevel: cp.options.ReadConsistency, pool: cp}
+	return newQuery(cp, cp.options.ReadConsistency)
 }
 
 func (cp *connectionPool) Mutation() Mutation {
-	return makeMutation(cp, cp.options.WriteConsistency)
+	return newMutation(cp, cp.options.WriteConsistency)
 }
 
 func (cp *connectionPool) Cursor() Cursor {
-	return makeCursor(cp)
+	return newCursor(cp)
 }
 
 func (cp *connectionPool) Keyspace() string {
@@ -373,6 +380,24 @@ func newConnection(node, keyspace string, timeout int) (*connection, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	version, err := c.client.DescribeVersion()
+	if err != nil {
+		c.close()
+		return nil, err
+	}
+	versionComponents := strings.Split(version, ".")
+	if len(versionComponents) < 1 {
+		return nil, errors.New(fmt.Sprint("Cannot parse the Thrift API version number: ", version))
+	}
+	majorVersion, err := strconv.Atoi(versionComponents[0])
+	if err != nil {
+		return nil, errors.New(fmt.Sprint("Cannot parse the Thrift API version number: ", version))
+	}
+	if majorVersion < LOWEST_COMPATIBLE_VERSION {
+		return nil, errors.New(fmt.Sprint("Unsupported Thrift API version, lowest supported is ", LOWEST_COMPATIBLE_VERSION,
+			", server reports ", majorVersion))
 	}
 
 	ire, err := c.client.SetKeyspace(keyspace)

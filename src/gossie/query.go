@@ -131,6 +131,10 @@ type Query interface {
 // The method calls support chaining so you can build concise queries
 type Mutation interface {
 
+	// ConsistencyLevel sets the consistency level for this particular call.
+	// It is optional, if left uncalled it will default to your connection pool options value.
+	ConsistencyLevel(int) Mutation
+
 	// Insert adds a new row insertion to the mutation
 	Insert(cf string, row *Row) Mutation
 
@@ -159,6 +163,13 @@ type query struct {
 	setColumns       bool
 	setWhere         bool
 	expressions      thrift.TList
+}
+
+func newQuery(cp *connectionPool, cl int) *query {
+	return &query{
+		pool:             cp,
+		consistencyLevel: cl,
+	}
 }
 
 func (q *query) ConsistencyLevel(l int) Query {
@@ -544,7 +555,7 @@ type mutation struct {
 	mutations        thrift.TMap
 }
 
-func makeMutation(cp *connectionPool, cl int) *mutation {
+func newMutation(cp *connectionPool, cl int) *mutation {
 	return &mutation{
 		pool:             cp,
 		consistencyLevel: cl,
@@ -576,6 +587,11 @@ func (m *mutation) addMutation(cf string, key []byte) *cassandra.Mutation {
 	}
 	mutList.Push(tm)
 	return tm
+}
+
+func (m *mutation) ConsistencyLevel(l int) Mutation {
+	m.consistencyLevel = l
+	return m
 }
 
 func (m *mutation) Insert(cf string, row *Row) Mutation {

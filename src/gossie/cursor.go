@@ -23,6 +23,10 @@ var (
 	ErrorNotFound = errors.New("Row (plus any composites) not found")
 )
 
+const (
+    DEFAULT_LIMIT_COLUMNS = 100
+)
+
 // Cursor is a simple cursor-based interface for reading and writing structs from a Cassandra column family.
 type Cursor interface {
 
@@ -40,16 +44,48 @@ type Cursor interface {
 	Write(interface{}) error
 
 	//Delete()
+
+    // Options sets the options for this Cursor
+    Options(CursorOptions)
+}
+
+// CursorOptions stores some options that modify the behaviour of the queries a Cursor performs
+type CursorOptions struct {
+
+    // LimitColumns is the max number of columns that will be read from Cassandra. Default is 100.
+    LimitColumns int
+
+    // WriteConsistency overrides the default write consistency level for the underlying connection pool.
+    // Default is 0 which means to not override the consistenct level.
+    WriteConsistency int
+
+    // ReadConsistency overrides the default read consistency level for the underlying connection pool.
+    // Default is 0 which means to not override the consistenct level.
+    ReadConsistency int
 }
 
 type cursor struct {
 	pool *connectionPool
+    options CursorOptions
 }
 
-func makeCursor(cp *connectionPool) (c *cursor) {
-	return &cursor{
-		pool: cp,
-	}
+func (co *CursorOptions) defaults() {
+    if co.LimitColumns == 0 {
+        co.LimitColumns = DEFAULT_LIMIT_COLUMNS
+    }
+}
+
+func newCursor(cp *connectionPool) *cursor {
+    c := &cursor{
+        pool: cp,
+    }
+    c.options.defaults()
+	return c
+}
+
+func (c *cursor) Options(options CursorOptions) {
+    options.defaults()
+    c.options = options
 }
 
 func (c *cursor) Write(source interface{}) error {
@@ -59,11 +95,13 @@ func (c *cursor) Write(source interface{}) error {
 		return err
 	}
 
-	if err = c.pool.Mutation().Insert(mi.m.cf, row).Run(); err != nil {
-		return err
-	}
+    m := c.pool.Mutation().Insert(mi.m.cf, row)
 
-	return nil
+    if c.options.WriteConsistency != 0 {
+        m.ConsistencyLevel(c.options.WriteConsistency)
+    }
+
+    return m.Run()
 }
 
 func (c *cursor) Read(source interface{}) error {
@@ -84,9 +122,13 @@ func (c *cursor) Read(source interface{}) error {
 	// start building the query
 	q := c.pool.Query().Cf(mi.m.cf)
 
+    if c.options.ReadConsistency != 0 {
+        q.ConsistencyLevel(c.options.ReadConsistency)
+    }
+
 	// build a slice composite comparator if needed
 	if len(mi.m.composite) > 0 {
-		// iterate over the components and set an equality comparison for every simple field
+		// iterate over the components and set an equality comparison for every field
 		start := make([]byte, 0)
 		end := make([]byte, 0)
 		for _, f := range mi.m.composite {
@@ -97,8 +139,7 @@ func (c *cursor) Read(source interface{}) error {
 			start = append(start, packComposite(b, eocEquals)...)
 			end = append(end, packComposite(b, eocGreater)...)
 		}
-		// TODO: fix hardcoded number of columns
-		q.Slice(&Slice{Start: start, End: end, Count: 100})
+		q.Slice(&Slice{Start: start, End: end, Count: c.options.LimitColumns})
 	}
 
 	row, err := q.Get(key)
@@ -111,10 +152,5 @@ func (c *cursor) Read(source interface{}) error {
 		return ErrorNotFound
 	}
 
-	err = Unmap(row, source)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return Unmap(row, source)
 }
