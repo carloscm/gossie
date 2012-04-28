@@ -3,13 +3,13 @@ package gossie
 import (
 	"cassandra"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net"
+	"strconv"
+	"strings"
 	"thrift"
 	"time"
-	"strings"
-	"strconv"
-	"fmt"
 )
 
 /*

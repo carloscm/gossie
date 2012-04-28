@@ -34,3 +34,9 @@ create column family Reasonable with
 	key_validation_class = UTF8Type and
 	default_validation_class = BytesType
 ;
+
+create column family Timeseries with
+	comparator = 'CompositeType(TimeUUIDType(reversed=true),AsciiType)' and
+	key_validation_class = UTF8Type and
+	default_validation_class = BytesType
+;

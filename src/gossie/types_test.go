@@ -3,7 +3,13 @@ package gossie
 import (
 	"reflect"
 	"testing"
+	"time"
 )
+
+/*
+	to do:
+		Int32Type tests - they must handle lossy comparison for time.Time marshalling
+*/
 
 func checkMarshal(t *testing.T, value interface{}, good []byte, typeDesc TypeDesc) {
 	b, err := Marshal(value, typeDesc)
@@ -303,19 +309,6 @@ func TestMarshalUUID(t *testing.T) {
 	errorMarshal(t, v, FloatType)
 	errorMarshal(t, v, DoubleType)
 	errorMarshal(t, v, DateType)
-
-	// test utility functions
-
-	s := "00112233-4455-6677-8899-aabbccddeeff"
-	v2, err := NewUUID(s)
-	if err != nil {
-		t.Error("Unexpected error in NewUUID")
-	}
-	checkFullMarshal(t, b, BytesType, &v2, &r)
-
-	if v2.String() != s {
-		t.Error("Wrong UUID to string conversion ", v2.String())
-	}
 }
 
 func TestMarshalFloat(t *testing.T) {
@@ -355,4 +348,29 @@ func TestMarshalFloat(t *testing.T) {
 	errorMarshal(t, v64, BooleanType)
 	errorMarshal(t, v64, FloatType)
 	errorMarshal(t, v64, DateType)
+}
+
+func TestMarshalTime(t *testing.T) {
+	var b []byte
+	var v time.Time = time.Unix(1e9, 2e8)
+	var r time.Time
+
+	b = []byte{0x00, 0x00, 0x00, 0xE8, 0xD4, 0xA5, 0x10, 0xC8}
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, LongType, &v, &r)
+	checkFullMarshal(t, b, DateType, &v, &r)
+
+	v = time.Unix(-1e9, -2e8)
+	b = []byte{0xFF, 0xFF, 0xFF, 0x17, 0x2B, 0x5A, 0xEF, 0x38}
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, LongType, &v, &r)
+	checkFullMarshal(t, b, DateType, &v, &r)
+
+	errorMarshal(t, v, UUIDType)
+	errorMarshal(t, v, AsciiType)
+	errorMarshal(t, v, UTF8Type)
+	errorMarshal(t, v, IntegerType)
+	errorMarshal(t, v, DecimalType)
+	errorMarshal(t, v, BooleanType)
+	errorMarshal(t, v, DoubleType)
 }

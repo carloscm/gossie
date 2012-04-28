@@ -24,7 +24,7 @@ var (
 )
 
 const (
-    DEFAULT_LIMIT_COLUMNS = 100
+	DEFAULT_LIMIT_COLUMNS = 100
 )
 
 // Cursor is a simple cursor-based interface for reading and writing structs from a Cassandra column family.
@@ -45,47 +45,47 @@ type Cursor interface {
 
 	//Delete()
 
-    // Options sets the options for this Cursor
-    Options(CursorOptions)
+	// Options sets the options for this Cursor
+	Options(CursorOptions)
 }
 
 // CursorOptions stores some options that modify the behaviour of the queries a Cursor performs
 type CursorOptions struct {
 
-    // LimitColumns is the max number of columns that will be read from Cassandra. Default is 100.
-    LimitColumns int
+	// LimitColumns is the max number of columns that will be read from Cassandra. Default is 100.
+	LimitColumns int
 
-    // WriteConsistency overrides the default write consistency level for the underlying connection pool.
-    // Default is 0 which means to not override the consistenct level.
-    WriteConsistency int
+	// WriteConsistency overrides the default write consistency level for the underlying connection pool.
+	// Default is 0 which means to not override the consistenct level.
+	WriteConsistency int
 
-    // ReadConsistency overrides the default read consistency level for the underlying connection pool.
-    // Default is 0 which means to not override the consistenct level.
-    ReadConsistency int
+	// ReadConsistency overrides the default read consistency level for the underlying connection pool.
+	// Default is 0 which means to not override the consistenct level.
+	ReadConsistency int
 }
 
 type cursor struct {
-	pool *connectionPool
-    options CursorOptions
+	pool    *connectionPool
+	options CursorOptions
 }
 
 func (co *CursorOptions) defaults() {
-    if co.LimitColumns == 0 {
-        co.LimitColumns = DEFAULT_LIMIT_COLUMNS
-    }
+	if co.LimitColumns == 0 {
+		co.LimitColumns = DEFAULT_LIMIT_COLUMNS
+	}
 }
 
 func newCursor(cp *connectionPool) *cursor {
-    c := &cursor{
-        pool: cp,
-    }
-    c.options.defaults()
+	c := &cursor{
+		pool: cp,
+	}
+	c.options.defaults()
 	return c
 }
 
 func (c *cursor) Options(options CursorOptions) {
-    options.defaults()
-    c.options = options
+	options.defaults()
+	c.options = options
 }
 
 func (c *cursor) Write(source interface{}) error {
@@ -95,13 +95,13 @@ func (c *cursor) Write(source interface{}) error {
 		return err
 	}
 
-    m := c.pool.Mutation().Insert(mi.m.cf, row)
+	m := c.pool.Mutation().Insert(mi.m.cf, row)
 
-    if c.options.WriteConsistency != 0 {
-        m.ConsistencyLevel(c.options.WriteConsistency)
-    }
+	if c.options.WriteConsistency != 0 {
+		m.ConsistencyLevel(c.options.WriteConsistency)
+	}
 
-    return m.Run()
+	return m.Run()
 }
 
 func (c *cursor) Read(source interface{}) error {
@@ -122,9 +122,9 @@ func (c *cursor) Read(source interface{}) error {
 	// start building the query
 	q := c.pool.Query().Cf(mi.m.cf)
 
-    if c.options.ReadConsistency != 0 {
-        q.ConsistencyLevel(c.options.ReadConsistency)
-    }
+	if c.options.ReadConsistency != 0 {
+		q.ConsistencyLevel(c.options.ReadConsistency)
+	}
 
 	// build a slice composite comparator if needed
 	if len(mi.m.composite) > 0 {

@@ -49,7 +49,7 @@ func buildCounterRow(key string) *Row {
 }
 
 func buildAllTypesTestRow(key string) *testRow {
-	u, _ := NewUUID("00112233-4455-6677-8899-aabbccddeeff")
+	u, _ := ParseUUID("00112233-4455-6677-8899-aabbccddeeff")
 	return &testRow{
 		key: key, keyType: BytesType, columns: []testColumn{
 			testColumn{"colAsciiType", AsciiType, "hi!", AsciiType},
@@ -65,7 +65,7 @@ func buildAllTypesTestRow(key string) *testRow {
 }
 
 func buildAllTypesAfterDeletesTestRow(key string) *testRow {
-	u, _ := NewUUID("00112233-4455-6677-8899-aabbccddeeff")
+	u, _ := ParseUUID("00112233-4455-6677-8899-aabbccddeeff")
 	return &testRow{
 		key: key, keyType: BytesType, columns: []testColumn{
 			testColumn{"colBytesType", AsciiType, []byte{1, 2, 3}, BytesType},

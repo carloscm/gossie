@@ -4,27 +4,26 @@ import (
 	"bytes"
 	enc "encoding/binary"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 /*
-   to do:
+	to do:
 
-   ReversedType
+	Int32Type
 
-   IntegerType
-   DecimalType
+	IntegerType
+	DecimalType
 
-   don't assume int is int32 (tho it's prob ok)
-   uints, support them?
+	don't assume int is int32 (tho it's prob ok)
+	uints, support them?
 
-   maybe add ascii/utf8 types support UUIDType, string native support?
-   maybe something better for DateType, instead of just int64 conv (go v1)?
-   maybe some more (un)marshalings?
+	maybe add ascii/utf8 types support UUIDType, string native support?
+	maybe some more (un)marshalings?
 
-   more error checking, pass along all strconv errors
+	more error checking, pass along all strconv errors
 */
 
 const (
@@ -34,9 +33,12 @@ const (
 	AsciiType
 	UTF8Type
 	LongType
+	Int32Type
 	IntegerType
 	DecimalType
 	UUIDType
+	TimeUUIDType
+	LexicalUUIDType
 	BooleanType
 	FloatType
 	DoubleType
@@ -55,48 +57,6 @@ var (
 )
 
 type TypeDesc int
-
-type UUID [16]byte
-
-func (value UUID) String() string {
-	var r []string
-	var s int
-	for _, size := range [5]int{4, 2, 2, 2, 6} {
-		var v int64
-		for i := 0; i < size; i++ {
-			v = v << 8
-			v = v | int64(value[s+i])
-		}
-		r = append(r, fmt.Sprintf("%0*x", size*2, v))
-		s += size
-	}
-	return strings.Join(r, "-")
-}
-
-func NewUUID(value string) (UUID, error) {
-	var r []byte
-	var ru UUID
-
-	if len(value) != 36 {
-		return ru, ErrorUnsupportedMarshaling
-	}
-	ints := strings.Split(value, "-")
-	if len(ints) != 5 {
-		return ru, ErrorUnsupportedMarshaling
-	}
-
-	for i, size := range [5]int{4, 2, 2, 2, 6} {
-		t, err := strconv.ParseInt(ints[i], 16, 64)
-		if err != nil {
-			return ru, ErrorUnsupportedMarshaling
-		}
-		b, _ := marshalInt(t, size, BytesType)
-		r = append(r, b...)
-	}
-
-	unmarshalUUID(r, BytesType, &ru)
-	return ru, nil
-}
 
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
 	// plain nil case
@@ -162,6 +122,11 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
 			return nil, ErrorUnsupportedNilMarshaling
 		}
 		dvalue = *v
+	case *time.Time:
+		if v == nil {
+			return nil, ErrorUnsupportedNilMarshaling
+		}
+		dvalue = *v
 	default:
 		dvalue = v
 	}
@@ -189,6 +154,8 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
 		return marshalFloat32(v, typeDesc)
 	case float64:
 		return marshalFloat64(v, typeDesc)
+	case time.Time:
+		return marshalTime(v, typeDesc)
 	}
 	return nil, ErrorUnsupportedMarshaling
 }
@@ -217,6 +184,13 @@ func marshalBool(value bool, typeDesc TypeDesc) ([]byte, error) {
 			b[7] = 1
 		}
 		return b, nil
+
+	case Int32Type:
+		b := make([]byte, 4)
+		if value {
+			b[3] = 1
+		}
+		return b, nil
 	}
 	return nil, ErrorUnsupportedMarshaling
 }
@@ -227,6 +201,11 @@ func marshalInt(value int64, size int, typeDesc TypeDesc) ([]byte, error) {
 	case LongType:
 		b := make([]byte, 8)
 		enc.BigEndian.PutUint64(b, uint64(value))
+		return b, nil
+
+	case Int32Type:
+		b := make([]byte, 4)
+		enc.BigEndian.PutUint32(b, uint32(value))
 		return b, nil
 
 	case BytesType:
@@ -244,6 +223,26 @@ func marshalInt(value int64, size int, typeDesc TypeDesc) ([]byte, error) {
 
 	case AsciiType, UTF8Type:
 		return marshalString(strconv.FormatInt(value, 10), UTF8Type)
+	}
+	return nil, ErrorUnsupportedMarshaling
+}
+
+func marshalTime(value time.Time, typeDesc TypeDesc) ([]byte, error) {
+	switch typeDesc {
+	// following Java conventions Cassandra standarizes this as millis
+	case LongType, BytesType, DateType:
+		valueI := value.UnixNano() / 1e6
+		b := make([]byte, 8)
+		enc.BigEndian.PutUint64(b, uint64(valueI))
+		return b, nil
+
+	// 32 bit, so assume regular unix time
+	case Int32Type:
+		valueI := value.Unix()
+		b := make([]byte, 4)
+		enc.BigEndian.PutUint32(b, uint32(valueI))
+		return b, nil
+
 	}
 	return nil, ErrorUnsupportedMarshaling
 }
@@ -266,7 +265,7 @@ func marshalString(value string, typeDesc TypeDesc) ([]byte, error) {
 
 func marshalUUID(value UUID, typeDesc TypeDesc) ([]byte, error) {
 	switch typeDesc {
-	case BytesType, UUIDType:
+	case BytesType, UUIDType, TimeUUIDType, LexicalUUIDType:
 		return []byte(value[:]), nil
 	}
 	return nil, ErrorUnsupportedMarshaling
@@ -340,6 +339,8 @@ func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) error {
 		return unmarshalFloat32(b, typeDesc, v)
 	case *float64:
 		return unmarshalFloat64(b, typeDesc, v)
+	case *time.Time:
+		return unmarshalTime(b, typeDesc, v)
 	}
 	return ErrorUnsupportedNativeTypeUnmarshaling
 }
@@ -378,6 +379,18 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) error {
 			*value = true
 		}
 		return nil
+
+	case Int32Type:
+		if len(b) != 4 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		if b[3] == 0 {
+			*value = false
+		} else {
+			*value = true
+		}
+		return nil
+
 	}
 	return ErrorUnsupportedCassandraTypeUnmarshaling
 }
@@ -406,6 +419,29 @@ func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) error {
 	return ErrorUnsupportedCassandraTypeUnmarshaling
 }
 
+func unmarshalTime(b []byte, typeDesc TypeDesc, value *time.Time) error {
+	switch typeDesc {
+	case LongType, BytesType, DateType:
+		if len(b) != 8 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		valueI := int64(enc.BigEndian.Uint64(b))
+		// following Java conventions Cassandra standarizes this as millis
+		*value = time.Unix(valueI/1000, (valueI%1000)*1e6)
+		return nil
+
+	case Int32Type:
+		if len(b) != 4 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		valueI := int64(enc.BigEndian.Uint32(b))
+		// 32 bit, so assume regular unix time
+		*value = time.Unix(valueI*1e9, 0)
+		return nil
+	}
+	return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
 func unmarshalInt32(b []byte, typeDesc TypeDesc, value *int32) error {
 	switch typeDesc {
 	case LongType:
@@ -415,7 +451,7 @@ func unmarshalInt32(b []byte, typeDesc TypeDesc, value *int32) error {
 		*value = int32(enc.BigEndian.Uint64(b))
 		return nil
 
-	case BytesType:
+	case BytesType, Int32Type:
 		if len(b) != 4 {
 			return ErrorCassandraTypeSerializationUnmarshaling
 		}
@@ -445,6 +481,13 @@ func unmarshalInt16(b []byte, typeDesc TypeDesc, value *int16) error {
 			return ErrorCassandraTypeSerializationUnmarshaling
 		}
 		*value = int16(enc.BigEndian.Uint64(b))
+		return nil
+
+	case Int32Type:
+		if len(b) != 4 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		*value = int16(enc.BigEndian.Uint32(b))
 		return nil
 
 	case BytesType:
@@ -477,6 +520,13 @@ func unmarshalInt8(b []byte, typeDesc TypeDesc, value *int8) error {
 			return ErrorCassandraTypeSerializationUnmarshaling
 		}
 		*value = int8(b[7])
+		return nil
+
+	case Int32Type:
+		if len(b) != 4 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		*value = int8(b[3])
 		return nil
 
 	case BytesType:
@@ -522,7 +572,7 @@ func unmarshalString(b []byte, typeDesc TypeDesc, value *string) error {
 
 func unmarshalUUID(b []byte, typeDesc TypeDesc, value *UUID) error {
 	switch typeDesc {
-	case BytesType, UUIDType:
+	case BytesType, UUIDType, TimeUUIDType, LexicalUUIDType:
 		if len(b) != 16 {
 			return ErrorCassandraTypeSerializationUnmarshaling
 		}
@@ -571,6 +621,17 @@ func unmarshalFloat64(b []byte, typeDesc TypeDesc, value *float64) error {
 type TypeClass struct {
 	Desc       TypeDesc
 	Components []TypeClass
+	Reversed   bool
+}
+
+func extractReversed(cassType string) (string, bool) {
+	reversed := false
+	if strings.HasPrefix(cassType, "org.apache.cassandra.db.marshal.ReversedType(") {
+		// extract the inner type
+		cassType = cassType[strings.Index(cassType, "(")+1 : len(cassType)-1]
+		reversed = true
+	}
+	return cassType, reversed
 }
 
 func parseTypeDesc(cassType string) TypeDesc {
@@ -583,12 +644,18 @@ func parseTypeDesc(cassType string) TypeDesc {
 		return UTF8Type
 	case "LongType", "org.apache.cassandra.db.marshal.LongType":
 		return LongType
+	case "Int32Type", "org.apache.cassandra.db.marshal.Int32Type":
+		return Int32Type
 	case "IntegerType", "org.apache.cassandra.db.marshal.IntegerType":
 		return IntegerType
 	case "DecimalType", "org.apache.cassandra.db.marshal.DecimalType":
 		return DecimalType
 	case "UUIDType", "org.apache.cassandra.db.marshal.UUIDType":
 		return UUIDType
+	case "TimeUUIDType", "org.apache.cassandra.db.marshal.TimeUUIDType":
+		return TimeUUIDType
+	case "LexicalUUIDType", "org.apache.cassandra.db.marshal.LexicalUUIDType":
+		return LexicalUUIDType
 	case "BooleanType", "org.apache.cassandra.db.marshal.BooleanType":
 		return BooleanType
 	case "FloatType", "org.apache.cassandra.db.marshal.FloatType":
@@ -604,7 +671,8 @@ func parseTypeDesc(cassType string) TypeDesc {
 }
 
 func parseTypeClass(cassType string) TypeClass {
-	r := TypeClass{Desc: BytesType}
+	cassType, reversed := extractReversed(cassType)
+	r := TypeClass{Reversed: reversed}
 
 	// check for composite and parse it
 	if strings.HasPrefix(cassType, "org.apache.cassandra.db.marshal.CompositeType(") {
@@ -625,7 +693,6 @@ func parseTypeClass(cassType string) TypeClass {
 }
 
 const (
-	_               = iota
 	eocEquals  byte = 0
 	eocGreater byte = 1
 	eocLower   byte = 0xff

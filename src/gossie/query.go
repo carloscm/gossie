@@ -11,6 +11,7 @@ import (
    to do:
    support Where for RangeGet in Cassandra 1.1
    figure out what's the deal with get_paged_slice in 1.1 and try to implement it in a sane way
+   override retries to 1 for mutations that include DeltaCounters, document it?
 */
 
 // Columns encapsulate the individual columns from/to Cassandra reads and writes

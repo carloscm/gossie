@@ -16,8 +16,8 @@ func TestSchema(t *testing.T) {
 	schema := newSchema(ksDef)
 	defer c.close()
 
-	if len(schema.ColumnFamilies) != 4 {
-		t.Error("Test schema must have 3 CFs")
+	if len(schema.ColumnFamilies) != 5 {
+		t.Error("Test schema must have 5 CFs")
 	}
 
 	if schema.ColumnFamilies["AllTypes"] == nil {
@@ -58,7 +58,6 @@ func TestSchema(t *testing.T) {
 				t.Error("Test CF AllTypes column ", name, " is not the expected type")
 			}
 		}
-
 	}
 
 	if schema.ColumnFamilies["Counters"] == nil {
@@ -109,6 +108,42 @@ func TestSchema(t *testing.T) {
 		for i, desc := range check {
 			if cf.DefaultComparator.Components[i].Desc != desc {
 				t.Error("Test CF Composite comparator has incorrect comparator in position ", i)
+			}
+		}
+	}
+
+	if schema.ColumnFamilies["Timeseries"] == nil {
+		t.Error("Test CF Timeseries is nil")
+	} else {
+		cf := schema.ColumnFamilies["Timeseries"]
+
+		if cf.DefaultComparator.Desc != CompositeType {
+			t.Error("Test CF Timeseries DefaultComparator is not CompositeType")
+		}
+		if cf.DefaultValidator.Desc != BytesType {
+			t.Error("Test CF Timeseries DefaultValidator is not BytesType")
+		}
+		if cf.KeyValidator.Desc != UTF8Type {
+			t.Error("Test CF Timeseries KeyValidator is not BytesType")
+		}
+
+		if len(cf.NamedColumns) != 0 {
+			t.Error("Test CF Timeseries has named columns")
+		}
+
+		var check = []TypeDesc{TimeUUIDType, AsciiType}
+		var reversed = []bool{true, false}
+
+		if len(cf.DefaultComparator.Components) != len(check) {
+			t.Error("Test CF Timeseries has incorrect number of components")
+		}
+
+		for i, desc := range check {
+			if cf.DefaultComparator.Components[i].Desc != desc {
+				t.Error("Test CF Timeseries comparator has incorrect comparator in position ", i)
+			}
+			if cf.DefaultComparator.Components[i].Reversed != reversed[i] {
+				t.Error("Test CF Timeseries comparator has incorrect Reversed flag in position ", i)
 			}
 		}
 
