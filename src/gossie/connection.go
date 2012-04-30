@@ -60,14 +60,14 @@ type ConnectionPool interface {
 	// Schema returns the parsed schema for the keyspace this ConnectionPool is connected to
 	Schema() *Schema
 
-	// Query returns a new query builder for read operations
-	Query() Query
+	// Reader returns a new query builder for read operations
+	Reader() Reader
 
-	// Mutation returns a new mutation builder for write operations
-	Mutation() Mutation
+	// Writer returns a new mutation builder for write operations
+	Writer() Writer
 
-	// Cursor returns a high level interface for read and write operations over structs
-	Cursor() Cursor
+	// Query returns a high level interface for read and write operations over structs
+	//Query() Query
 
 	// Close all the connections in the pool
 	Close()
@@ -310,17 +310,17 @@ func (cp *connectionPool) blacklist(badNode string) {
 	cp.releaseEmpty()
 }
 
-func (cp *connectionPool) Query() Query {
-	return newQuery(cp, cp.options.ReadConsistency)
+func (cp *connectionPool) Reader() Reader {
+	return newReader(cp, cp.options.ReadConsistency)
 }
 
-func (cp *connectionPool) Mutation() Mutation {
-	return newMutation(cp, cp.options.WriteConsistency)
+func (cp *connectionPool) Writer() Writer {
+	return newWriter(cp, cp.options.WriteConsistency)
 }
 
-func (cp *connectionPool) Cursor() Cursor {
-	return newCursor(cp)
-}
+//func (cp *connectionPool) Cursor() Cursor {
+//	return newCursor(cp)
+//}
 
 func (cp *connectionPool) Keyspace() string {
 	return cp.keyspace

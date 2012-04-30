@@ -53,11 +53,11 @@ type everythingComp struct {
 	Val      string
 }
 
-func buildMappingFromPtr(instance interface{}) (*mapping, error) {
+func buildMappingFromPtr(instance interface{}) (*structMapping, error) {
 	valuePtr := reflect.ValueOf(instance)
 	value := reflect.Indirect(valuePtr)
 	typ := value.Type()
-	return newMapping(typ)
+	return internalNewStructMapping(typ)
 }
 
 func structMapMustError(t *testing.T, instance interface{}) {
@@ -79,7 +79,11 @@ func TestStructMapping(t *testing.T) {
 	structMapMustError(t, &errInvKey{})
 
 	mapA, err := buildMappingFromPtr(&noErrA{1, 2, 3})
-	goodA := &mapping{
+	valuePtr := reflect.ValueOf(&noErrA{})
+	value := reflect.Indirect(valuePtr)
+	typ := value.Type()
+	goodA := &structMapping{
+		rtype:     typ,
 		cf:        "cfname",
 		key:       &field{index: []int{0}, name: "A", cassandraType: LongType, cassandraName: "A"},
 		composite: []*field{},
@@ -98,9 +102,13 @@ func TestStructMapping(t *testing.T) {
 	checkMapping(t, goodA, mapA, "mapA")
 
 	mapB, err := buildMappingFromPtr(&noErrB{1, 2, 3, 4})
-	goodB := &mapping{
-		cf:  "cfname",
-		key: &field{index: []int{0}, name: "A", cassandraType: LongType, cassandraName: "A"},
+	valuePtr = reflect.ValueOf(&noErrB{})
+	value = reflect.Indirect(valuePtr)
+	typ = value.Type()
+	goodB := &structMapping{
+		rtype: typ,
+		cf:    "cfname",
+		key:   &field{index: []int{0}, name: "A", cassandraType: LongType, cassandraName: "A"},
 		composite: []*field{
 			&field{index: []int{1}, name: "B", cassandraType: LongType, cassandraName: "B"},
 		},
@@ -120,9 +128,13 @@ func TestStructMapping(t *testing.T) {
 
 	eComp, err := buildMappingFromPtr(&everythingComp{"A", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "B",
 		[16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "C"})
-	goodEComp := &mapping{
-		cf:  "cfname",
-		key: &field{index: []int{0}, name: "Key", cassandraType: UTF8Type, cassandraName: "Key"},
+	valuePtr = reflect.ValueOf(&everythingComp{})
+	value = reflect.Indirect(valuePtr)
+	typ = value.Type()
+	goodEComp := &structMapping{
+		rtype: typ,
+		cf:    "cfname",
+		key:   &field{index: []int{0}, name: "Key", cassandraType: UTF8Type, cassandraName: "Key"},
 		composite: []*field{
 			&field{index: []int{1}, name: "FBytes", cassandraType: BytesType, cassandraName: "FBytes"},
 			&field{index: []int{2}, name: "FBool", cassandraType: BooleanType, cassandraName: "FBool"},
@@ -157,8 +169,8 @@ type structTestShell struct {
 	name           string
 }
 
-func (shell *structTestShell) checkMap(t *testing.T, expectedStruct interface{}, round int) {
-	resultRow, err := Map(expectedStruct)
+func (shell *structTestShell) checkMap(t *testing.T, m Mapping, expectedStruct interface{}, round int) {
+	resultRow, err := m.Map(expectedStruct)
 	if err != nil {
 		t.Error("Error mapping struct: ", err)
 	}
@@ -167,10 +179,13 @@ func (shell *structTestShell) checkMap(t *testing.T, expectedStruct interface{},
 	}
 }
 
-func (shell *structTestShell) checkUnmap(t *testing.T) interface{} {
-	err := Unmap(shell.expectedRow, shell.resultStruct)
+func (shell *structTestShell) checkUnmap(t *testing.T, m Mapping) interface{} {
+	n, err := m.Unmap(shell.resultStruct, 0, shell.expectedRow)
 	if err != nil {
 		t.Error("Error umapping struct: ", err)
+	}
+	if n != len(shell.expectedRow.Columns) {
+		t.Error("Wrong number of columns consumed when unmapping struct")
 	}
 	if !reflect.DeepEqual(shell.resultStruct, shell.expectedStruct) {
 		t.Error("Unmapped struct ", shell.name, " does not match expected instance ", shell.expectedStruct, " actual ", shell.resultStruct)
@@ -179,12 +194,22 @@ func (shell *structTestShell) checkUnmap(t *testing.T) interface{} {
 }
 
 func (shell *structTestShell) checkFullMap(t *testing.T) {
-	shell.checkMap(t, shell.expectedStruct, 1)
-	intermediateStruct := shell.checkUnmap(t)
-	shell.checkMap(t, intermediateStruct, 2)
+	m, err := NewStructMapping(shell.expectedStruct)
+	if err != nil {
+		t.Error("Unexpected error creating a struct mapping: ", err)
+	}
+	shell.checkMap(t, m, shell.expectedStruct, 1)
+	intermediateStruct := shell.checkUnmap(t, m)
+	shell.checkMap(t, m, intermediateStruct, 2)
 }
 
 func TestMap(t *testing.T) {
+
+	m, _ := NewStructMapping(&noErrA{})
+	_, err := m.Map(&noErrB{})
+	if err == nil {
+		t.Error("Error expected when trying to use a struct Mapping.Map with an instance of a different struct type")
+	}
 
 	shells := []*structTestShell{
 		&structTestShell{

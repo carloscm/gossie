@@ -4,6 +4,7 @@ import (
 	"bytes"
 	enc "encoding/binary"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -705,25 +706,6 @@ func packComposite(component []byte, eoc byte) []byte {
 	return append(r, eoc)
 }
 
-/*
-	var eoc byte = 0
-	if comparator {
-		if inclusive {
-			if sliceStart {
-				eoc = 0xff
-			} else {
-				eoc = 0x01
-			}
-		} else {
-			if sliceStart {
-				eoc = 0x01
-			} else {
-				eoc = 0xff
-			}
-		}
-	}
-*/
-
 func unpackComposite(composite []byte) [][]byte {
 	components := make([][]byte, 0)
 	for len(composite) > 0 {
@@ -732,4 +714,30 @@ func unpackComposite(composite []byte) [][]byte {
 		composite = composite[3+l:]
 	}
 	return components
+}
+
+func defaultType(t reflect.Type) TypeDesc {
+	switch t.Kind() {
+	case reflect.Bool:
+		return BooleanType
+	case reflect.String:
+		return UTF8Type
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return LongType
+	case reflect.Float32:
+		return FloatType
+	case reflect.Float64:
+		return DoubleType
+	case reflect.Array:
+		if t.Name() == "UUID" && t.Size() == 16 {
+			return UUIDType
+		}
+		return UnknownType
+	case reflect.Slice:
+		if et := t.Elem(); et.Kind() == reflect.Uint8 {
+			return BytesType
+		}
+		return UnknownType
+	}
+	return UnknownType
 }

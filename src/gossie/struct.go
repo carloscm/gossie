@@ -16,7 +16,29 @@ todo:
 
 */
 
-type mapping struct {
+// NewStructMapping returns a mapping valid for all instances of the type of the passed struct
+func NewStructMapping(source interface{}) (Mapping, error) {
+	v, err := validStruct(source)
+	if err != nil {
+		return nil, err
+	}
+	m, err := getStructMapping(v)
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (m *structMapping) Cf() string {
+	return m.cf
+}
+
+func (m *structMapping) MinColumns() int {
+	return len(m.values)
+}
+
+type structMapping struct {
+	rtype       reflect.Type
 	cf          string
 	key         *field
 	composite   []*field
@@ -29,32 +51,6 @@ type field struct {
 	index         []int
 	cassandraName string
 	cassandraType TypeDesc
-}
-
-func defaultType(t reflect.Type) TypeDesc {
-	switch t.Kind() {
-	case reflect.Bool:
-		return BooleanType
-	case reflect.String:
-		return UTF8Type
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return LongType
-	case reflect.Float32:
-		return FloatType
-	case reflect.Float64:
-		return DoubleType
-	case reflect.Array:
-		if t.Name() == "UUID" && t.Size() == 16 {
-			return UUIDType
-		}
-		return UnknownType
-	case reflect.Slice:
-		if et := t.Elem(); et.Kind() == reflect.Uint8 {
-			return BytesType
-		}
-		return UnknownType
-	}
-	return UnknownType
 }
 
 func newField(sf reflect.StructField) (*field, error) {
@@ -112,8 +108,8 @@ func (f *field) unmarshalValue(b []byte, structValue *reflect.Value) error {
 	return nil
 }
 
-func newMapping(t reflect.Type) (*mapping, error) {
-	m := &mapping{}
+func internalNewStructMapping(t reflect.Type) (*structMapping, error) {
+	m := &structMapping{rtype: t}
 	n := t.NumField()
 
 	cf := ""
@@ -138,7 +134,7 @@ func newMapping(t reflect.Type) (*mapping, error) {
 		}
 	}
 
-	// pass 2: build mapping
+	// pass 2: build structMapping
 
 	if cf == "" {
 		return nil, errors.New(fmt.Sprint("No cf field in struct ", t.Name()))
@@ -184,39 +180,29 @@ func newMapping(t reflect.Type) (*mapping, error) {
 	return m, nil
 }
 
-var mapCache map[reflect.Type]*mapping
-var mapCacheMutex *sync.Mutex = new(sync.Mutex)
+var structMappingCache map[reflect.Type]*structMapping
+var structMappingCacheMutex *sync.Mutex = new(sync.Mutex)
 
-func getMapping(v reflect.Value) (*mapping, error) {
-	var m *mapping
+func getStructMapping(v *reflect.Value) (*structMapping, error) {
+	var m *structMapping
 	var err error
 	found := false
 	t := v.Type()
-	mapCacheMutex.Lock()
-	if mapCache == nil {
-		mapCache = make(map[reflect.Type]*mapping)
+	structMappingCacheMutex.Lock()
+	if structMappingCache == nil {
+		structMappingCache = make(map[reflect.Type]*structMapping)
 	}
-	if m, found = mapCache[t]; !found {
-		m, err = newMapping(t)
+	if m, found = structMappingCache[t]; !found {
+		m, err = internalNewStructMapping(t)
 		if err != nil {
-			mapCache[t] = m
+			structMappingCache[t] = m
 		}
 	}
-	mapCacheMutex.Unlock()
+	structMappingCacheMutex.Unlock()
 	return m, err
 }
 
-// mappedInstance stores the reflect.Value and mapping for a particular instance of a struct
-type mappedInstance struct {
-	source interface{}
-	v      reflect.Value
-	m      *mapping
-}
-
-func newMappedInstance(source interface{}) (*mappedInstance, error) {
-	mi := &mappedInstance{source: source}
-	var err error
-
+func validStruct(source interface{}) (*reflect.Value, error) {
 	// always work with a pointer to struct
 	vp := reflect.ValueOf(source)
 	if vp.Kind() != reflect.Ptr {
@@ -225,111 +211,112 @@ func newMappedInstance(source interface{}) (*mappedInstance, error) {
 	if vp.IsNil() {
 		return nil, errors.New("Passed source is not a pointer to a struct")
 	}
-	mi.v = reflect.Indirect(vp)
-	if mi.v.Kind() != reflect.Struct {
+	v := reflect.Indirect(vp)
+	if v.Kind() != reflect.Struct {
 		return nil, errors.New("Passed source is not a pointer to a struct")
 	}
-	if !mi.v.CanSet() {
+	if !v.CanSet() {
 		return nil, errors.New("Cannot modify the passed struct instance")
 	}
+	return &v, nil
+}
 
-	mi.m, err = getMapping(mi.v)
+func (m *structMapping) validate(source interface{}) (*reflect.Value, error) {
+	v, err := validStruct(source)
 	if err != nil {
 		return nil, err
 	}
-
-	return mi, nil
+	t := v.Type()
+	if t != m.rtype {
+		return nil, errors.New("The passed struct does not have the same type has the mapping")
+	}
+	return v, nil
 }
 
-func internalMap(source interface{}) (*Row, *mappedInstance, error) {
-
-	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
-	mi, err := newMappedInstance(source)
+func (m *structMapping) Map(source interface{}) (*Row, error) {
+	v, err := m.validate(source)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// allocate new row to return
 	row := &Row{}
 
 	// marshal the key field
-	b, err := mi.m.key.marshalValue(&mi.v)
+	b, err := m.key.marshalValue(v)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	row.Key = b
 
 	// prepare composite, if needed
 	composite := make([]byte, 0)
-	for _, f := range mi.m.composite {
-		b, err := f.marshalValue(&mi.v)
+	for _, f := range m.composite {
+		b, err := f.marshalValue(v)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		composite = append(composite, packComposite(b, eocEquals)...)
 	}
 
 	// add columns
-	for _, f := range mi.m.values {
+	for _, f := range m.values {
 		columnName, err := f.marshalName()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if len(composite) > 0 {
 			columnName = append(composite, packComposite(columnName, eocEquals)...)
 		}
-		columnValue, err := f.marshalValue(&mi.v)
+		columnValue, err := f.marshalValue(v)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		row.Columns = append(row.Columns, &Column{Name: columnName, Value: columnValue})
 	}
 
-	return row, mi, nil
+	return row, nil
 }
 
-func Map(source interface{}) (*Row, error) {
-	row, _, err := internalMap(source)
-	return row, err
-}
+func (m *structMapping) Unmap(destination interface{}, offset int, row *Row) (int, error) {
+	readColumns := 0
 
-func Unmap(row *Row, destination interface{}) error {
-
-	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
-	mi, err := newMappedInstance(destination)
+	v, err := m.validate(destination)
 	if err != nil {
-		return err
+		return readColumns, err
 	}
 
 	// unmarshal key field
-	err = mi.m.key.unmarshalValue(row.Key, &mi.v)
+	err = m.key.unmarshalValue(row.Key, v)
 	if err != nil {
-		return err
+		return readColumns, err
 	}
 
 	compositeFieldsAreSet := false
 
 	// unmarshal col/values
-	for _, column := range row.Columns {
+	columns := row.Columns[offset : offset+m.MinColumns()]
+	for _, column := range columns {
+		readColumns++
 		var components [][]byte
-		if len(mi.m.composite) > 0 {
+		if len(m.composite) > 0 {
 			components = unpackComposite(column.Name)
 		} else {
 			components = [][]byte{column.Name}
 		}
-		if len(components) != (len(mi.m.composite) + 1) {
-			return errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct key: composite in struct ", mi.v.Type().Name()))
+		if len(components) != (len(m.composite) + 1) {
+			return readColumns, errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct key: composite in struct ", v.Type().Name()))
 		}
 
 		// FIXME: it is possible for a row to contain multiple composite values instead of an uniform one. assume
 		// that is not the case for now!
 		// iterate over composite components, just once, to set the composite fields
 		if !compositeFieldsAreSet {
-			for i, f := range mi.m.composite {
+			for i, f := range m.composite {
 				b := components[i]
-				err := f.unmarshalValue(b, &mi.v)
+				err := f.unmarshalValue(b, v)
 				if err != nil {
-					return errors.New(fmt.Sprint("Error unmarshaling composite field: ", err))
+					return readColumns, errors.New(fmt.Sprint("Error unmarshaling composite field: ", err))
 				}
 			}
 			compositeFieldsAreSet = true
@@ -339,15 +326,15 @@ func Unmap(row *Row, destination interface{}) error {
 		var name string
 		err = Unmarshal(components[len(components)-1], UTF8Type, &name)
 		if err != nil {
-			return errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for field name in struct ", mi.v.Type().Name(), ", error: ", err))
+			return readColumns, errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for field name in struct ", v.Type().Name(), ", error: ", err))
 		}
-		if f, found := mi.m.namedValues[name]; found {
-			err := f.unmarshalValue(column.Value, &mi.v)
+		if f, found := m.namedValues[name]; found {
+			err := f.unmarshalValue(column.Value, v)
 			if err != nil {
-				return errors.New(fmt.Sprint("Error unmarshaling column value: ", err))
+				return readColumns, errors.New(fmt.Sprint("Error unmarshaling column value: ", err))
 			}
 		}
 	}
 
-	return nil
+	return readColumns, nil
 }
