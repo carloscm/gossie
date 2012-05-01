@@ -57,21 +57,21 @@ The pool uses a simple randomized rule for connecting to the passed nodes, alway
 
 ### Low level queries
 
-The Query and Mutation interfaces allow for low level queries to Cassandra and they follow the semantics of the native Thrift operations, but wrapped with much easier to use functions based on method chaining.
+The Reader and Writer interfaces allow for low level queries to Cassandra and they follow the semantics of the native Thrift operations, but wrapped with much easier to use functions based on method chaining.
 
 ```Go
-err = pool.Mutation().Insert("MyColumnFamily", row).Run()
-row, err = pool.Query().Cf("MyColumnFamily").Get(id)
-rows, err = pool.Query().Cf("MyColumnFamily").Where([]byte("MyIndexedColumn"), EQ, []byte("hi!")).IndexedGet(&IndexedRange{Count: 1000})
+err = pool.Writer().Insert("MyColumnFamily", row).Run()
+row, err = pool.Reader().Cf("MyColumnFamily").Get(id)
+rows, err = pool.Reader().Cf("MyColumnFamily").Where([]byte("MyIndexedColumn"), EQ, []byte("hi!")).IndexedGet(&IndexedRange{Count: 1000})
 ````
 
 ### Type marshaling
 
 The low level interface is based on passing []byte values for everything, mirroring the Thrift API. For this reason the functions Marshal and Unmarshal provide for type conversion between native Go types and native Cassandra types.
 
-### Struct maping
+### Struct mapping
 
-The first part of the high level Gossie interface is the Map/Unmap functions. These functions allow to convert Go structs into Rows, and they have support of advanced features like composites or overriding column names and types.
+The Mapping interface and its implementations allow to convert Go structs into Rows, and they have support of advanced features like composites or overriding column names and types. NewSparse() returns a Mapping for the new CQL 3.0 pattern of composite "primary keys":
 
 ```Go
 /*
@@ -86,51 +86,48 @@ CREATE TABLE Timeline (
 */
 
 // In Gossie:
-type Timeline struct {
-	UserID  string  `cf:"Timeline" key:"UserID,TweetID"`
+type Tweet struct {
+	UserID  string
 	TweetID int64
 	Author  string
 	Body    string
 }
 
-row, err = gossie.Map(&Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
+mapping := gossie.NewSparse("Timeline", "UserID", "TweetID")
+row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
 err = pool.Mutation().Insert("Timeline", row).Run()
 ````
 
-The `cf` field tag names the column family of this struct, and the `key` field tag starts by naming the field that represents the row key, followed by zero or more fields that represent the components of a composite column name. Any other field not referenced in the `key` will be used as a column value, and its name used as a the column name, or appended to the end of the composite as the last component, if the struct had a composite. The `cf` and `key` field tags can appear at any field in the struct.
+When calling Mapping.Map() you can tag your struct fiels with `name` and `type`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on.
 
-The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on.
+### Query and Result interfaces (planned)
 
-### Cursors
-
-As a convenient wrapper over Map/Unmap and the Query/Mutation interfaces Gossie provides the Cursor interface. This wrapper implements a classic database cursor over rows and composite row slices. Example:
+High level queries with transparent paging and buffering. This is still WIP, a possible example:
 
 ```Go
-// initialize a cursor
-cursor := pool.Cursor()
+query := pool.Query(gossie.NewSparse("Timeline", "UserID", "TweetID"))
 
-// write a single tweet
-tweet := &Timeline{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
-err = cursor.Write(tweet)
+// a single tweet, since we pass the row key and all possible composite values
+result, err := query.Get("username", 10000000000004)
 
-// read a single tweet. this will implicitly use the key field for the row key, and will add a slice
-// operation if the struct has fixed composite columns
-err = cursor.Read(tweet)
+// all tweets for a given user
+result, err := query.Get("username")
 
-// init a new struct instance with just the key and composite fields to read a different tweet
-tweet2 := &Timeline{"userid", 10000000000004}
-err = cursor.Read(tweet2)
-// tweet2 now contains the row with key "userid" sliced by the first comparator field equaled to
-// 10000000000004, or gossie.ErrorNotFound was returned in case it was not found
+// all tweets for a given user, starting at a certain TweetID
+result, err := query.Where("TweetID", ">=", 10000000000004).Get("username")
+
+// iterating over results
+for var t Tweet; err := result.Next(&t); err != nil {
+	...
+}
 ````
-
 
 # Planned features
 
-- Cursor: range reads for composites with buffering and paging
-- Cursor: secondary index read with buffering and paging
-- Cursor: multiget reads with buffering and paging
-- Cursor: batching writes
+- Query: range reads for composites with buffering and paging
+- Query: secondary index read with buffering and paging
+- Query: multiget reads with buffering and paging
+- A higher level abstraction for writes (Batch interface)
 - High level mapping for Go slices
 - High level mapping for Go maps
 
