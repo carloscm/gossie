@@ -95,7 +95,7 @@ type Tweet struct {
 
 mapping := gossie.NewSparse("Timeline", "UserID", "TweetID")
 row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
-err = pool.Mutation().Insert("Timeline", row).Run()
+err = pool.Writer().Insert("Timeline", row).Run()
 ````
 
 When calling Mapping.Map() you can tag your struct fiels with `name` and `type`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on.
