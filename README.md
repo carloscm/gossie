@@ -117,7 +117,12 @@ result, err := query.Get("username")
 result, err := query.Where("TweetID", ">=", 10000000000004).Get("username")
 
 // iterating over results
-for var t Tweet; err := result.Next(&t); err != nil {
+for {
+	var t Tweet
+	err := result.Next(&t)
+	if err != nil {
+		break
+	}
 	...
 }
 ````
