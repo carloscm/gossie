@@ -20,129 +20,118 @@ todo:
 */
 
 var (
-	ErrorNotFound = errors.New("Key (plus any composites) not found")
+	Done = errors.New("No more results found")
 )
 
 const (
 	DEFAULT_LIMIT = 100
 )
 
-/*
 // Query is a high level interface for Cassandra queries
 type Query interface {
 
 	// ConsistencyLevel sets the consistency level for this particular call.
-	// It is optional, if left uncalled it will default to your connection pool options value.
+	// It is optional, if left uncalled it will default to your connection
+	// pool options value.
 	ConsistencyLevel(int) Query
 
-	// Limit sets the object limit to buffer at once. Paging with a Result will internally buffer up to
-	// Limit objects. Defaults to 100.
+	// Limit sets the column limit to buffer at once. Paging with a Result
+	// will internally query Cassandra in Limit sized column slices.
 	Limit(int) Query
 
-	// Get looks up a row with the given key (and optionally components for a composite) and returns
-	// a Result to it. If the row uses a composite comparator an you only specify the key the Cursor
-	// will allow you page and iterate over the entire row.
-	Get(key interface{}, components interface{}...) (Result, error)
+	// Get looks up a row with the given key (and optionally components for a
+	// composite) and returns a Result to it. If the row uses a composite
+	// comparator an you only specify the key the Result will allow you to
+	// page and iterate over the entire row.
+	Get(key interface{}, components ...interface{}) (Result, error)
 }
 
-// Result reads Query results into Go objects, internally buffering them and paging them.
+// Result reads Query results into Go objects, internally buffering them and
+// paging them.
 type Result interface {
 
-	// Next advances to the next object. It returns false when no more objects are available
-	Next() bool
-
-	// Read the current object in the result sequence.
-	Read(interface{}) error
+	// Next sets destination with the contents of the current object in the
+	// Result buffer and advances to the next object one. It returns Done when
+	// no more objects are available.
+	Next(destination interface{}) error
 }
 
-type cursor struct {
-	pool    *connectionPool
-	options CursorOptions
+type query struct {
+	pool             *connectionPool
+	mapping          Mapping
+	consistencyLevel int
+	limit            int
+	offset           int
+	row              *Row
 }
 
-func (co *CursorOptions) defaults() {
-	if co.Limit == 0 {
-		co.Limit = DEFAULT_LIMIT
+func newQuery(cp *connectionPool, m Mapping) *query {
+	return &query{
+		pool:    cp,
+		mapping: m,
+		limit:   DEFAULT_LIMIT,
 	}
 }
 
-func newCursor(cp *connectionPool) *cursor {
-	c := &cursor{
-		pool: cp,
-	}
-	c.options.defaults()
-	return c
+func (q *query) ConsistencyLevel(c int) Query {
+	q.consistencyLevel = c
+	return q
 }
 
-func (c *cursor) Options(options CursorOptions) {
-	options.defaults()
-	c.options = options
+func (q *query) Limit(l int) Query {
+	q.limit = l
+	return q
 }
 
-func (c *cursor) Write(source interface{}) error {
+func (q *query) Get(key interface{}, components ...interface{}) (Result, error) {
+	return nil, nil
+	/*
+		// sanity checks
+		// marshal the key field
+		vk := reflect.Value(key)
 
-	row, mi, err := internalMap(source)
-	if err != nil {
-		return err
-	}
 
-	m := c.pool.Writer().Insert(mi.m.cf, row)
+		marshal especifico para VALUE de una key arbitraria, no intentar pillar un campo de struct
 
-	if c.options.WriteConsistency != 0 {
-		m.ConsistencyLevel(c.options.WriteConsistency)
-	}
 
-	return m.Run()
-}
-
-func (c *cursor) Read(source interface{}) error {
-
-	// deconstruct the source struct into a reflect.Value and a (cached) struct mapping
-	mi, err := newMappedInstance(source)
-	if err != nil {
-		return err
-	}
-
-	// sanity checks
-	// marshal the key field
-	key, err := mi.m.key.marshalValue(&mi.v)
-	if err != nil {
-		return err
-	}
-
-	// start building the query
-	q := c.pool.Reader().Cf(mi.m.cf)
-
-	if c.options.ReadConsistency != 0 {
-		q.ConsistencyLevel(c.options.ReadConsistency)
-	}
-
-	// build a slice composite comparator if needed
-	if len(mi.m.composite) > 0 {
-		// iterate over the components and set an equality comparison for every field
-		start := make([]byte, 0)
-		end := make([]byte, 0)
-		for _, f := range mi.m.composite {
-			b, err := f.marshalValue(&mi.v)
-			if err != nil {
-				return err
-			}
-			start = append(start, packComposite(b, eocEquals)...)
-			end = append(end, packComposite(b, eocGreater)...)
+		key, err := q.mapping.key.marshalValue(&vk)
+		if err != nil {
+			return err
 		}
-		q.Slice(&Slice{Start: start, End: end, Count: c.options.Limit})
-	}
 
-	row, err := q.Get(key)
+		// start building the query
+		q := c.pool.Reader().Cf(mi.m.cf)
 
-	if err != nil {
-		return err
-	}
+		if c.options.ReadConsistency != 0 {
+			q.ConsistencyLevel(c.options.ReadConsistency)
+		}
 
-	if row == nil {
-		return ErrorNotFound
-	}
+		// build a slice composite comparator if needed
+		if len(mi.m.composite) > 0 {
+			// iterate over the components and set an equality comparison for every field
+			start := make([]byte, 0)
+			end := make([]byte, 0)
+			for _, f := range mi.m.composite {
+				b, err := f.marshalValue(&mi.v)
+				if err != nil {
+					return err
+				}
+				start = append(start, packComposite(b, eocEquals)...)
+				end = append(end, packComposite(b, eocGreater)...)
+			}
+			q.Slice(&Slice{Start: start, End: end, Count: c.options.Limit})
+		}
 
-	return Unmap(row, source)
+		row, err := q.Get(key)
+
+		if err != nil {
+			return err
+		}
+
+		if row == nil {
+			return ErrorNotFound
+		}
+
+		return Unmap(row, source)
+	*/
 }
-*/
