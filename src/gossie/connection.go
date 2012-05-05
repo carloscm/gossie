@@ -21,6 +21,39 @@ import (
    Close()
 */
 
+// ConnectionPool implements a pool of Cassandra connections to one or more nodes
+type ConnectionPool interface {
+	// Keyspace returns the keyspace name this ConnectionPool is connected to
+	Keyspace() string
+
+	// Schema returns the parsed schema for the keyspace this ConnectionPool is connected to
+	Schema() *Schema
+
+	// Reader returns a new query builder for read operations
+	Reader() Reader
+
+	// Writer returns a new mutation builder for write operations
+	Writer() Writer
+
+	// Query returns a high level interface for read operations over structs
+	//Query() Query
+
+	// Close all the connections in the pool
+	Close()
+}
+
+// PoolOptions stores the options for the creation of a ConnectionPool
+type PoolOptions struct {
+	Size             int // keep up to Size connections open and ready
+	ReadConsistency  int // default read consistency
+	WriteConsistency int // default write consistency
+	Timeout          int // socket timeout in ms
+	Recycle          int // close connections after Recycle seconds
+	RecycleJitter    int // max jitter to add to Recycle so not all connections close at the same time
+	Grace            int // if a node is blacklisted try to contact it again after Grace seconds
+	Retries          int // retry queries for Retries times before raising an error
+}
+
 const (
 	CONSISTENCY_DEFAULT      = 0
 	CONSISTENCY_ONE          = 1
@@ -51,39 +84,6 @@ const (
 var (
 	ErrorConnectionTimeout = errors.New("Connection timeout")
 )
-
-// ConnectionPool implements a pool of Cassandra connections to one or more nodes
-type ConnectionPool interface {
-	// Keyspace returns the keyspace name this ConnectionPool is connected to
-	Keyspace() string
-
-	// Schema returns the parsed schema for the keyspace this ConnectionPool is connected to
-	Schema() *Schema
-
-	// Reader returns a new query builder for read operations
-	Reader() Reader
-
-	// Writer returns a new mutation builder for write operations
-	Writer() Writer
-
-	// Query returns a high level interface for read and write operations over structs
-	//Query() Query
-
-	// Close all the connections in the pool
-	Close()
-}
-
-// PoolOptions stores the options for the creation of a ConnectionPool
-type PoolOptions struct {
-	Size             int // keep up to Size connections open and ready
-	ReadConsistency  int // default read consistency
-	WriteConsistency int // default write consistency
-	Timeout          int // socket timeout in ms
-	Recycle          int // close connections after Recycle seconds
-	RecycleJitter    int // max jitter to add to Recycle so not all connections close at the same time
-	Grace            int // if a node is blacklisted try to contact it again after Grace seconds
-	Retries          int // retry queryes for Retries times before raising an error
-}
 
 func (o *PoolOptions) defaults() {
 	if o.Size == 0 {

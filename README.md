@@ -98,14 +98,27 @@ row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this
 err = pool.Writer().Insert("Timeline", row).Run()
 ````
 
-When calling Mapping.Map() you can tag your struct fiels with `name` and `type`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on.
+When calling Mapping.Map() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
+
+The tags `cf`, `key` and `cols` can be used in any field in the struct to document a mapping. It can later be extracted with `MappingFromTags()` by passing any instance of the struct, even an empty one. For example this is equivalent to the mapping created  with `NewSparse()` in the previous example:
+
+```Go
+type Tweet struct {
+	UserID  string `cf:"Timeline" key:"UserID" cols:"TweetID"`
+	TweetID int64
+	Author  string
+	Body    string
+}
+mapping := gossie.MappingFromTags(&Tweet{})
+```
 
 ### Query and Result interfaces (planned)
 
 High level queries with transparent paging and buffering. This is still WIP, a possible example:
 
 ```Go
-query := pool.Query(gossie.NewSparse("Timeline", "UserID", "TweetID"))
+
+query := pool.Query(TweetMapping)
 
 // a single tweet, since we pass the row key and all possible composite values
 result, err := query.Get("username", 10000000000004)

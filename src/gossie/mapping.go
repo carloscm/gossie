@@ -3,15 +3,14 @@ package gossie
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 )
 
 /*
-	todo:
-	compact struct mapping
-
 	ideas:
-	map to Go maps
-	map to Go slices (N slices?)
+	mapping for Go maps
+	mapping for Go slices (N slices?)
 */
 
 // Mapping maps the type of a Go object to/from (a slice of) a Cassandra row.
@@ -31,6 +30,46 @@ type Mapping interface {
 	// offset column. It returns the count of consumed columns, or -1 if there
 	// wasn't enough columns to fill the Go object
 	Unmap(destination interface{}, offset int, row *Row) (int, error)
+}
+
+// MappingFromTags looks up the field tag 'mapping' in the passed struct type
+// to decide which mapping it is using, then builds a mapping using the 'cf',
+// 'key', 'cols' and 'value' field tags.
+func MappingFromTags(source interface{}) (Mapping, error) {
+	_, si, err := validateAndInspectStruct(source)
+	if err != nil {
+		return nil, err
+	}
+	// mandatory tags for all the provided mappings
+	for _, t := range []string{"cf", "key"} {
+		_, found := si.globalTags[t]
+		if !found {
+			return nil, errors.New(fmt.Sprint("Mandatory struct tag ", t, " not found in passed struct of type ", si.rtype.Name()))
+		}
+	}
+	// optional tags
+	colsS := []string{}
+	cols, found := si.globalTags["cols"]
+	if found {
+		colsS = strings.Split(cols, ",")
+	}
+	mapping, found := si.globalTags["mapping"]
+	if !found {
+		mapping = "sparse"
+	}
+	value := si.globalTags["value"]
+
+	switch mapping {
+	case "sparse":
+		return NewSparse(si.globalTags["cf"], si.globalTags["key"], colsS...), nil
+	case "compact":
+		if value == "" {
+			return nil, errors.New(fmt.Sprint("Mandatory struct tag value for compact mapping not found in passed struct of type ", si.rtype.Name()))
+		}
+		return NewCompact(si.globalTags["cf"], si.globalTags["key"], si.globalTags["value"], colsS...), nil
+	}
+
+	return nil, errors.New(fmt.Sprint("Unrecognized mapping type ", mapping, " in passed struct of type ", si.rtype.Name()))
 }
 
 // Sparse returns a mapping for Go structs that represents a Cassandra row key
@@ -62,11 +101,7 @@ func (m *sparseMapping) Cf() string {
 }
 
 func (m *sparseMapping) MinColumns(source interface{}) int {
-	v, err := validStruct(source)
-	if err != nil {
-		return -1
-	}
-	si, err := inspectStruct(v)
+	_, si, err := validateAndInspectStruct(source)
 	if err != nil {
 		return -1
 	}
@@ -74,14 +109,10 @@ func (m *sparseMapping) MinColumns(source interface{}) int {
 	return len(si.goFields) - len(m.components) - 1
 }
 
-func (m *sparseMapping) Map(source interface{}) (*Row, error) {
-	v, err := validStruct(source)
+func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *structInspection, []byte, error) {
+	v, si, err := validateAndInspectStruct(source)
 	if err != nil {
-		return nil, err
-	}
-	si, err := inspectStruct(v)
-	if err != nil {
-		return nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	row := &Row{}
@@ -90,11 +121,11 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 	if f, found := si.goFields[m.key]; found {
 		b, err := f.marshalValue(v)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, nil, err
 		}
 		row.Key = b
 	} else {
-		return nil, errors.New(fmt.Sprint("Mapping key field ", m.key, " not found in passed struct of type ", v.Type().Name()))
+		return nil, nil, nil, nil, errors.New(fmt.Sprint("Mapping key field ", m.key, " not found in passed struct of type ", v.Type().Name()))
 	}
 
 	// prepare composite, if needed
@@ -103,12 +134,21 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 		if f, found := si.goFields[c]; found {
 			b, err := f.marshalValue(v)
 			if err != nil {
-				return nil, err
+				return nil, nil, nil, nil, err
 			}
 			composite = append(composite, packComposite(b, eocEquals)...)
 		} else {
-			return nil, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+			return nil, nil, nil, nil, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
 		}
+	}
+
+	return row, v, si, composite, nil
+}
+
+func (m *sparseMapping) Map(source interface{}) (*Row, error) {
+	row, v, si, composite, err := m.startMap(source)
+	if err != nil {
+		return nil, err
 	}
 
 	// add columns
@@ -136,26 +176,59 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 	return row, nil
 }
 
-func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (int, error) {
-	readColumns := 0
-
-	v, err := validStruct(destination)
+func (m *sparseMapping) startUnmap(destination interface{}, row *Row) (*reflect.Value, *structInspection, error) {
+	v, si, err := validateAndInspectStruct(destination)
 	if err != nil {
-		return readColumns, err
-	}
-	si, err := inspectStruct(v)
-	if err != nil {
-		return readColumns, err
+		return nil, nil, err
 	}
 
 	// unmarshal key field
 	if f, found := si.goFields[m.key]; found {
 		err = f.unmarshalValue(row.Key, v)
 		if err != nil {
-			return readColumns, err
+			return nil, nil, err
 		}
 	} else {
-		return readColumns, errors.New(fmt.Sprint("Mapping key field ", m.key, " not found in passed struct of type ", v.Type().Name()))
+		return nil, nil, errors.New(fmt.Sprint("Mapping key field ", m.key, " not found in passed struct of type ", v.Type().Name()))
+	}
+
+	return v, si, nil
+}
+
+func (m *sparseMapping) unmapComponents(v *reflect.Value, si *structInspection, components [][]byte) error {
+	for i, c := range m.components {
+		if f, found := si.goFields[c]; found {
+			b := components[i]
+			err := f.unmarshalValue(b, v)
+			if err != nil {
+				return err
+			}
+		} else {
+			return errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+		}
+	}
+	return nil
+}
+
+func (m *sparseMapping) extractComponents(column *Column, v *reflect.Value, biasN int) ([][]byte, error) {
+	var components [][]byte
+	if len(m.components) > 0 {
+		components = unpackComposite(column.Name)
+	} else {
+		components = [][]byte{column.Name}
+	}
+	if len(components) != (len(m.components) + biasN) {
+		return components, errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct mapping in struct ", v.Type().Name()))
+	}
+	return components, nil
+}
+
+func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (int, error) {
+	readColumns := 0
+
+	v, si, err := m.startUnmap(destination, row)
+	if err != nil {
+		return readColumns, err
 	}
 
 	compositeFieldsAreSet := false
@@ -168,14 +241,9 @@ func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (in
 	columns := row.Columns[offset : offset+min]
 	for _, column := range columns {
 		readColumns++
-		var components [][]byte
-		if len(m.components) > 0 {
-			components = unpackComposite(column.Name)
-		} else {
-			components = [][]byte{column.Name}
-		}
-		if len(components) != (len(m.components) + 1) {
-			return readColumns, errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct mapping in struct ", v.Type().Name()))
+		components, err := m.extractComponents(column, v, 1)
+		if err != nil {
+			return readColumns, err
 		}
 
 		// FIXME: it is possible for a row to contain multiple composite
@@ -184,16 +252,8 @@ func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (in
 		// iterate over composite components, just once, to set the composite
 		// fields
 		if !compositeFieldsAreSet {
-			for i, c := range m.components {
-				if f, found := si.goFields[c]; found {
-					b := components[i]
-					err := f.unmarshalValue(b, v)
-					if err != nil {
-						return readColumns, err
-					}
-				} else {
-					return readColumns, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
-				}
+			if err := m.unmapComponents(v, si, components); err != nil {
+				return readColumns, err
 			}
 			compositeFieldsAreSet = true
 		}
@@ -215,24 +275,70 @@ func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (in
 	return readColumns, nil
 }
 
-// Compact returns a mapping for Go structs that represents a Cassandra row
+// NewCompact returns a mapping for Go structs that represents a Cassandra row
 // column as a full Go struct. The field named by the value is mapped to the
 // column value. Each passed component field name is mapped, in order, to the
 // column composite values.
-/*
-func NewCompact(cf string, keyField string, valueField string, ...componentFields string) Mapping {
-	return &compactMapping {
-		cf: cf,
-		key: keyField,
-		components: componentFields
-		value: valueField
+func NewCompact(cf string, keyField string, valueField string, componentFields ...string) Mapping {
+	return &compactMapping{
+		sparseMapping: *(NewSparse(cf, keyField, componentFields...).(*sparseMapping)),
+		value:         valueField,
 	}
 }
 
 type compactMapping struct {
-	cf string
-	key string
-	components []string
+	sparseMapping
 	value string
 }
-*/
+
+func (m *compactMapping) Cf() string {
+	return m.cf
+}
+
+func (m *compactMapping) MinColumns(source interface{}) int {
+	return 1
+}
+
+func (m *compactMapping) Map(source interface{}) (*Row, error) {
+	row, v, si, composite, err := m.startMap(source)
+	if err != nil {
+		return nil, err
+	}
+	if f, found := si.goFields[m.value]; found {
+		columnValue, err := f.marshalValue(v)
+		if err != nil {
+			return nil, err
+		}
+		row.Columns = append(row.Columns, &Column{Name: composite, Value: columnValue})
+	} else {
+		return nil, errors.New(fmt.Sprint("Mapping value field ", m.value, " not found in passed struct of type ", v.Type().Name()))
+	}
+	return row, nil
+}
+
+func (m *compactMapping) Unmap(destination interface{}, offset int, row *Row) (int, error) {
+	v, si, err := m.startUnmap(destination, row)
+	if err != nil {
+		return 0, err
+	}
+	if len(row.Columns) <= 0 {
+		return -1, nil
+	}
+	column := row.Columns[offset]
+	components, err := m.extractComponents(column, v, 0)
+	if err != nil {
+		return 1, err
+	}
+	if err := m.unmapComponents(v, si, components); err != nil {
+		return 1, err
+	}
+	if f, found := si.goFields[m.value]; found {
+		err := f.unmarshalValue(column.Value, v)
+		if err != nil {
+			return 1, errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
+		}
+	} else {
+		return 1, errors.New(fmt.Sprint("Mapping value field ", m.value, " not found in passed struct of type ", v.Type().Name()))
+	}
+	return 1, nil
+}

@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+/*
+	todo:
+	deeper tests
+*/
+
 type everythingComp struct {
 	Key      string
 	FBytes   []byte
@@ -21,6 +26,27 @@ type everythingComp struct {
 	Val      string
 }
 
+type tagsA struct {
+	A int `cf:"1" key:"A"`
+	B int
+	C int
+	D int
+}
+
+type tagsB struct {
+	A int `cf:"1" key:"A" cols:"B"`
+	B int
+	C int
+	D int
+}
+
+type tagsC struct {
+	A int `cf:"1" key:"A" cols:"B,C" value:"D" mapping:"compact"`
+	B int
+	C int
+	D int
+}
+
 type structTestShell struct {
 	mapping        Mapping
 	expectedStruct interface{}
@@ -35,10 +61,6 @@ func (shell *structTestShell) checkMap(t *testing.T, m Mapping, expectedStruct i
 		t.Error("Error mapping struct: ", err)
 	}
 	if !reflect.DeepEqual(resultRow, shell.expectedRow) {
-		t.Log(shell.expectedRow.Columns[0])
-		t.Log(shell.expectedRow.Columns[1])
-		t.Log(resultRow.Columns[0])
-		t.Log(resultRow.Columns[1])
 		t.Error("(Round ", round, ") Mapped struct ", shell.name, " does not match expected row ", shell.expectedRow, " actual ", resultRow)
 	}
 }
@@ -64,7 +86,11 @@ func (shell *structTestShell) checkFullMap(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
+	mA, _ := MappingFromTags(&tagsA{})
+	mB, _ := MappingFromTags(&tagsB{})
+	mC, _ := MappingFromTags(&tagsC{})
 
+	t.Log(mC)
 	shells := []*structTestShell{
 		&structTestShell{
 			mapping:        NewSparse("cfname", "A"),
@@ -100,6 +126,66 @@ func TestMap(t *testing.T) {
 					},
 					&Column{
 						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'Z', 0},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+					},
+				},
+			},
+		},
+
+		&structTestShell{
+			mapping:        mA,
+			name:           "tagsA",
+			expectedStruct: &tagsA{1, 2, 3, 4},
+			resultStruct:   &tagsA{},
+			expectedRow: &Row{
+				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+				Columns: []*Column{
+					&Column{
+						Name:  []byte{'B'},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 2},
+					},
+					&Column{
+						Name:  []byte{'C'},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
+					},
+					&Column{
+						Name:  []byte{'D'},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+					},
+				},
+			},
+		},
+
+		&structTestShell{
+			mapping:        mB,
+			name:           "tagsB",
+			expectedStruct: &tagsB{1, 2, 3, 4},
+			resultStruct:   &tagsB{},
+			expectedRow: &Row{
+				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+				Columns: []*Column{
+					&Column{
+						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'C', 0},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
+					},
+					&Column{
+						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'D', 0},
+						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+					},
+				},
+			},
+		},
+
+		&structTestShell{
+			mapping:        mC,
+			name:           "tagsC",
+			expectedStruct: &tagsC{1, 2, 3, 4},
+			resultStruct:   &tagsC{},
+			expectedRow: &Row{
+				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+				Columns: []*Column{
+					&Column{
+						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
 						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
 					},
 				},

@@ -16,6 +16,11 @@ type noErrB struct {
 	C int `type:"AsciiType"`
 	D int `name:"Z"`
 }
+type noErrC struct {
+	A int `cf:"1" mapping:"m" key:"k"`
+	B int `skip:"true" value:"v"`
+	C int `cf:"2" cols:"c" nope:"yup"`
+}
 
 func buildInspectionFromPtr(instance interface{}) (*structInspection, error) {
 	valuePtr := reflect.ValueOf(instance)
@@ -59,6 +64,7 @@ func TestStructInspection(t *testing.T) {
 			"B": &field{index: 1, name: "B", cassandraType: LongType, cassandraName: "B"},
 			"C": &field{index: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
 		},
+		globalTags: make(map[string]string),
 	}
 	if err != nil {
 		t.Fatal("Unexpected error calling mapA newInspection:", err)
@@ -89,9 +95,41 @@ func TestStructInspection(t *testing.T) {
 			"C": &field{index: 2, name: "C", cassandraType: AsciiType, cassandraName: "C"},
 			"Z": &field{index: 3, name: "D", cassandraType: LongType, cassandraName: "Z"},
 		},
+		globalTags: make(map[string]string),
 	}
 	if err != nil {
 		t.Fatal("Unexpected error calling mapB newInspection:", err)
 	}
 	checkInspection(t, goodB, mapB, "mapB")
+
+	mapC, err := buildInspectionFromPtr(&noErrC{1, 2, 3})
+	valuePtr = reflect.ValueOf(&noErrC{})
+	value = reflect.Indirect(valuePtr)
+	typ = value.Type()
+	goodC := &structInspection{
+		rtype: typ,
+		orderedFields: []*field{
+			&field{index: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
+			&field{index: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
+		},
+		goFields: map[string]*field{
+			"A": &field{index: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
+			"C": &field{index: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
+		},
+		cassandraFields: map[string]*field{
+			"A": &field{index: 0, name: "A", cassandraType: LongType, cassandraName: "A"},
+			"C": &field{index: 2, name: "C", cassandraType: LongType, cassandraName: "C"},
+		},
+		globalTags: map[string]string{
+			"cf":      "2",
+			"mapping": "m",
+			"key":     "k",
+			"cols":    "c",
+			"value":   "v",
+		},
+	}
+	if err != nil {
+		t.Fatal("Unexpected error calling mapC newInspection:", err)
+	}
+	checkInspection(t, goodC, mapC, "mapC")
 }
