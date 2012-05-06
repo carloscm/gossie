@@ -64,7 +64,7 @@ func (f *field) marshalValue(structValue *reflect.Value) ([]byte, error) {
 	v := structValue.Field(f.index)
 	b, err := Marshal(v.Interface(), f.cassandraType)
 	if err != nil {
-		return nil, errors.New(fmt.Sprint("Error marshaling filed value for field ", f.name, ":", err))
+		return nil, errors.New(fmt.Sprint("Error marshaling field value for field ", f.name, ":", err))
 	}
 	return b, nil
 }

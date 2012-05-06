@@ -71,7 +71,7 @@ The low level interface is based on passing []byte values for everything, mirror
 
 ### Struct mapping
 
-The Mapping interface and its implementations allow to convert Go structs into Rows, and they have support of advanced features like composites or overriding column names and types. NewSparse() returns a Mapping for the new CQL 3.0 pattern of composite "primary keys":
+The Mapping interface and its implementations allow to convert Go structs into Rows, and they have support of advanced features like composites or overriding column names and types. Built-in NewMapping() returns a Mapping implementation that can map and unmap Go structs from Cassandra rows, serialized in classic key/value rows or in composited column names, with support for both sparse and compact storage. For example:
 
 ```Go
 /*
@@ -87,30 +87,20 @@ CREATE TABLE Timeline (
 
 // In Gossie:
 type Tweet struct {
-	UserID  string
-	TweetID int64
-	Author  string
-	Body    string
-}
-
-mapping := gossie.NewSparse("Timeline", "UserID", "TweetID")
-row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
-err = pool.Writer().Insert("Timeline", row).Run()
-````
-
-When calling Mapping.Map() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
-
-The tags `cf`, `key` and `cols` can be used in any field in the struct to document a mapping. It can later be extracted with `MappingFromTags()` by passing any instance of the struct, even an empty one. For example this is equivalent to the mapping created  with `NewSparse()` in the previous example:
-
-```Go
-type Tweet struct {
 	UserID  string `cf:"Timeline" key:"UserID" cols:"TweetID"`
 	TweetID int64
 	Author  string
 	Body    string
 }
-mapping := gossie.MappingFromTags(&Tweet{})
-```
+
+mapping := gossie.NewMapping(&Tweet{})
+row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
+err = pool.Writer().Insert("Timeline", row).Run()
+````
+
+When calling NewMapping() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
+
+The tags `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows.
 
 ### Query and Result interfaces (planned)
 

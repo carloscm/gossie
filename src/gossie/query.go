@@ -51,7 +51,7 @@ type Query interface {
 type Result interface {
 
 	// Next sets destination with the contents of the current object in the
-	// Result buffer and advances to the next object one. It returns Done when
+	// Result buffer and advances to the next object. It returns Done when
 	// no more objects are available.
 	Next(destination interface{}) error
 }
@@ -61,8 +61,12 @@ type query struct {
 	mapping          Mapping
 	consistencyLevel int
 	limit            int
-	offset           int
-	row              *Row
+}
+
+type result struct {
+	q      *query
+	offset int
+	row    *Row
 }
 
 func newQuery(cp *connectionPool, m Mapping) *query {
@@ -84,14 +88,11 @@ func (q *query) Limit(l int) Query {
 }
 
 func (q *query) Get(key interface{}, components ...interface{}) (Result, error) {
+
 	return nil, nil
 	/*
-		// sanity checks
-		// marshal the key field
-		vk := reflect.Value(key)
 
-
-		marshal especifico para VALUE de una key arbitraria, no intentar pillar un campo de struct
+		//marshal especifico para VALUE de una key arbitraria, no intentar pillar un campo de struct
 
 
 		key, err := q.mapping.key.marshalValue(&vk)
@@ -132,6 +133,5 @@ func (q *query) Get(key interface{}, components ...interface{}) (Result, error) 
 			return ErrorNotFound
 		}
 
-		return Unmap(row, source)
-	*/
+		return Unmap(row, source)*/
 }

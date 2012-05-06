@@ -13,15 +13,15 @@ import (
 	mapping for Go slices (N slices?)
 */
 
-// Mapping maps the type of a Go object to/from (a slice of) a Cassandra row.
+// Mapping maps the type of a Go object to/from a Cassandra row.
 type Mapping interface {
 
 	// Cf returns the column family name
 	Cf() string
 
-	// MinColumns returns the minimal number of columns required by the mapped Go
-	// object
-	MinColumns(source interface{}) int
+	MarshalKey(key interface{}) ([]byte, error)
+
+	MarshalComponent(component interface{}, position int) ([]byte, error)
 
 	// Map converts a Go object compatible with this Mapping into a Row
 	Map(source interface{}) (*Row, error)
@@ -32,56 +32,78 @@ type Mapping interface {
 	Unmap(destination interface{}, offset int, row *Row) (int, error)
 }
 
-// MappingFromTags looks up the field tag 'mapping' in the passed struct type
+var (
+	noMoreComponents = errors.New("No more components allowed")
+)
+
+// NewMapping looks up the field tag 'mapping' in the passed struct type
 // to decide which mapping it is using, then builds a mapping using the 'cf',
 // 'key', 'cols' and 'value' field tags.
-func MappingFromTags(source interface{}) (Mapping, error) {
+func NewMapping(source interface{}) (Mapping, error) {
 	_, si, err := validateAndInspectStruct(source)
 	if err != nil {
 		return nil, err
 	}
-	// mandatory tags for all the provided mappings
-	for _, t := range []string{"cf", "key"} {
-		_, found := si.globalTags[t]
-		if !found {
-			return nil, errors.New(fmt.Sprint("Mandatory struct tag ", t, " not found in passed struct of type ", si.rtype.Name()))
-		}
+
+	cf, found := si.globalTags["cf"]
+	if !found {
+		return nil, errors.New(fmt.Sprint("Mandatory struct tag 'cf' not found in passed struct of type ", si.rtype.Name()))
 	}
-	// optional tags
+
+	key, found := si.globalTags["key"]
+	if !found {
+		return nil, errors.New(fmt.Sprint("Mandatory struct tag 'key' not found in passed struct of type ", si.rtype.Name()))
+	}
+	_, found = si.goFields[key]
+	if !found {
+		return nil, errors.New(fmt.Sprint("Key field ", key, " not found in passed struct of type ", si.rtype.Name()))
+	}
+
 	colsS := []string{}
 	cols, found := si.globalTags["cols"]
 	if found {
 		colsS = strings.Split(cols, ",")
 	}
+	for _, c := range colsS {
+		_, found := si.goFields[c]
+		if !found {
+			return nil, errors.New(fmt.Sprint("Composite field ", c, " not found in passed struct of type ", si.rtype.Name()))
+		}
+	}
+
+	value, found := si.globalTags["value"]
+	if found {
+		_, found := si.goFields[value]
+		if !found {
+			return nil, errors.New(fmt.Sprint("Value field ", value, " not found in passed struct of type ", si.rtype.Name()))
+		}
+	}
+
 	mapping, found := si.globalTags["mapping"]
 	if !found {
 		mapping = "sparse"
 	}
-	value := si.globalTags["value"]
 
 	switch mapping {
 	case "sparse":
-		return NewSparse(si.globalTags["cf"], si.globalTags["key"], colsS...), nil
+		return newSparseMapping(si, cf, key, colsS...), nil
 	case "compact":
 		if value == "" {
 			return nil, errors.New(fmt.Sprint("Mandatory struct tag value for compact mapping not found in passed struct of type ", si.rtype.Name()))
 		}
-		return NewCompact(si.globalTags["cf"], si.globalTags["key"], si.globalTags["value"], colsS...), nil
+		return newCompactMapping(si, cf, key, value, colsS...), nil
 	}
 
 	return nil, errors.New(fmt.Sprint("Unrecognized mapping type ", mapping, " in passed struct of type ", si.rtype.Name()))
 }
 
-// Sparse returns a mapping for Go structs that represents a Cassandra row key
-// as a struct field, zero or more composite column names as zero or more
-// struct fields, and the rest of the struct fields as extra columns with the
-// name being the last composite column name, and the value the column value.
-func NewSparse(cf string, keyField string, componentFields ...string) Mapping {
+func newSparseMapping(si *structInspection, cf string, keyField string, componentFields ...string) Mapping {
 	cm := make(map[string]bool, 0)
 	for _, f := range componentFields {
 		cm[f] = true
 	}
 	return &sparseMapping{
+		si:            si,
 		cf:            cf,
 		key:           keyField,
 		components:    componentFields,
@@ -90,6 +112,7 @@ func NewSparse(cf string, keyField string, componentFields ...string) Mapping {
 }
 
 type sparseMapping struct {
+	si            *structInspection
 	cf            string
 	key           string
 	components    []string
@@ -100,13 +123,25 @@ func (m *sparseMapping) Cf() string {
 	return m.cf
 }
 
-func (m *sparseMapping) MinColumns(source interface{}) int {
-	_, si, err := validateAndInspectStruct(source)
+func (m *sparseMapping) MarshalKey(key interface{}) ([]byte, error) {
+	f := m.si.goFields[m.key]
+	b, err := Marshal(key, f.cassandraType)
 	if err != nil {
-		return -1
+		return nil, errors.New(fmt.Sprint("Error marshaling passed value for the key in field ", f.name, ":", err))
 	}
-	// struct fields minus the components fields minus one field for the key
-	return len(si.goFields) - len(m.components) - 1
+	return b, nil
+}
+
+func (m *sparseMapping) MarshalComponent(component interface{}, position int) ([]byte, error) {
+	if position >= len(m.components) {
+		return nil, errors.New(fmt.Sprint("The mapping has a component length of ", len(m.components), " and the passed position is ", position))
+	}
+	f := m.si.goFields[m.components[position]]
+	b, err := Marshal(component, f.cassandraType)
+	if err != nil {
+		return nil, errors.New(fmt.Sprint("Error marshaling passed value for a composite component in field ", f.name, ":", err))
+	}
+	return b, nil
 }
 
 func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *structInspection, []byte, error) {
@@ -233,11 +268,16 @@ func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (in
 
 	compositeFieldsAreSet := false
 
-	// unmarshal col/values
-	min := m.MinColumns(destination)
+	// FIXME: change this code to NOT expect a fixed number of columns and
+	// instead adapt itself to the data by assuming the first column composite
+	// to be uniform for all the struct values (except field name), then
+	// request column by column with some kind of interface that does
+	// buffering reads on demand from an underlying query
+	min := len(si.goFields) - len(m.components) - 1
 	if min > len(row.Columns) {
 		return -1, nil
 	}
+
 	columns := row.Columns[offset : offset+min]
 	for _, column := range columns {
 		readColumns++
@@ -275,13 +315,9 @@ func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (in
 	return readColumns, nil
 }
 
-// NewCompact returns a mapping for Go structs that represents a Cassandra row
-// column as a full Go struct. The field named by the value is mapped to the
-// column value. Each passed component field name is mapped, in order, to the
-// column composite values.
-func NewCompact(cf string, keyField string, valueField string, componentFields ...string) Mapping {
+func newCompactMapping(si *structInspection, cf string, keyField string, valueField string, componentFields ...string) Mapping {
 	return &compactMapping{
-		sparseMapping: *(NewSparse(cf, keyField, componentFields...).(*sparseMapping)),
+		sparseMapping: *(newSparseMapping(si, cf, keyField, componentFields...).(*sparseMapping)),
 		value:         valueField,
 	}
 }
@@ -293,10 +329,6 @@ type compactMapping struct {
 
 func (m *compactMapping) Cf() string {
 	return m.cf
-}
-
-func (m *compactMapping) MinColumns(source interface{}) int {
-	return 1
 }
 
 func (m *compactMapping) Map(source interface{}) (*Row, error) {

@@ -7,11 +7,11 @@ import (
 
 /*
 	todo:
-	deeper tests
+	deeper tests, over more methods, and over all internal types
 */
 
 type everythingComp struct {
-	Key      string
+	Key      string `cf:"1" key:"Key" cols:"FBytes,FBool,FInt8,FInt16,FInt32,FInt,FInt64,FFloat32,FFloat64,FString,FUUID"`
 	FBytes   []byte
 	FBool    bool
 	FInt8    int8
@@ -35,9 +35,9 @@ type tagsA struct {
 
 type tagsB struct {
 	A int `cf:"1" key:"A" cols:"B"`
-	B int
-	C int
-	D int
+	B int `type:"AsciiType"`
+	C int `skip:"true"`
+	D int `name:"Z"`
 }
 
 type tagsC struct {
@@ -86,52 +86,12 @@ func (shell *structTestShell) checkFullMap(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
-	mA, _ := MappingFromTags(&tagsA{})
-	mB, _ := MappingFromTags(&tagsB{})
-	mC, _ := MappingFromTags(&tagsC{})
+	mA, _ := NewMapping(&tagsA{})
+	mB, _ := NewMapping(&tagsB{})
+	mC, _ := NewMapping(&tagsC{})
+	mE, _ := NewMapping(&everythingComp{})
 
-	t.Log(mC)
 	shells := []*structTestShell{
-		&structTestShell{
-			mapping:        NewSparse("cfname", "A"),
-			name:           "noErrA",
-			expectedStruct: &noErrA{1, 2, 3},
-			resultStruct:   &noErrA{},
-			expectedRow: &Row{
-				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
-				Columns: []*Column{
-					&Column{
-						Name:  []byte{'B'},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 2},
-					},
-					&Column{
-						Name:  []byte{'C'},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
-					},
-				},
-			},
-		},
-
-		&structTestShell{
-			mapping:        NewSparse("cfname", "A", "B"),
-			name:           "noErrB",
-			expectedStruct: &noErrB{1, 2, 3, 4},
-			resultStruct:   &noErrB{},
-			expectedRow: &Row{
-				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
-				Columns: []*Column{
-					&Column{
-						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'C', 0},
-						Value: []byte{'3'},
-					},
-					&Column{
-						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'Z', 0},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
-					},
-				},
-			},
-		},
-
 		&structTestShell{
 			mapping:        mA,
 			name:           "tagsA",
@@ -159,17 +119,13 @@ func TestMap(t *testing.T) {
 		&structTestShell{
 			mapping:        mB,
 			name:           "tagsB",
-			expectedStruct: &tagsB{1, 2, 3, 4},
+			expectedStruct: &tagsB{1, 2, 0, 4},
 			resultStruct:   &tagsB{},
 			expectedRow: &Row{
 				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
 				Columns: []*Column{
 					&Column{
-						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'C', 0},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
-					},
-					&Column{
-						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 1, 'D', 0},
+						Name:  []byte{0, 1, '2', 0, 0, 1, 'Z', 0},
 						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
 					},
 				},
@@ -193,7 +149,7 @@ func TestMap(t *testing.T) {
 		},
 
 		&structTestShell{
-			mapping: NewSparse("cfname", "Key", "FBytes", "FBool", "FInt8", "FInt16", "FInt32", "FInt", "FInt64", "FFloat32", "FFloat64", "FString", "FUUID"),
+			mapping: mE,
 			name:    "everythingComp",
 			expectedStruct: &everythingComp{"a", []byte{1, 2}, true, 3, 4, 5, 6, 7, 8.0, 9.0, "b",
 				[16]byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff}, "c"},
