@@ -8,8 +8,9 @@ import (
 
 todo:
 
-    buffering for slicing and range get
-    Next/Prev for the buffering with autopaging
+    autopaging?
+
+    "start slice from here"
 
     Search() and interface(s) for indexed get
 
@@ -24,7 +25,7 @@ var (
 )
 
 const (
-	DEFAULT_LIMIT = 100
+	DEFAULT_LIMIT = 10000
 )
 
 // Query is a high level interface for Cassandra queries
@@ -35,19 +36,17 @@ type Query interface {
 	// pool options value.
 	ConsistencyLevel(int) Query
 
-	// Limit sets the column limit to buffer at once. Paging with a Result
-	// will internally query Cassandra in Limit sized column slices.
+	// Limit sets the column limit to buffer at once.
 	Limit(int) Query
 
 	// Get looks up a row with the given key (and optionally components for a
 	// composite) and returns a Result to it. If the row uses a composite
-	// comparator an you only specify the key the Result will allow you to
-	// page and iterate over the entire row.
+	// comparator and you only specify the key and zero or more comparator
+	// components the Result will allow you to iterate over the entire row.
 	Get(key interface{}, components ...interface{}) (Result, error)
 }
 
-// Result reads Query results into Go objects, internally buffering them and
-// paging them.
+// Result reads Query results into Go objects, internally buffering them.
 type Result interface {
 
 	// Next sets destination with the contents of the current object in the
@@ -61,12 +60,6 @@ type query struct {
 	mapping          Mapping
 	consistencyLevel int
 	limit            int
-}
-
-type result struct {
-	q      *query
-	offset int
-	row    *Row
 }
 
 func newQuery(cp *connectionPool, m Mapping) *query {
@@ -88,50 +81,86 @@ func (q *query) Limit(l int) Query {
 }
 
 func (q *query) Get(key interface{}, components ...interface{}) (Result, error) {
+	keyB, err := q.mapping.MarshalKey(key)
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, nil
-	/*
+	reader := q.pool.Reader().Cf(q.mapping.Cf())
 
-		//marshal especifico para VALUE de una key arbitraria, no intentar pillar un campo de struct
+	if q.consistencyLevel != 0 {
+		reader.ConsistencyLevel(q.consistencyLevel)
+	}
 
+	return &result{keyB, reader, q.mapping, q.limit, components, nil, 0}, nil
+}
 
-		key, err := q.mapping.key.marshalValue(&vk)
-		if err != nil {
-			return err
-		}
+type result struct {
+	key        []byte
+	reader     Reader
+	mapping    Mapping
+	limit      int
+	components []interface{}
+	row        *Row
+	position   int
+}
 
-		// start building the query
-		q := c.pool.Reader().Cf(mi.m.cf)
+func (r *result) Key() []byte {
+	return r.key
+}
 
-		if c.options.ReadConsistency != 0 {
-			q.ConsistencyLevel(c.options.ReadConsistency)
-		}
-
-		// build a slice composite comparator if needed
-		if len(mi.m.composite) > 0 {
-			// iterate over the components and set an equality comparison for every field
-			start := make([]byte, 0)
-			end := make([]byte, 0)
-			for _, f := range mi.m.composite {
-				b, err := f.marshalValue(&mi.v)
-				if err != nil {
-					return err
-				}
-				start = append(start, packComposite(b, eocEquals)...)
-				end = append(end, packComposite(b, eocGreater)...)
+func (r *result) buildFixedSlice() error {
+	if len(r.components) > 0 {
+		start := make([]byte, 0)
+		end := make([]byte, 0)
+		for i, c := range r.components {
+			b, err := r.mapping.MarshalComponent(c, i)
+			if err != nil {
+				return err
 			}
-			q.Slice(&Slice{Start: start, End: end, Count: c.options.Limit})
+			start = append(start, packComposite(b, eocEquals)...)
+			end = append(end, packComposite(b, eocGreater)...)
 		}
+		r.reader.Slice(&Slice{Start: start, End: end, Count: r.limit})
+	}
+	return nil
+}
 
-		row, err := q.Get(key)
-
+func (r *result) NextColumn() (*Column, error) {
+	if r.row == nil {
+		err := r.buildFixedSlice()
 		if err != nil {
-			return err
+			return nil, err
 		}
-
+		row, err := r.reader.Get(r.key)
+		if err != nil {
+			return nil, err
+		}
 		if row == nil {
-			return ErrorNotFound
+			return nil, Done
 		}
+		r.row = row
+		r.position = 0
+	}
+	if r.position >= len(r.row.Columns) {
+		if r.position >= r.limit {
+			return nil, EndAtLimit
+		} else {
+			return nil, EndBeforeLimit
+		}
+	}
+	c := r.row.Columns[r.position]
+	r.position++
+	return c, nil
+}
 
-		return Unmap(row, source)*/
+func (r *result) Rewind() {
+	r.position--
+	if r.position < 0 {
+		r.position = 0
+	}
+}
+
+func (r *result) Next(destination interface{}) error {
+	return r.mapping.Unmap(destination, r)
 }

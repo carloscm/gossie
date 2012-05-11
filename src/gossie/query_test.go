@@ -1,26 +1,21 @@
 package gossie
 
 import (
-//"reflect"
-//"testing"
+	"reflect"
+	"testing"
 )
 
 /*
-
 todo:
-
-	since most of the Cursor interface is still in flux the current tests are minimal
-
+	real tests
 */
 
-/*
 type ReasonableOne struct {
-	Username string `cf:"Reasonable" key:"Username,TweetID"`
+	Username string `cf:"Reasonable" key:"Username" cols:"TweetID"`
 	TweetID  int64
 	Lat      float32
 	Lon      float32
 	Body     string
-	Cursor
 }
 
 func TestRead(t *testing.T) {
@@ -29,6 +24,8 @@ func TestRead(t *testing.T) {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
+	m, _ := NewMapping(&ReasonableOne{})
+
 	ro := &ReasonableOne{
 		Username: "testuser",
 		TweetID:  100000000000002,
@@ -36,12 +33,8 @@ func TestRead(t *testing.T) {
 		Lon:      -38.11,
 		Body:     "hey this thing appears to work, nice!",
 	}
-
-	cursor := cp.Cursor()
-	err = cursor.Write(ro)
-	if err != nil {
-		t.Error("Writing struct:", err)
-	}
+	r, _ := m.Map(ro)
+	cp.Writer().Insert("Reasonable", r).Run()
 
 	ro2 := &ReasonableOne{
 		Username: "testuser",
@@ -50,33 +43,52 @@ func TestRead(t *testing.T) {
 		Lon:      1.11,
 		Body:     "more words",
 	}
-	err = cursor.Write(ro2)
-	if err != nil {
-		t.Error("Writing struct:", err)
-	}
+	r, _ = m.Map(ro2)
+	cp.Writer().Insert("Reasonable", r).Run()
 
-	ro3 := &ReasonableOne{
-		Username: "testuser",
-		TweetID:  100000000000002,
-	}
-	err = cursor.Read(ro3)
+	q := cp.Query(m)
+
+	res, err := q.Get("testuser", int64(100000000000002))
 	if err != nil {
-		t.Fatal("Reading struct:", err)
+		t.Fatal("Query get error:", err)
+	}
+	ro3 := &ReasonableOne{}
+	err = res.Next(ro3)
+	if err != nil {
+		t.Fatal("Result next error:", err)
 	}
 	if !reflect.DeepEqual(ro, ro3) {
 		t.Error("Read does not match Write")
 	}
+	ro3 = &ReasonableOne{}
+	err = res.Next(ro3)
+	if err != Done {
+		t.Log(ro3)
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	ro3 = &ReasonableOne{
-		Username: "testuser",
-		TweetID:  100000000000003,
-	}
-	err = cursor.Read(ro3)
+	res2, err := q.Get("testuser")
 	if err != nil {
-		t.Fatal("Reading struct:", err)
+		t.Fatal("Query get error:", err)
 	}
-	if !reflect.DeepEqual(ro2, ro3) {
+	ro4 := &ReasonableOne{}
+	err = res2.Next(ro4)
+	if err != nil {
+		t.Fatal("Result next error:", err)
+	}
+	if !reflect.DeepEqual(ro, ro4) {
 		t.Error("Read does not match Write")
 	}
+	err = res2.Next(ro4)
+	if err != nil {
+		t.Fatal("Result next error:", err)
+	}
+	if !reflect.DeepEqual(ro2, ro4) {
+		t.Error("Read does not match Write")
+	}
+	err = res.Next(ro3)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
+
 }
-*/

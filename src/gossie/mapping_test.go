@@ -8,6 +8,7 @@ import (
 /*
 	todo:
 	deeper tests, over more methods, and over all internal types
+	compact mapping
 */
 
 type everythingComp struct {
@@ -65,13 +66,41 @@ func (shell *structTestShell) checkMap(t *testing.T, m Mapping, expectedStruct i
 	}
 }
 
+type testProvider struct {
+	row   *Row
+	pos   int
+	limit int
+}
+
+func (t *testProvider) Key() []byte {
+	return t.row.Key
+}
+
+func (t *testProvider) NextColumn() (*Column, error) {
+	if t.pos >= len(t.row.Columns) {
+		if t.pos >= t.limit {
+			return nil, EndAtLimit
+		} else {
+			return nil, EndBeforeLimit
+		}
+	}
+	c := t.row.Columns[t.pos]
+	t.pos++
+	return c, nil
+}
+
+func (t *testProvider) Rewind() {
+	t.pos--
+	if t.pos < 0 {
+		t.pos = 0
+	}
+}
+
 func (shell *structTestShell) checkUnmap(t *testing.T, m Mapping) interface{} {
-	n, err := m.Unmap(shell.resultStruct, 0, shell.expectedRow)
+	tp := &testProvider{shell.expectedRow, 0, 10000}
+	err := m.Unmap(shell.resultStruct, tp)
 	if err != nil {
 		t.Error("Error unmapping struct: ", err)
-	}
-	if n != len(shell.expectedRow.Columns) {
-		t.Error("Wrong number of columns consumed when unmapping struct")
 	}
 	if !reflect.DeepEqual(shell.resultStruct, shell.expectedStruct) {
 		t.Error("Unmapped struct ", shell.name, " does not match expected instance ", shell.expectedStruct, " actual ", shell.resultStruct)

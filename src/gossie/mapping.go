@@ -26,10 +26,19 @@ type Mapping interface {
 	// Map converts a Go object compatible with this Mapping into a Row
 	Map(source interface{}) (*Row, error)
 
-	// Ummap fills the passed Go object with data from the row, starting at the
-	// offset column. It returns the count of consumed columns, or -1 if there
-	// wasn't enough columns to fill the Go object
-	Unmap(destination interface{}, offset int, row *Row) (int, error)
+	// Ummap fills the passed Go object with data from a row
+	Unmap(destination interface{}, provider RowProvider) error
+}
+
+var (
+	EndBeforeLimit = errors.New("No more results found before reaching the limit")
+	EndAtLimit     = errors.New("No more results found but reached the limit")
+)
+
+type RowProvider interface {
+	Key() []byte
+	NextColumn() (*Column, error)
+	Rewind()
 }
 
 var (
@@ -211,7 +220,7 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 	return row, nil
 }
 
-func (m *sparseMapping) startUnmap(destination interface{}, row *Row) (*reflect.Value, *structInspection, error) {
+func (m *sparseMapping) startUnmap(destination interface{}, provider RowProvider) (*reflect.Value, *structInspection, error) {
 	v, si, err := validateAndInspectStruct(destination)
 	if err != nil {
 		return nil, nil, err
@@ -219,7 +228,7 @@ func (m *sparseMapping) startUnmap(destination interface{}, row *Row) (*reflect.
 
 	// unmarshal key field
 	if f, found := si.goFields[m.key]; found {
-		err = f.unmarshalValue(row.Key, v)
+		err = f.unmarshalValue(provider.Key(), v)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -245,74 +254,98 @@ func (m *sparseMapping) unmapComponents(v *reflect.Value, si *structInspection, 
 	return nil
 }
 
-func (m *sparseMapping) extractComponents(column *Column, v *reflect.Value, biasN int) ([][]byte, error) {
+func (m *sparseMapping) extractComponents(column *Column, v *reflect.Value, bias int) ([][]byte, error) {
 	var components [][]byte
 	if len(m.components) > 0 {
 		components = unpackComposite(column.Name)
 	} else {
 		components = [][]byte{column.Name}
 	}
-	if len(components) != (len(m.components) + biasN) {
+	if len(components) != (len(m.components) + bias) {
 		return components, errors.New(fmt.Sprint("Returned number of components in composite column name does not match struct mapping in struct ", v.Type().Name()))
 	}
 	return components, nil
 }
 
-func (m *sparseMapping) Unmap(destination interface{}, offset int, row *Row) (int, error) {
-	readColumns := 0
+// TODO: speed this up
+func (m *sparseMapping) isNewComponents(prev, next [][]byte, bias int) bool {
+	if len(prev) != len(next) {
+		return true
+	}
+	for i := 0; i < len(prev)-bias; i++ {
+		p := prev[i]
+		n := next[i]
+		if len(p) != len(n) {
+			return true
+		}
+		for j := 0; j < len(p); j++ {
+			if p[j] != n[j] {
+				return true
+			}
+		}
+	}
+	return false
+}
 
-	v, si, err := m.startUnmap(destination, row)
+func (m *sparseMapping) Unmap(destination interface{}, provider RowProvider) error {
+	v, si, err := m.startUnmap(destination, provider)
 	if err != nil {
-		return readColumns, err
+		return err
 	}
 
 	compositeFieldsAreSet := false
+	var previousComponents [][]byte
 
-	// FIXME: change this code to NOT expect a fixed number of columns and
-	// instead adapt itself to the data by assuming the first column composite
-	// to be uniform for all the struct values (except field name), then
-	// request column by column with some kind of interface that does
-	// buffering reads on demand from an underlying query
-	min := len(si.goFields) - len(m.components) - 1
-	if min > len(row.Columns) {
-		return -1, nil
-	}
-
-	columns := row.Columns[offset : offset+min]
-	for _, column := range columns {
-		readColumns++
-		components, err := m.extractComponents(column, v, 1)
-		if err != nil {
-			return readColumns, err
+	for {
+		column, err := provider.NextColumn()
+		if err == Done {
+			return Done
+		} else if err == EndBeforeLimit {
+			if compositeFieldsAreSet {
+				break
+			} else {
+				return Done
+			}
+		} else if err == EndAtLimit {
+			return Done
+		} else if err != nil {
+			return err
 		}
 
-		// FIXME: it is possible for a row to contain multiple composite
-		// values instead of an uniform one, indicating that a new "object"
-		// started. assume that is not the case for now!
-		// iterate over composite components, just once, to set the composite
-		// fields
+		components, err := m.extractComponents(column, v, 1)
+		if err != nil {
+			return err
+		}
 		if !compositeFieldsAreSet {
+			// first column
 			if err := m.unmapComponents(v, si, components); err != nil {
-				return readColumns, err
+				return err
 			}
 			compositeFieldsAreSet = true
+		} else {
+			if m.isNewComponents(previousComponents, components, 1) {
+				provider.Rewind()
+				break
+			}
 		}
 
 		// lookup field by name
 		var name string
 		err = Unmarshal(components[len(components)-1], UTF8Type, &name)
 		if err != nil {
-			return readColumns, errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for field name in struct ", v.Type().Name(), ", error: ", err))
+			return errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for field name in struct ", v.Type().Name(), ", error: ", err))
 		}
 		if f, found := si.cassandraFields[name]; found {
 			err := f.unmarshalValue(column.Value, v)
 			if err != nil {
-				return readColumns, errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
+				return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
 			}
 		}
+
+		previousComponents = components
 	}
 
-	return readColumns, nil
+	return nil
 }
 
 func newCompactMapping(si *structInspection, cf string, keyField string, valueField string, componentFields ...string) Mapping {
@@ -348,29 +381,38 @@ func (m *compactMapping) Map(source interface{}) (*Row, error) {
 	return row, nil
 }
 
-func (m *compactMapping) Unmap(destination interface{}, offset int, row *Row) (int, error) {
-	v, si, err := m.startUnmap(destination, row)
+func (m *compactMapping) Unmap(destination interface{}, provider RowProvider) error {
+	v, si, err := m.startUnmap(destination, provider)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	if len(row.Columns) <= 0 {
-		return -1, nil
+
+	column, err := provider.NextColumn()
+	if err == Done {
+		return Done
+	} else if err == EndBeforeLimit {
+		return Done
+	} else if err == EndAtLimit {
+		return Done
+	} else if err != nil {
+		return err
 	}
-	column := row.Columns[offset]
+
 	components, err := m.extractComponents(column, v, 0)
 	if err != nil {
-		return 1, err
+		return err
 	}
 	if err := m.unmapComponents(v, si, components); err != nil {
-		return 1, err
+		return err
 	}
 	if f, found := si.goFields[m.value]; found {
 		err := f.unmarshalValue(column.Value, v)
 		if err != nil {
-			return 1, errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
+			return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
 		}
 	} else {
-		return 1, errors.New(fmt.Sprint("Mapping value field ", m.value, " not found in passed struct of type ", v.Type().Name()))
+		return errors.New(fmt.Sprint("Mapping value field ", m.value, " not found in passed struct of type ", v.Type().Name()))
 	}
-	return 1, nil
+
+	return nil
 }

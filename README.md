@@ -102,12 +102,11 @@ When calling NewMapping() you can tag your struct fiels with `name`, `type` and 
 
 The tags `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows.
 
-### Query and Result interfaces (planned)
+### Query and Result
 
-High level queries with transparent paging and buffering. This is still WIP, a possible example:
+Query allows to look up mapped structs over Cassandra rows. Pass to `Query.Get` the row key, followed by zero or more composite keys, to get a Result. `Result.Next` reads a single struct from the Cassandra row, and returns `Done` when no more structs can be read.
 
 ```Go
-
 query := pool.Query(TweetMapping)
 
 // a single tweet, since we pass the row key and all possible composite values
@@ -116,25 +115,21 @@ result, err := query.Get("username", 10000000000004)
 // all tweets for a given user
 result, err := query.Get("username")
 
-// all tweets for a given user, starting at a certain TweetID
-result, err := query.Where("TweetID", ">=", 10000000000004).Get("username")
-
 // iterating over results
 for {
-	var t Tweet
-	err := result.Next(&t)
+	t := &Tweet{}
+	err := result.Next(t)
 	if err != nil {
 		break
 	}
-	...
 }
 ````
 
 # Planned features
 
-- Query: range reads for composites with buffering and paging
-- Query: secondary index read with buffering and paging
-- Query: multiget reads with buffering and paging
+- Error passing overhaul, to be based on typing
+- Query: secondary index read with buffering
+- Query: multiget reads with buffering
 - A higher level abstraction for writes (Batch interface)
 - High level mapping for Go slices
 - High level mapping for Go maps

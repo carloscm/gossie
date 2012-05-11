@@ -36,7 +36,7 @@ type ConnectionPool interface {
 	Writer() Writer
 
 	// Query returns a high level interface for read operations over structs
-	//Query() Query
+	Query(Mapping) Query
 
 	// Close all the connections in the pool
 	Close()
@@ -318,9 +318,9 @@ func (cp *connectionPool) Writer() Writer {
 	return newWriter(cp, cp.options.WriteConsistency)
 }
 
-//func (cp *connectionPool) Cursor() Cursor {
-//	return newCursor(cp)
-//}
+func (cp *connectionPool) Query(m Mapping) Query {
+	return newQuery(cp, m)
+}
 
 func (cp *connectionPool) Keyspace() string {
 	return cp.keyspace
