@@ -10,8 +10,6 @@ todo:
 
     autopaging?
 
-    "start slice from here"
-
     Search() and interface(s) for indexed get
 
     multiget
@@ -44,6 +42,10 @@ type Query interface {
 	// comparator and you only specify the key and zero or more comparator
 	// components the Result will allow you to iterate over the entire row.
 	Get(key interface{}, components ...interface{}) (Result, error)
+
+	// GetBetween is like Get, but the last two passed components values are
+	// used as the last values for the slice Start and End composite values.
+	GetBetween(key interface{}, components ...interface{}) (Result, error)
 }
 
 // Result reads Query results into Go objects, internally buffering them.
@@ -92,7 +94,19 @@ func (q *query) Get(key interface{}, components ...interface{}) (Result, error) 
 		reader.ConsistencyLevel(q.consistencyLevel)
 	}
 
-	return &result{keyB, reader, q.mapping, q.limit, components, nil, 0}, nil
+	return &result{keyB, reader, q.mapping, q.limit, components, nil, 0, nil}, nil
+}
+
+func (q *query) GetBetween(key interface{}, components ...interface{}) (Result, error) {
+	if len(components) < 2 {
+		return nil, errors.New("GetBetween requires at least 2 component values")
+	}
+	r, err := q.Get(key, components[:len(components)-1]...)
+	if err != nil {
+		return nil, err
+	}
+	r.(*result).between = components[len(components)-1]
+	return r, nil
 }
 
 type result struct {
@@ -103,6 +117,7 @@ type result struct {
 	components []interface{}
 	row        *Row
 	position   int
+	between    interface{}
 }
 
 func (r *result) Key() []byte {
@@ -110,19 +125,32 @@ func (r *result) Key() []byte {
 }
 
 func (r *result) buildFixedSlice() error {
+	start := make([]byte, 0)
+	end := make([]byte, 0)
 	if len(r.components) > 0 {
-		start := make([]byte, 0)
-		end := make([]byte, 0)
+		last := len(r.components) - 1
 		for i, c := range r.components {
 			b, err := r.mapping.MarshalComponent(c, i)
 			if err != nil {
 				return err
 			}
 			start = append(start, packComposite(b, eocEquals)...)
-			end = append(end, packComposite(b, eocGreater)...)
+			if i == last {
+				if r.between != nil {
+					b, err := r.mapping.MarshalComponent(r.between, i)
+					if err != nil {
+						return err
+					}
+					end = append(end, packComposite(b, eocEquals)...)
+				} else {
+					end = append(end, packComposite(b, eocGreater)...)
+				}
+			} else {
+				end = append(end, packComposite(b, eocEquals)...)
+			}
 		}
-		r.reader.Slice(&Slice{Start: start, End: end, Count: r.limit})
 	}
+	r.reader.Slice(&Slice{Start: start, End: end, Count: r.limit})
 	return nil
 }
 

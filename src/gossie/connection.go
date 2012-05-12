@@ -3,13 +3,13 @@ package gossie
 import (
 	"errors"
 	"fmt"
+	"github.com/carloscm/gossie/src/cassandra"
+	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"math/rand"
 	"net"
 	"strconv"
 	"strings"
 	"time"
-	"github.com/carloscm/gossie/src/cassandra"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
 )
 
 /*

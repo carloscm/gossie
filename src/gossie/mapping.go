@@ -19,8 +19,10 @@ type Mapping interface {
 	// Cf returns the column family name
 	Cf() string
 
+	// MarshalKey marshals the passed key value into a []byte
 	MarshalKey(key interface{}) ([]byte, error)
 
+	// MarshalComponent marshals the passed component value at the position into a []byte
 	MarshalComponent(component interface{}, position int) ([]byte, error)
 
 	// Map converts a Go object compatible with this Mapping into a Row
@@ -35,9 +37,16 @@ var (
 	EndAtLimit     = errors.New("No more results found but reached the limit")
 )
 
+// RowProvider abstracts the details of reading a series of columns from a Cassandra row
 type RowProvider interface {
+
+	// Key returns the row key
 	Key() []byte
+
+	// NextColumn returns the next column in the row, and advances the column pointer
 	NextColumn() (*Column, error)
+
+	// Rewind moves back the column pointer one position
 	Rewind()
 }
 
