@@ -8,32 +8,27 @@ Gossie is a Go library for Apache Cassandra. It includes a wrapper for the Cassa
 The official Apache Thrift libraries for Go are outdated and buggy. For now the active development happens in thrift4go:
 https://github.com/pomack/thrift4go
 
-Installing thrift4go under GOPATH in Go 1:
+Install thrift4go:
 
 ```
-1) cd lib/go/src
-2) cp -R thrift $GOPATH/src
-3) go install thrift
+go get "github.com/pomack/thrift4go/lib/go/src/thrift"
 ```
 
 
 # Installing
 
-There is no need to generate a Cassandra Thrift biding, I am providing one with Gossie (and the whole point is not to have to use it!)
+There is no need to generate a Cassandra Thrift biding, I am providing one with Gossie (and the whole point is not to have to use it!).
 
-For application usage copy the sources to your $GOPATH/src and issue a go install to build and copy the libraries:
+For application usage issue two `go get` commands, one for the bindings and another for Gossie
 
 ```
-1) cp -R src/* $GOPATH/src
-2) go install cassandra gossie
+go get "github.com/carloscm/gossie/src/cassandra"
+go get "github.com/carloscm/gossie/src/gossie"
 ```
 
 If you want to fork and do development on Gossie itself the main command you need to run is something like (from the root of the Gossie folder):
 
 ```
-# locally install inside a pkg folder the depedencies, ie the cassandra bindings
-GOPATH=$GOPATH:`pwd` go test -i gossie
-# actually build and run the gossie tests
 GOPATH=$GOPATH:`pwd` go test gossie
 ```
 
@@ -100,7 +95,7 @@ err = pool.Writer().Insert("Timeline", row).Run()
 
 When calling NewMapping() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
 
-The tags `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows.
+The tags `kind`, `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `kind` is optional and can have a value of `sparse` (the default) or `compact`. See [CQL3.0](http://www.datastax.com/dev/blog/whats-new-in-cql-3-0) for more information. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is optional and it is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows, and it is ignored in sparse storage rows.
 
 ### Query and Result
 
@@ -125,6 +120,7 @@ for {
 }
 ````
 
+
 # Planned features
 
 - Error passing overhaul, to be based on typing
@@ -133,6 +129,13 @@ for {
 - A higher level abstraction for writes (Batch interface)
 - High level mapping for Go slices
 - High level mapping for Go maps
+- Add low level interface for CQL 3.0 with prepared statement support
+
+
+# Not planned
+
+- Supercolumns
+- Dynamic composite comparator
 
 
 # License

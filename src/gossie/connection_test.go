@@ -1,8 +1,8 @@
 package gossie
 
 import (
-	"cassandra"
 	"errors"
+	"github.com/carloscm/gossie/src/cassandra"
 	"testing"
 	"time"
 )

@@ -1,7 +1,7 @@
 package gossie
 
 import (
-	"cassandra"
+	"github.com/carloscm/gossie/src/cassandra"
 )
 
 /*

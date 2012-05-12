@@ -1,15 +1,15 @@
 package gossie
 
 import (
-	"cassandra"
 	"errors"
 	"fmt"
 	"math/rand"
 	"net"
 	"strconv"
 	"strings"
-	"thrift"
 	"time"
+	"github.com/carloscm/gossie/src/cassandra"
+	"github.com/pomack/thrift4go/lib/go/src/thrift"
 )
 
 /*

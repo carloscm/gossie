@@ -6,7 +6,7 @@ package cassandra
 
 import (
 	"fmt"
-	"thrift"
+	"github.com/pomack/thrift4go/lib/go/src/thrift"
 )
 
 type ICassandra interface {
