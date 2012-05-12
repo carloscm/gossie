@@ -37,6 +37,9 @@ type Query interface {
 	// Limit sets the column limit to buffer at once.
 	Limit(int) Query
 
+	// Reverse set to true will reverse the order of the columns in the result.
+	Reversed(bool) Query
+
 	// Get looks up a row with the given key (and optionally components for a
 	// composite) and returns a Result to it. If the row uses a composite
 	// comparator and you only specify the key and zero or more comparator
@@ -62,6 +65,7 @@ type query struct {
 	mapping          Mapping
 	consistencyLevel int
 	limit            int
+	reversed         bool
 }
 
 func newQuery(cp *connectionPool, m Mapping) *query {
@@ -82,6 +86,11 @@ func (q *query) Limit(l int) Query {
 	return q
 }
 
+func (q *query) Reversed(r bool) Query {
+	q.reversed = r
+	return q
+}
+
 func (q *query) Get(key interface{}, components ...interface{}) (Result, error) {
 	keyB, err := q.mapping.MarshalKey(key)
 	if err != nil {
@@ -94,7 +103,7 @@ func (q *query) Get(key interface{}, components ...interface{}) (Result, error) 
 		reader.ConsistencyLevel(q.consistencyLevel)
 	}
 
-	return &result{keyB, reader, q.mapping, q.limit, components, nil, 0, nil}, nil
+	return &result{*q, keyB, reader, components, nil, 0, nil}, nil
 }
 
 func (q *query) GetBetween(key interface{}, components ...interface{}) (Result, error) {
@@ -110,10 +119,9 @@ func (q *query) GetBetween(key interface{}, components ...interface{}) (Result, 
 }
 
 type result struct {
+	query
 	key        []byte
 	reader     Reader
-	mapping    Mapping
-	limit      int
 	components []interface{}
 	row        *Row
 	position   int
@@ -150,7 +158,7 @@ func (r *result) buildFixedSlice() error {
 			}
 		}
 	}
-	r.reader.Slice(&Slice{Start: start, End: end, Count: r.limit})
+	r.reader.Slice(&Slice{Start: start, End: end, Count: r.limit, Reversed: r.reversed})
 	return nil
 }
 
