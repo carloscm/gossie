@@ -17,7 +17,7 @@ go get "github.com/pomack/thrift4go/lib/go/src/thrift"
 
 # Installing
 
-There is no need to generate a Cassandra Thrift biding, I am providing one with Gossie (and the whole point is not to have to use it!).
+There is no need to generate a Cassandra Thrift binding, I am providing one with Gossie (and the whole point is not to have to use it!).
 
 For application usage issue two `go get` commands, one for the bindings and another for Gossie
 
@@ -39,6 +39,16 @@ Launch a Cassandra instance in localhost:9160, create a keyspace named TestGossi
 
 
 # Quickstart
+
+### Import
+
+Gossie uses the Go 1.0 packaging conventions. Import Gossie into your code like this:
+
+```Go
+import (
+	"github.com/carloscm/gossie/src/gossie"
+)
+````
 
 ### Connection pooling
 
