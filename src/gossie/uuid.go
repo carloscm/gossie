@@ -12,11 +12,7 @@ import (
 
 /*
 	to do:
-		implement concurrent get with atomic increment of prev timestamp, like in Java
-		check correctness of NewTimeUUID
-		comparison
-			comp func
-			NewTimeUUIDMax and NewTimeUUIDMin for building slice comps
+		comp func
 */
 
 type UUID [16]byte

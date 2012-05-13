@@ -8,6 +8,7 @@ import (
 
 /*
 todo:
+	more MultiGet tests
 	refactor tests into something resembling maintenable code
 */
 
@@ -59,7 +60,11 @@ type CompositeFull struct {
 }
 
 func createTimeseries(t *testing.T, cp ConnectionPool) int {
-	cp.Writer().Delete("Timeseries", []byte("testuser")).Run()
+	cp.Writer().
+		Delete("Timeseries", []byte("testuser")).
+		Delete("Timeseries", []byte("testuser2")).
+		Delete("Timeseries", []byte("testuser3")).
+		Run()
 
 	mT, err := NewMapping(&Timeseries{})
 
@@ -67,13 +72,20 @@ func createTimeseries(t *testing.T, cp ConnectionPool) int {
 	seqBase := int(time.Now().UnixNano() % 1e6)
 
 	w := cp.Writer()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 300; i++ {
 		u, err := NewTimeUUID()
 		if err != nil {
 			t.Fatal("Error generating TimeUUID:", err)
 		}
+		key := "testuser"
+		if i >= 100 {
+			key = "testuser2"
+		}
+		if i >= 200 {
+			key = "testuser3"
+		}
 		r := &Timeseries{
-			Username: "testuser",
+			Username: key,
 			TimeUUID: u,
 			Seq:      seqBase + i,
 		}
@@ -226,10 +238,9 @@ func TestQueryGet(t *testing.T) {
 
 	/////
 
-	q0 := cp.Query(m0)
 	r0 := &ReasonableZero{}
 
-	res, err := q0.Get("nope")
+	res, err := cp.Query(m0).Get("nope")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -237,8 +248,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r0)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q0.Get("testuser")
+	res, err = cp.Query(m0).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -253,13 +268,16 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r0)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
 	/////
 
-	q1 := cp.Query(m1)
 	r1 := &ReasonableOne{}
 
-	res, err = q1.Get("nope")
+	res, err = cp.Query(m1).Get("nope")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -267,8 +285,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r1)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q1.Get("testuser")
+	res, err = cp.Query(m1).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -292,8 +314,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r1)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q1.GetBetween("testuser", int64(100000000000050), int64(100000000000070))
+	res, err = cp.Query(m1).Between(int64(100000000000050), int64(100000000000070)).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -318,8 +344,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r1)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q1.Get("testuser", int64(100000000000010))
+	res, err = cp.Query(m1).Components(int64(100000000000010)).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -334,14 +364,17 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r1)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
 	/////
 
 	seqBase := createTimeseries(t, cp)
-	qT := cp.Query(mT)
 	rT := &Timeseries{}
 
-	res, err = qT.Get("testuser")
+	res, err = cp.Query(mT).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -351,16 +384,12 @@ func TestQueryGet(t *testing.T) {
 			t.Fatal("Result next error:", err)
 		}
 		if rT.Seq != seqBase+i {
-			t.Log(rT)
 			t.Error("Read does not match Write")
 		}
 	}
 
 	seqBase = createTimeseries(t, cp)
-
-	qT.Reversed(true)
-
-	res, err = qT.Get("testuser")
+	res, err = cp.Query(mT).Reversed(true).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -370,18 +399,35 @@ func TestQueryGet(t *testing.T) {
 			t.Fatal("Result next error:", err)
 		}
 		if rT.Seq != seqBase+i {
-			t.Log(seqBase + i)
-			t.Log(rT)
 			t.Error("Read does not match Write")
 		}
 	}
 
+	seqBase = createTimeseries(t, cp)
+	res, err = cp.Query(mT).Reversed(true).MultiGet([]interface{}{"testuser", "testuser2", "testuser3"})
+	if err != nil {
+		t.Fatal("Query get error:", err)
+	}
+	for i := 0; i < 300; i++ {
+		err = res.Next(rT)
+		if err != nil {
+			t.Fatal("Result next error:", err)
+		}
+	}
+	err = res.Next(rT)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
+	err = res.Next(rT)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
+
 	/////
 
-	q2 := cp.Query(m2)
 	r2 := &ReasonableTwo{}
 
-	res, err = q2.Get("nope")
+	res, err = cp.Query(m2).Get("nope")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -389,8 +435,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r2)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q2.Get("testuser")
+	res, err = cp.Query(m2).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -417,8 +467,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r2)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q2.GetBetween("testuser", int64(100000000000002), int64(100000000000007))
+	res, err = cp.Query(m2).Between(int64(100000000000002), int64(100000000000007)).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -445,8 +499,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r2)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q2.Get("testuser", int64(100000000000003))
+	res, err = cp.Query(m2).Components(int64(100000000000003)).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -471,8 +529,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r2)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q2.GetBetween("testuser", int64(100000000000003), int64(30006), int64(30009))
+	res, err = cp.Query(m2).Components(int64(100000000000003)).Between(int64(30006), int64(30009)).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -497,8 +559,12 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r2)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
-	res, err = q2.Get("testuser", int64(100000000000005), int64(50003))
+	res, err = cp.Query(m2).Components(int64(100000000000005), int64(50003)).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}
@@ -513,15 +579,18 @@ func TestQueryGet(t *testing.T) {
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
 	}
+	err = res.Next(r2)
+	if err != Done {
+		t.Fatal("Result Next is not Done:", err)
+	}
 
 	/////
 
 	seqBase = createCompositeFull(t, cp)
 
-	qC := cp.Query(mC)
 	rC := &CompositeFull{}
 
-	res, err = qC.Get("testuser")
+	res, err = cp.Query(mC).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
 	}

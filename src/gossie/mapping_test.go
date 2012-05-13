@@ -72,8 +72,8 @@ type testProvider struct {
 	limit int
 }
 
-func (t *testProvider) Key() []byte {
-	return t.row.Key
+func (t *testProvider) Key() ([]byte, error) {
+	return t.row.Key, nil
 }
 
 func (t *testProvider) NextColumn() (*Column, error) {

@@ -41,7 +41,7 @@ var (
 type RowProvider interface {
 
 	// Key returns the row key
-	Key() []byte
+	Key() ([]byte, error)
 
 	// NextColumn returns the next column in the row, and advances the column pointer
 	NextColumn() (*Column, error)
@@ -237,7 +237,11 @@ func (m *sparseMapping) startUnmap(destination interface{}, provider RowProvider
 
 	// unmarshal key field
 	if f, found := si.goFields[m.key]; found {
-		err = f.unmarshalValue(provider.Key(), v)
+		key, err := provider.Key()
+		if err != nil {
+			return nil, nil, err
+		}
+		err = f.unmarshalValue(key, v)
 		if err != nil {
 			return nil, nil, err
 		}
