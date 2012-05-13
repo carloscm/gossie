@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -89,15 +90,42 @@ func NewRandomUUID() (UUID, error) {
 
 // http://johannburkard.de/software/uuid/
 
-func NewTimeUUID(t time.Time) (UUID, error) {
-	var ru UUID
+var timeMutex *sync.Mutex = new(sync.Mutex)
+var previousHundredNSBlock int64 = 0
 
+func uniqueHundredNSBlock() int64 {
+	timeMutex.Lock()
+	hundredNSBlock := hNSBlockFromTime(time.Now())
+	if hundredNSBlock <= previousHundredNSBlock {
+		hundredNSBlock++
+	}
+	previousHundredNSBlock = hundredNSBlock
+	timeMutex.Unlock()
+	return hundredNSBlock
+}
+
+func NewTimeUUIDLower(t time.Time) UUID {
+	return newTimeUUIDWithBlocks(LowestTimeUUID[:], hNSBlockFromTime(t))
+}
+
+func NewTimeUUIDHigher(t time.Time) UUID {
+	return newTimeUUIDWithBlocks(HighestTimeUUID[:], hNSBlockFromTime(t))
+}
+
+func NewTimeUUID() (UUID, error) {
 	r, err := randomBase()
 	if err != nil {
 		return ZeroUUID, err
 	}
+	return newTimeUUIDWithBlocks(r, uniqueHundredNSBlock()), nil
+}
 
-	var hundredNSBlock int64 = (t.UnixNano() / 100) + 0x01B21DD213814000
+func hNSBlockFromTime(t time.Time) int64 {
+	return (t.UnixNano() / 100) + 0x01B21DD213814000
+}
+
+func newTimeUUIDWithBlocks(r []byte, hundredNSBlock int64) UUID {
+	var ru UUID
 
 	stamp := hundredNSBlock << 32
 	stamp = stamp | ((hundredNSBlock & 0xFFFF00000000) >> 16)
@@ -113,5 +141,5 @@ func NewTimeUUID(t time.Time) (UUID, error) {
 	r[7] = byte(stamp & 0xff)
 
 	unmarshalUUID(r, BytesType, &ru)
-	return ru, nil
+	return ru
 }

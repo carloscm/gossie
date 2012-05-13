@@ -68,7 +68,7 @@ func createTimeseries(t *testing.T, cp ConnectionPool) int {
 
 	w := cp.Writer()
 	for i := 0; i < 100; i++ {
-		u, err := NewTimeUUID(time.Now())
+		u, err := NewTimeUUID()
 		if err != nil {
 			t.Fatal("Error generating TimeUUID:", err)
 		}
@@ -109,7 +109,7 @@ func createCompositeFull(t *testing.T, cp ConnectionPool) int {
 		t.Fatal("Error generating random UUID:", err)
 	}
 	for i := 0; i < 100; i++ {
-		uT, err := NewTimeUUID(time.Now())
+		uT, err := NewTimeUUID()
 		if err != nil {
 			t.Fatal("Error generating TimeUUID:", err)
 		}
