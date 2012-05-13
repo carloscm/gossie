@@ -3,6 +3,7 @@ package gossie
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 /*
@@ -25,6 +26,12 @@ type ReasonableOne struct {
 	Body     string
 }
 
+type Timeseries struct {
+	Username string `cf:"Timeseries" key:"Username" cols:"TimeUUID"`
+	TimeUUID UUID
+	Seq      int
+}
+
 type ReasonableTwo struct {
 	Username string `cf:"ReasonableTwo" key:"Username" cols:"TweetID,Version"`
 	TweetID  int64
@@ -32,6 +39,107 @@ type ReasonableTwo struct {
 	Lat      float32
 	Lon      float32
 	Body     string
+}
+
+type CompositeFull struct {
+	Username    string `mapping:"compact" cf:"CompositeFull" key:"Username" cols:"Bytes,Ascii,UTF8,Long,Int32,UUIDf,LexicalUUID,TimeUUID,Boolean,Float,Double,Date" value:"Value"`
+	Bytes       []byte
+	Ascii       string
+	UTF8        string
+	Long        int64
+	Int32       int `type:"Int32Type"`
+	UUIDf       UUID
+	LexicalUUID UUID
+	TimeUUID    UUID
+	Boolean     bool
+	Float       float32
+	Double      float64
+	Date        time.Time
+	Value       int
+}
+
+func createTimeseries(t *testing.T, cp ConnectionPool) int {
+	cp.Writer().Delete("Timeseries", []byte("testuser")).Run()
+
+	mT, err := NewMapping(&Timeseries{})
+
+	// pseudo random number based on the sub-ms part of the current unix nano time
+	seqBase := int(time.Now().UnixNano() % 1e6)
+
+	w := cp.Writer()
+	for i := 0; i < 100; i++ {
+		u, err := NewTimeUUID(time.Now())
+		if err != nil {
+			t.Fatal("Error generating TimeUUID:", err)
+		}
+		r := &Timeseries{
+			Username: "testuser",
+			TimeUUID: u,
+			Seq:      seqBase + i,
+		}
+		row, err := mT.Map(r)
+		if err != nil {
+			t.Fatal("Error mapping:", err)
+		}
+		w.InsertTtl("Timeseries", row, 60)
+	}
+	err = w.Run()
+	if err != nil {
+		t.Fatal("Error writing:", err)
+	}
+	return seqBase
+}
+
+func createCompositeFull(t *testing.T, cp ConnectionPool) int {
+	cp.Writer().Delete("CompositeFull", []byte("testuser")).Run()
+
+	mC, err := NewMapping(&CompositeFull{})
+
+	// pseudo random number based on the sub-ms part of the current unix nano time
+	seqBase := int(time.Now().UnixNano() % 1e6)
+
+	w := cp.Writer()
+
+	uR1, err := NewRandomUUID()
+	if err != nil {
+		t.Fatal("Error generating random UUID:", err)
+	}
+	uR2, err := NewRandomUUID()
+	if err != nil {
+		t.Fatal("Error generating random UUID:", err)
+	}
+	for i := 0; i < 100; i++ {
+		uT, err := NewTimeUUID(time.Now())
+		if err != nil {
+			t.Fatal("Error generating TimeUUID:", err)
+		}
+		r := &CompositeFull{
+			Username:    "testuser",
+			Bytes:       []byte("yep"),
+			Ascii:       "good",
+			UTF8:        "works",
+			Long:        int64(i / 10),
+			Int32:       -42,
+			UUIDf:       uR1,
+			LexicalUUID: uR2,
+			TimeUUID:    uT,
+			Boolean:     true,
+			Float:       42.42,
+			Double:      4e42,
+			Date:        time.Now(),
+			Value:       seqBase + i,
+		}
+		row, err := mC.Map(r)
+		if err != nil {
+			t.Fatal("Error mapping:", err)
+		}
+		w.InsertTtl("CompositeFull", row, 60)
+	}
+	err = w.Run()
+	if err != nil {
+		t.Fatal("Error writing:", err)
+	}
+	return seqBase
 }
 
 func TestQueryGet(t *testing.T) {
@@ -52,6 +160,14 @@ func TestQueryGet(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error building mapping:", err)
 	}
+	mT, err := NewMapping(&Timeseries{})
+	if err != nil {
+		t.Fatal("Error building mapping:", err)
+	}
+	mC, err := NewMapping(&CompositeFull{})
+	if err != nil {
+		t.Fatal("Error building mapping:", err)
+	}
 
 	w := cp.Writer()
 	r := &ReasonableZero{"testuser", 1.00002, -38.11, "hey this thing appears to work, nice!"}
@@ -59,7 +175,7 @@ func TestQueryGet(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error mapping:", err)
 	}
-	w.Insert("ReasonableZero", row)
+	w.InsertTtl("ReasonableZero", row, 60)
 	err = w.Run()
 	if err != nil {
 		t.Fatal("Error writing:", err)
@@ -78,7 +194,7 @@ func TestQueryGet(t *testing.T) {
 		if err != nil {
 			t.Fatal("Error mapping:", err)
 		}
-		w.Insert("ReasonableOne", row)
+		w.InsertTtl("ReasonableOne", row, 60)
 	}
 	err = w.Run()
 	if err != nil {
@@ -100,7 +216,7 @@ func TestQueryGet(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error mapping:", err)
 			}
-			w.Insert("ReasonableTwo", row)
+			w.InsertTtl("ReasonableTwo", row, 60)
 		}
 	}
 	err = w.Run()
@@ -217,6 +333,47 @@ func TestQueryGet(t *testing.T) {
 	err = res.Next(r1)
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
+	}
+
+	/////
+
+	seqBase := createTimeseries(t, cp)
+	qT := cp.Query(mT)
+	rT := &Timeseries{}
+
+	res, err = qT.Get("testuser")
+	if err != nil {
+		t.Fatal("Query get error:", err)
+	}
+	for i := 99; i >= 0; i-- {
+		err = res.Next(rT)
+		if err != nil {
+			t.Fatal("Result next error:", err)
+		}
+		if rT.Seq != seqBase+i {
+			t.Log(rT)
+			t.Error("Read does not match Write")
+		}
+	}
+
+	seqBase = createTimeseries(t, cp)
+
+	qT.Reversed(true)
+
+	res, err = qT.Get("testuser")
+	if err != nil {
+		t.Fatal("Query get error:", err)
+	}
+	for i := 0; i < 100; i++ {
+		err = res.Next(rT)
+		if err != nil {
+			t.Fatal("Result next error:", err)
+		}
+		if rT.Seq != seqBase+i {
+			t.Log(seqBase + i)
+			t.Log(rT)
+			t.Error("Read does not match Write")
+		}
 	}
 
 	/////
@@ -355,6 +512,29 @@ func TestQueryGet(t *testing.T) {
 	err = res.Next(r2)
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
+	}
+
+	/////
+
+	seqBase = createCompositeFull(t, cp)
+
+	qC := cp.Query(mC)
+	rC := &CompositeFull{}
+
+	res, err = qC.Get("testuser")
+	if err != nil {
+		t.Fatal("Query get error:", err)
+	}
+	for i := 0; i < 100; i++ {
+		err = res.Next(rC)
+		if err != nil {
+			t.Fatal("Result next error:", err)
+		}
+		if rC.Value != seqBase+i {
+			t.Log(seqBase + i)
+			t.Log(rT)
+			t.Error("Read does not match Write")
+		}
 	}
 
 }

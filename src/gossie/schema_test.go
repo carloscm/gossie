@@ -16,8 +16,8 @@ func TestSchema(t *testing.T) {
 	schema := newSchema(ksDef)
 	defer c.close()
 
-	if len(schema.ColumnFamilies) != 7 {
-		t.Error("Test schema must have 7 CFs")
+	if len(schema.ColumnFamilies) != 8 {
+		t.Error("Test schema must have 8 CFs")
 	}
 
 	if schema.ColumnFamilies["AllTypes"] == nil {

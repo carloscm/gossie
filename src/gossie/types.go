@@ -733,6 +733,11 @@ func defaultType(t reflect.Type) TypeDesc {
 			return UUIDType
 		}
 		return UnknownType
+	case reflect.Struct:
+		if t.Name() == "Time" && t.PkgPath() == "time" {
+			return DateType
+		}
+		return UnknownType
 	case reflect.Slice:
 		if et := t.Elem(); et.Kind() == reflect.Uint8 {
 			return BytesType

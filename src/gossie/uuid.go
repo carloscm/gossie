@@ -11,6 +11,7 @@ import (
 
 /*
 	to do:
+		implement concurrent get with atomic increment of prev timestamp, like in Java
 		check correctness of NewTimeUUID
 		comparison
 			comp func

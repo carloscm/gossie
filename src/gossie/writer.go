@@ -22,6 +22,9 @@ type Writer interface {
 	// Insert adds a new row insertion to the mutation
 	Insert(cf string, row *Row) Writer
 
+	// InsertTtl adds a new row insertion to the mutation, overriding the columns Ttl with the passed value
+	InsertTtl(cf string, row *Row, ttl int) Writer
+
 	// DeltaCounters add a new delta operation over counters
 	DeltaCounters(cf string, row *Row) Writer
 
@@ -81,13 +84,21 @@ func (w *writer) ConsistencyLevel(l int) Writer {
 }
 
 func (w *writer) Insert(cf string, row *Row) Writer {
+	return w.InsertTtl(cf, row, -1)
+}
+
+func (w *writer) InsertTtl(cf string, row *Row, ttl int) Writer {
 	t := now()
 	for _, col := range row.Columns {
 		tm := w.addWriter(cf, row.Key)
 		c := cassandra.NewColumn()
 		c.Name = col.Name
 		c.Value = col.Value
-		c.Ttl = col.Ttl
+		if ttl > 0 {
+			c.Ttl = int32(ttl)
+		} else {
+			c.Ttl = c.Ttl
+		}
 		if col.Timestamp > 0 {
 			c.Timestamp = col.Timestamp
 		} else {

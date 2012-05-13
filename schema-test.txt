@@ -52,3 +52,9 @@ create column family Timeseries with
 	key_validation_class = UTF8Type and
 	default_validation_class = BytesType
 ;
+
+create column family CompositeFull with
+	comparator = 'CompositeType(BytesType,AsciiType,UTF8Type,LongType,Int32Type,UUIDType,LexicalUUIDType,TimeUUIDType,BooleanType,FloatType,DoubleType,DateType)' and
+	key_validation_class = BytesType and
+	default_validation_class = BytesType
+;
