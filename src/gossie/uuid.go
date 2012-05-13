@@ -97,7 +97,7 @@ func uniqueHundredNSBlock() int64 {
 	timeMutex.Lock()
 	hundredNSBlock := hNSBlockFromTime(time.Now())
 	if hundredNSBlock <= previousHundredNSBlock {
-		hundredNSBlock++
+		hundredNSBlock = previousHundredNSBlock + 1
 	}
 	previousHundredNSBlock = hundredNSBlock
 	timeMutex.Unlock()
