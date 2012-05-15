@@ -162,6 +162,7 @@ func (r *reader) Slice(s *Slice) Reader {
 }
 
 func (r *reader) Columns(c [][]byte) Reader {
+	r.columns = make([][]byte, len(c))
 	copy(r.columns, c)
 	r.setColumns = true
 	return r

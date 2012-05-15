@@ -64,6 +64,15 @@ func buildAllTypesTestRow(key string) *testRow {
 	}
 }
 
+func buildAllTypesTestRowPartial(key string) *testRow {
+	return &testRow{
+		key: key, keyType: BytesType, columns: []testColumn{
+			testColumn{"colBooleanType", AsciiType, true, BooleanType},
+			testColumn{"colUTF8Type", AsciiType, "leña al fuego", UTF8Type},
+		},
+	}
+}
+
 func buildAllTypesAfterDeletesTestRow(key string) *testRow {
 	u, _ := ParseUUID("00112233-4455-6677-8899-aabbccddeeff")
 	return &testRow{
@@ -227,6 +236,12 @@ func TestWriterAndReader(t *testing.T) {
 		t.Error("Error running query: ", err)
 	}
 	checkRow(t, buildAllTypesTestRow("row2"), row)
+
+	row, err = cp.Reader().Cf("AllTypes").Columns([][]byte{[]byte("colBooleanType"), []byte("colUTF8Type")}).Get([]byte("row2"))
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	checkRow(t, buildAllTypesTestRowPartial("row2"), row)
 
 	count, err = cp.Reader().Cf("AllTypes").Count([]byte("row2"))
 	if err != nil {
