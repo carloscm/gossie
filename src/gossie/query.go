@@ -50,6 +50,9 @@ type Query interface {
 
 	// MultiGet looks up multiple rows given the keys. 
 	MultiGet(keys []interface{}) (Result, error)
+
+	// RangeGet looks up a range of rows as specified by the parameter Range type
+	RangeGet(rang *Range, excludeStart bool) (Result, error)
 }
 
 // Result reads Query results into Go objects, internally buffering them.
@@ -150,6 +153,33 @@ func (q *query) MultiGet(keys []interface{}) (Result, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	return &result{query: *q, buffer: rows}, nil
+}
+
+func (q *query) RangeGet(rang *Range, excludeStart bool) (Result, error) {
+	var err error
+
+	reader := q.pool.Reader().Cf(q.mapping.Cf())
+
+	if q.consistencyLevel != 0 {
+		reader.ConsistencyLevel(q.consistencyLevel)
+	}
+
+	q.buildSlice(reader)
+
+	if excludeStart && len(rang.Start) > 0 {
+		rang.Count += 1
+	}
+
+	rows, err := reader.RangeGet(rang)
+	if err != nil {
+		return nil, err
+	}
+
+	if excludeStart && len(rang.Start) > 0 {
+		rows = rows[1:]
 	}
 
 	return &result{query: *q, buffer: rows}, nil
