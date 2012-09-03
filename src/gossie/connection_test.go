@@ -10,23 +10,23 @@ import (
 func TestConnection(t *testing.T) {
 
 	/* kind of pointless
-	   c, err := newConnection("127.0.0.1:9999", "NotExists", 3000)
+	   c, err := newConnection(invalidEndpoint, "NotExists", standardTimeout)
 	   if err == nil {
 	       t.Fatal("Invalid connection parameters did not return error")
 	   }
 	*/
 
-	c, err := newConnection("127.0.0.1:9160", "NotExists", 1000)
+	c, err := newConnection(localEndpoint, "NotExists", shortTimeout)
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
-	c, err = newConnection("127.0.0.1:9160", "TestGossie", 1000)
+	c, err = newConnection(localEndpoint, keyspace, shortTimeout)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	if c.keyspace != "TestGossie" {
+	if c.keyspace != keyspace {
 		t.Fatal("Invalid keyspace")
 	}
 
@@ -36,30 +36,30 @@ func TestConnection(t *testing.T) {
 func TestNewConnectionPool(t *testing.T) {
 
 	/* kind of pointless
-	   cp, err := NewConnectionPool([]string{"127.0.0.1:9999"}, "NotExists", PoolOptions{Size: 50, Timeout: 3000})
+	   cp, err := NewConnectionPool([]string{invalidEndpoint}, "NotExists", poolOptions)
 	   if err == nil {
 	       t.Fatal("Invalid connection parameters did not return error")
 	   }
 	*/
 
-	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "NotExists", PoolOptions{Size: 50, Timeout: 3000})
+	cp, err := NewConnectionPool(localEndpointPool, "NotExists", poolOptions)
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
 	/* kind of pointless
-	   cp, err = NewConnectionPool([]string{"127.0.0.1:9160", "127.0.0.1:9170", "127.0.0.1:9180"}, "TestGossie", PoolOptions{Size: 50, Timeout: 3000})
+	   cp, err = NewConnectionPool(localEndpointsPool, keyspace, poolOptions)
 	   if err != nil {
 	       t.Fatal("Error connecting to Cassandra:", err)
 	   }
 	*/
 
-	cp, err = NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 50, Timeout: 3000})
+	cp, err = NewConnectionPool(localEndpointPool, keyspace, poolOptions)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	if cp.Keyspace() != "TestGossie" {
+	if cp.Keyspace() != keyspace {
 		t.Fatal("Invalid keyspace")
 	}
 
@@ -70,7 +70,7 @@ func TestAcquireRelease(t *testing.T) {
 	var err error
 	var c *connection
 
-	cpI, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1, Grace: 1})
+	cpI, err := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1, Grace: 1})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
@@ -96,7 +96,7 @@ func TestAcquireRelease(t *testing.T) {
 	c, err = cp.acquire()
 	check(0, false)
 
-	cp.blacklist("127.0.0.1:9160")
+	cp.blacklist(localEndpoint)
 	check(1, false)
 
 	c, err = cp.acquire()
@@ -111,7 +111,7 @@ func TestAcquireRelease(t *testing.T) {
 func TestRun(t *testing.T) {
 	var err error
 
-	cpI, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1})
+	cpI, err := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
