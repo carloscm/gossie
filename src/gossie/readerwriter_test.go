@@ -122,7 +122,7 @@ func buildIntSliceFromRow(row *Row) []int64 {
 }
 
 func TestWriterAndReader(t *testing.T) {
-	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1, Timeout: 1000})
+	cp, err := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1, Timeout: shortTimeout})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
@@ -352,7 +352,7 @@ func TestWriterAndReader(t *testing.T) {
 /*
 func BenchmarkGet(b *testing.B) {
     b.StopTimer()
-    cp, _ := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1, Timeout: 1000})
+    cp, _ := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1, Timeout: shortTimeout})
     b.StartTimer()
     for i := 0; i < b.N; i++ {
         cp.Reader().Cf("AllTypes").Get([]byte("a"))
@@ -361,7 +361,7 @@ func BenchmarkGet(b *testing.B) {
 
 func BenchmarkInsert(b *testing.B) {
     b.StopTimer()
-    cp, _ := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1, Timeout: 1000})
+    cp, _ := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1, Timeout: shortTimeout})
     row := buildAllTypesRow("row")
     b.StartTimer()
     for i := 0; i < b.N; i++ {

@@ -155,7 +155,7 @@ func createCompositeFull(t *testing.T, cp ConnectionPool) int {
 }
 
 func TestQueryGet(t *testing.T) {
-	cp, err := NewConnectionPool([]string{"127.0.0.1:9160"}, "TestGossie", PoolOptions{Size: 1, Timeout: 1000})
+	cp, err := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1, Timeout: shortTimeout})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
