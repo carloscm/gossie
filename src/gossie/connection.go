@@ -305,7 +305,6 @@ func (cp *connectionPool) blacklist(badNode string) {
 			node.lastFailure = int(time.Now().Unix())
 			break
 		}
-		i = (i + 1) % n
 	}
 	cp.releaseEmpty()
 }
