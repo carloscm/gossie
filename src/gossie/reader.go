@@ -522,3 +522,11 @@ func rowsFromTListKeySlice(tl thrift.TList) []*Row {
 	}
 	return r
 }
+
+func (r *Row) ColumnNames() [][]byte {
+	names := [][]byte{}
+	for _, col := range r.Columns {
+		names = append(names, col.Name)
+	}
+	return names
+}

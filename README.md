@@ -55,7 +55,7 @@ import (
 To create a connection use the method NewConnectionPool, passing a list of nodes, the desired keyspace, and a PoolOptions with the various connection options you can tune.
 
 ```Go
-pool := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", PoolOptions{Size: 50, Timeout: 3000})
+pool := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: 3000})
 ````
 
 The pool uses a simple randomized rule for connecting to the passed nodes, always keeping the total number of connections under PoolOptions.Size but without any guarantees on the number of connections per host. It has automatic failover and retry of operations.
@@ -67,7 +67,7 @@ The Reader and Writer interfaces allow for low level queries to Cassandra and th
 ```Go
 err = pool.Writer().Insert("MyColumnFamily", row).Run()
 row, err = pool.Reader().Cf("MyColumnFamily").Get(id)
-rows, err = pool.Reader().Cf("MyColumnFamily").Where([]byte("MyIndexedColumn"), EQ, []byte("hi!")).IndexedGet(&IndexedRange{Count: 1000})
+rows, err = pool.Reader().Cf("MyColumnFamily").Where([]byte("MyIndexedColumn"), gossie.EQ, []byte("hi!")).IndexedGet(&gossie.IndexedRange{Count: 1000})
 ````
 
 ### Type marshaling
@@ -107,6 +107,8 @@ When calling NewMapping() you can tag your struct fiels with `name`, `type` and 
 
 The tags `mapping`, `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `mapping` is optional and can have a value of `sparse` (the default) or `compact`. See [CQL3.0](http://www.datastax.com/dev/blog/whats-new-in-cql-3-0) for more information. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is optional and it is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows, and it is ignored in sparse storage rows.
 
+Mapping instances are reusable and you are encouraged to cache them.
+
 ### Query and Result
 
 Query allows to look up mapped structs over Cassandra rows. Pass to `Query.Components` one or more component values that all the result objects must have in common. You can also leave out the last component and use `Query.Between` to slice a range of values for it. Call `Query.Get` with the row key to get a Result. `Result.Next` reads a single struct from the Cassandra row, and returns `Done` when no more structs can be read.
@@ -124,18 +126,29 @@ result, err := query.Get("username")
 for {
 	t := &Tweet{}
 	err := result.Next(t)
-	if err != nil {
+	if err != nil { // Done is also returned in err
 		break
 	}
 }
 ````
 
+### Batch
+
+Batch is a thin interface over Writer which allows to directly write and delete structs in a higher level fashion. Its use is simple, for example:
+
+```Go
+mapping := gossie.NewMapping(&Tweet{})
+batch := pool.Batch()
+tweet1 = &Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
+err := batch.Insert(mapping, tweet).Run()
+````
+
+Use a new Batch() call for every batch of writes you want to perform. Its internal state may keep copies of your data so it is not reusable.
+
 
 # Planned features
 
-- Error passing overhaul, to be based on typing
 - Query: secondary index read with buffering
-- A higher level abstraction for writes (Batch interface)
 - High level mapping for Go slices
 - High level mapping for Go maps
 - Add low level interface for CQL 3.0 with prepared statement support

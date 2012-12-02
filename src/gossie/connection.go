@@ -38,6 +38,9 @@ type ConnectionPool interface {
 	// Query returns a high level interface for read operations over structs
 	Query(Mapping) Query
 
+	// Batch returns a high level interface for write operations over structs
+	Batch() Batch
+
 	// Close all the connections in the pool
 	Close()
 }
@@ -185,10 +188,14 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 type transaction func(*connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error)
 
 func (cp *connectionPool) run(t transaction) error {
+	return cp.runWithRetries(t, cp.options.Retries)
+}
+
+func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 	var c *connection
 	var err error
 
-	for tries := 0; tries < cp.options.Retries; tries++ {
+	for tries := 0; tries < retries; tries++ {
 
 		// acquire a new connection if we are just starting out or after discarding one
 		if c == nil {
@@ -319,6 +326,10 @@ func (cp *connectionPool) Writer() Writer {
 
 func (cp *connectionPool) Query(m Mapping) Query {
 	return newQuery(cp, m)
+}
+
+func (cp *connectionPool) Batch() Batch {
+	return newBatch(cp)
 }
 
 func (cp *connectionPool) Keyspace() string {

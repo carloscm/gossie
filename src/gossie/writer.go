@@ -6,32 +6,31 @@ import (
 	"time"
 )
 
-/*
-	to do:
-	override retries to 1 for writers that include DeltaCounters, document it?
-*/
-
 // Writer is the interface for all the write operations over Cassandra.
 // The method calls support chaining so you can build concise queries
 type Writer interface {
 
 	// ConsistencyLevel sets the consistency level for this particular call.
-	// It is optional, if left uncalled it will default to your connection pool options value.
+	// It is optional, if left uncalled it will default to your connection
+	// pool options value.
 	ConsistencyLevel(int) Writer
 
 	// Insert adds a new row insertion to the mutation
 	Insert(cf string, row *Row) Writer
 
-	// InsertTtl adds a new row insertion to the mutation, overriding the columns Ttl with the passed value
+	// InsertTtl adds a new row insertion to the mutation, overriding the
+	// columns Ttl with the passed value
 	InsertTtl(cf string, row *Row, ttl int) Writer
 
-	// DeltaCounters add a new delta operation over counters
+	// DeltaCounters add a new delta operation over counters. When using this
+	// function the number of retries for the connection is temporally set to
+	// 1.
 	DeltaCounters(cf string, row *Row) Writer
 
 	// Delete deletes a single row specified by key
 	Delete(cf string, key []byte) Writer
 
-	// DeleteColumns deletes the passed columns from the row specified by key
+	// DeleteColumns deletes the passed columns from the row specified by key.
 	DeleteColumns(cf string, key []byte, columns [][]byte) Writer
 
 	// Run this mutation
@@ -42,6 +41,7 @@ type writer struct {
 	pool             *connectionPool
 	consistencyLevel int
 	writers          thrift.TMap
+	usedCounters     bool
 }
 
 func newWriter(cp *connectionPool, cl int) *writer {
@@ -121,6 +121,7 @@ func (w *writer) DeltaCounters(cf string, row *Row) Writer {
 		cs.CounterColumn = c
 		tm.ColumnOrSupercolumn = cs
 	}
+	w.usedCounters = true
 	return w
 }
 
@@ -160,12 +161,16 @@ func (w *writer) DeleteSlice(cf string, key []byte, slice *Slice) Writer {
 */
 
 func (w *writer) Run() error {
-	return w.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	toRun := func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
 		ire, ue, te, err = c.client.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
 		return ire, ue, te, err
-	})
+	}
+	if w.usedCounters {
+		return w.pool.runWithRetries(toRun, 1)
+	}
+	return w.pool.run(toRun)
 }
