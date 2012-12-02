@@ -134,16 +134,16 @@ for {
 
 ### Batch
 
-Batch is a thin interface over Writer which allows to directly write and delete structs in a higher level fashion. Its use is simple, for example:
+Batch is a thin interface over `Writer` which allows to directly write and delete structs in a higher level fashion. Its use is simple, for example:
 
 ```Go
 mapping := gossie.NewMapping(&Tweet{})
 batch := pool.Batch()
-tweet1 = &Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
+tweet := &Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"}
 err := batch.Insert(mapping, tweet).Run()
 ````
 
-Use a new Batch() call for every batch of writes you want to perform. Its internal state may keep copies of your data so it is not reusable.
+Use a new `Batch()` call for every batch of writes you want to perform. Its internal state may keep copies of your data so it is not reusable.
 
 
 # Planned features
