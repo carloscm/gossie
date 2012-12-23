@@ -47,14 +47,15 @@ type ConnectionPool interface {
 
 // PoolOptions stores the options for the creation of a ConnectionPool
 type PoolOptions struct {
-	Size             int // keep up to Size connections open and ready
-	ReadConsistency  int // default read consistency
-	WriteConsistency int // default write consistency
-	Timeout          int // socket timeout in ms
-	Recycle          int // close connections after Recycle seconds
-	RecycleJitter    int // max jitter to add to Recycle so not all connections close at the same time
-	Grace            int // if a node is blacklisted try to contact it again after Grace seconds
-	Retries          int // retry queries for Retries times before raising an error
+	Size             int               // keep up to Size connections open and ready
+	ReadConsistency  int               // default read consistency
+	WriteConsistency int               // default write consistency
+	Timeout          int               // socket timeout in ms
+	Recycle          int               // close connections after Recycle seconds
+	RecycleJitter    int               // max jitter to add to Recycle so not all connections close at the same time
+	Grace            int               // if a node is blacklisted try to contact it again after Grace seconds
+	Retries          int               // retry queries for Retries times before raising an error
+	Authentication   map[string]string // if one or more keys are present, login() is called with the values from Authentication
 }
 
 const (
@@ -280,7 +281,7 @@ func (cp *connectionPool) acquire() (*connection, error) {
 			cp.releaseEmpty()
 			return nil, err
 		}
-		c, err = newConnection(node, cp.keyspace, cp.options.Timeout)
+		c, err = newConnection(node, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
 		if err == ErrorConnectionTimeout {
 			cp.blacklist(node)
 			return nil, err
@@ -351,7 +352,7 @@ type connection struct {
 	keyspace  string
 }
 
-func newConnection(node, keyspace string, timeout int) (*connection, error) {
+func newConnection(node, keyspace string, timeout int, authentication map[string]string) (*connection, error) {
 
 	addr, err := net.ResolveTCPAddr("tcp", node)
 	if err != nil {
@@ -408,6 +409,24 @@ func newConnection(node, keyspace string, timeout int) (*connection, error) {
 	if majorVersion < LOWEST_COMPATIBLE_VERSION {
 		return nil, errors.New(fmt.Sprint("Unsupported Thrift API version, lowest supported is ", LOWEST_COMPATIBLE_VERSION,
 			", server reports ", majorVersion))
+	}
+
+	if len(authentication) > 0 {
+		ar := cassandra.NewAuthenticationRequest()
+		ar.Credentials = thrift.NewTMap(thrift.STRING, thrift.STRING, 1)
+		for k, v := range authentication {
+			ar.Credentials.Set(k, v)
+		}
+		autE, auzE, err := c.client.Login(ar)
+		if autE != nil {
+			return nil, errors.New("Login error: cannot authenticate with the given credentials")
+		}
+		if auzE != nil {
+			return nil, errors.New("Login error: the given credentials are not authorized to access the server")
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	ire, err := c.client.SetKeyspace(keyspace)

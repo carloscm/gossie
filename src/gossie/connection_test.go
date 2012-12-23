@@ -16,12 +16,12 @@ func TestConnection(t *testing.T) {
 	   }
 	*/
 
-	c, err := newConnection(localEndpoint, "NotExists", shortTimeout)
+	c, err := newConnection(localEndpoint, "NotExists", shortTimeout, map[string]string{})
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
-	c, err = newConnection(localEndpoint, keyspace, shortTimeout)
+	c, err = newConnection(localEndpoint, keyspace, shortTimeout, map[string]string{})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
@@ -65,6 +65,46 @@ func TestNewConnectionPool(t *testing.T) {
 
 	cp.Close()
 }
+
+// possible test for users of SimpleAuthenticator
+/*
+func TestNewConnectionPoolWithAuth(t *testing.T) {
+	poolOptionsAuth := poolOptions
+	poolOptionsAuth.Authentication = map[string]string{
+		"keyspace": "invalid",
+		"username": "invalid",
+		"password": "invalid",
+	}
+	cp, err := NewConnectionPool(localEndpointPool, "TestGossie", poolOptionsAuth)
+	if err == nil {
+		t.Fatal("Invalid keyspace did not return error")
+	}
+
+	poolOptionsAuth.Authentication["keyspace"] = "TestGossie"
+	cp, err = NewConnectionPool(localEndpointPool, "TestGossie", poolOptionsAuth)
+	if err == nil {
+		t.Fatal("Invalid username did not return error")
+	}
+
+	poolOptionsAuth.Authentication["username"] = "test"
+	cp, err = NewConnectionPool(localEndpointPool, "TestGossie", poolOptionsAuth)
+	if err == nil {
+		t.Fatal("Invalid password did not return error")
+	}
+
+	poolOptionsAuth.Authentication["password"] = "testpw"
+	cp, err = NewConnectionPool(localEndpointPool, "TestGossie", poolOptionsAuth)
+	if err != nil {
+		t.Fatal("Correct credetinals did not allow login")
+	}
+
+	if cp.Keyspace() != keyspace {
+		t.Fatal("Invalid keyspace")
+	}
+
+	cp.Close()
+}
+*/
 
 func TestAcquireRelease(t *testing.T) {
 	var err error
