@@ -106,9 +106,6 @@ func NewMapping(source interface{}) (Mapping, error) {
 	case "sparse":
 		return newSparseMapping(si, cf, key, colsS...), nil
 	case "compact":
-		if value == "" {
-			return nil, errors.New(fmt.Sprint("Mandatory struct tag value for compact mapping not found in passed struct of type ", si.rtype.Name()))
-		}
 		return newCompactMapping(si, cf, key, value, colsS...), nil
 	}
 
@@ -389,7 +386,7 @@ func (m *compactMapping) Map(source interface{}) (*Row, error) {
 		}
 		row.Columns = append(row.Columns, &Column{Name: composite, Value: columnValue})
 	} else {
-		return nil, errors.New(fmt.Sprint("Mapping value field ", m.value, " not found in passed struct of type ", v.Type().Name()))
+		row.Columns = append(row.Columns, &Column{Name: composite, Value: []byte{}})
 	}
 	return row, nil
 }
@@ -423,8 +420,6 @@ func (m *compactMapping) Unmap(destination interface{}, provider RowProvider) er
 		if err != nil {
 			return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
 		}
-	} else {
-		return errors.New(fmt.Sprint("Mapping value field ", m.value, " not found in passed struct of type ", v.Type().Name()))
 	}
 
 	return nil

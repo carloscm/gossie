@@ -48,6 +48,12 @@ type tagsC struct {
 	D int
 }
 
+type tagsD struct {
+	A int `cf:"1" key:"A" cols:"B,C" mapping:"compact"`
+	B int
+	C int
+}
+
 type structTestShell struct {
 	mapping        Mapping
 	expectedStruct interface{}
@@ -118,6 +124,7 @@ func TestMap(t *testing.T) {
 	mA, _ := NewMapping(&tagsA{})
 	mB, _ := NewMapping(&tagsB{})
 	mC, _ := NewMapping(&tagsC{})
+	mD, _ := NewMapping(&tagsD{})
 	mE, _ := NewMapping(&everythingComp{})
 
 	shells := []*structTestShell{
@@ -172,6 +179,22 @@ func TestMap(t *testing.T) {
 					&Column{
 						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
 						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+					},
+				},
+			},
+		},
+
+		&structTestShell{
+			mapping:        mD,
+			name:           "tagsD",
+			expectedStruct: &tagsD{1, 2, 3},
+			resultStruct:   &tagsD{},
+			expectedRow: &Row{
+				Key: []byte{0, 0, 0, 0, 0, 0, 0, 1},
+				Columns: []*Column{
+					&Column{
+						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
+						Value: []byte{},
 					},
 				},
 			},
