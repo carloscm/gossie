@@ -55,7 +55,10 @@ import (
 To create a connection use the method NewConnectionPool, passing a list of nodes, the desired keyspace, and a PoolOptions with the various connection options you can tune.
 
 ```Go
-pool := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: 3000})
+pool, err := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: 3000})
+if err != nil {
+	// do something
+}
 ````
 
 The pool uses a simple randomized rule for connecting to the passed nodes, always keeping the total number of connections under PoolOptions.Size but without any guarantees on the number of connections per host. It has automatic failover and retry of operations.
