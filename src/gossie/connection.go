@@ -3,8 +3,8 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	"github.com/carloscm/gossie/src/cassandra"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/apesternikov/gossie/src/cassandra"
+	thrift "github.com/apesternikov/thrift4go/lib/go/src/thrift"
 	"math/rand"
 	"net"
 	"strconv"
@@ -43,6 +43,12 @@ type ConnectionPool interface {
 
 	// Close all the connections in the pool
 	Close()
+}
+
+//package-private methods
+type connectionRunner interface {
+	run(t transaction) error
+	runWithRetries(t transaction, retries int) error
 }
 
 // PoolOptions stores the options for the creation of a ConnectionPool
@@ -212,7 +218,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if ire != nil {
 			cp.release(c)
-			return errors.New(ire.String())
+			return errors.New(ire.Why)
 		}
 
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
@@ -347,7 +353,7 @@ func (cp *connectionPool) Close() {
 type connection struct {
 	socket    *thrift.TNonblockingSocket
 	transport *thrift.TFramedTransport
-	client    *cassandra.CassandraClient
+	client    cassandra.ICassandra
 	node      string
 	keyspace  string
 }
@@ -413,10 +419,7 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 
 	if len(authentication) > 0 {
 		ar := cassandra.NewAuthenticationRequest()
-		ar.Credentials = thrift.NewTMap(thrift.STRING, thrift.STRING, 1)
-		for k, v := range authentication {
-			ar.Credentials.Set(k, v)
-		}
+		ar.Credentials = authentication
 		autE, auzE, err := c.client.Login(ar)
 		if autE != nil {
 			return nil, errors.New("Login error: cannot authenticate with the given credentials")

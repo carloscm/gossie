@@ -1,8 +1,7 @@
 package gossie
 
 import (
-	"github.com/carloscm/gossie/src/cassandra"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/apesternikov/gossie/src/cassandra"
 	"time"
 )
 
@@ -38,17 +37,17 @@ type Writer interface {
 }
 
 type writer struct {
-	pool             *connectionPool
+	pool             connectionRunner
 	consistencyLevel int
-	writers          thrift.TMap
+	writers          map[string]map[string][]*cassandra.Mutation
 	usedCounters     bool
 }
 
-func newWriter(cp *connectionPool, cl int) *writer {
+func newWriter(cp connectionRunner, cl int) *writer {
 	return &writer{
 		pool:             cp,
 		consistencyLevel: cl,
-		writers:          thrift.NewTMap(thrift.BINARY, thrift.MAP, 1),
+		writers:          make(map[string]map[string][]*cassandra.Mutation),
 	}
 }
 
@@ -58,23 +57,11 @@ func now() int64 {
 
 func (w *writer) addWriter(cf string, key []byte) *cassandra.Mutation {
 	tm := cassandra.NewMutation()
-	var cfMuts thrift.TMap
-	im, exists := w.writers.Get(key)
-	if !exists {
-		cfMuts = thrift.NewTMap(thrift.STRING, thrift.LIST, 1)
-		w.writers.Set(key, cfMuts)
-	} else {
-		cfMuts = im.(thrift.TMap)
+	skey := string(key)
+	if _, exists := w.writers[skey]; !exists {
+		w.writers[skey] = make(map[string][]*cassandra.Mutation, 1)
 	}
-	var mutList thrift.TList
-	im, exists = cfMuts.Get(cf)
-	if !exists {
-		mutList = thrift.NewTList(thrift.STRUCT, 1)
-		cfMuts.Set(cf, mutList)
-	} else {
-		mutList = im.(thrift.TList)
-	}
-	mutList.Push(tm)
+	w.writers[skey][cf] = append(w.writers[skey][cf], tm)
 	return tm
 }
 
@@ -138,10 +125,7 @@ func (w *writer) DeleteColumns(cf string, key []byte, columns [][]byte) Writer {
 	d := cassandra.NewDeletion()
 	d.Timestamp = now()
 	sp := cassandra.NewSlicePredicate()
-	sp.ColumnNames = thrift.NewTList(thrift.BINARY, 1)
-	for _, name := range columns {
-		sp.ColumnNames.Push(name)
-	}
+	sp.ColumnNames = columns
 	d.Predicate = sp
 	tm.Deletion = d
 	return w
