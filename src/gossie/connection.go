@@ -42,7 +42,7 @@ type ConnectionPool interface {
 	Batch() Batch
 
 	// Close all the connections in the pool
-	Close()
+	Close() error
 }
 
 // PoolOptions stores the options for the creation of a ConnectionPool
@@ -341,7 +341,8 @@ func (cp *connectionPool) Schema() *Schema {
 	return cp.schema
 }
 
-func (cp *connectionPool) Close() {
+func (cp *connectionPool) Close() error {
+	return nil
 }
 
 type connection struct {
