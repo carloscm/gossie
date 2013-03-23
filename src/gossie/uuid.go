@@ -2,6 +2,7 @@ package gossie
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -36,6 +37,31 @@ func (value UUID) String() string {
 	return strings.Join(r, "-")
 }
 
+func (u *UUID) MarshalJSON() ([]byte, error) {
+	s := `"` + u.String() + `"`
+	return []byte(s), nil
+}
+
+var (
+	badLength = errors.New("Unexpected json encoded length of UUID")
+	badFormat = errors.New("Unexpected json encoded format of UUID")
+)
+
+func (u *UUID) UnmarshalJSON(bv []byte) error {
+	if len(bv) != 38 {
+		return badLength
+	}
+	if bv[0] != '"' || bv[37] != '"' {
+		return badFormat
+	}
+	s := string(bv[1:37])
+	decoded, err := ParseUUID(s)
+	if err != nil {
+		return err
+	}
+	*u = decoded
+	return nil
+}
 func ParseUUID(value string) (UUID, error) {
 	var r []byte
 	var ru UUID
