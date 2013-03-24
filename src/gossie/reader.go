@@ -262,13 +262,14 @@ func (r *reader) Get(key []byte) (*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret thrift.TList
-	err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := r.pool.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetSlice(key, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
-		return ire, ue, te, err
+		ret, ire, ue, te, err = c.client.GetSlice(
+			key, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
+		return &transactionError{ire, ue, te, err}
 	})
 
 	if err != nil {
@@ -287,13 +288,14 @@ func (r *reader) Count(key []byte) (int, error) {
 	sp := r.buildPredicate()
 
 	var ret int32
-	err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := r.pool.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetCount(key, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
-		return ire, ue, te, err
+		ret, ire, ue, te, err = c.client.GetCount(
+			key, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
+		return &transactionError{ire, ue, te, err}
 	})
 
 	if err != nil {
@@ -325,13 +327,14 @@ func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
 	tk := r.buildMultiKeys(keys)
 
 	var ret thrift.TMap
-	err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := r.pool.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.MultigetSlice(tk, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
-		return ire, ue, te, err
+		ret, ire, ue, te, err = c.client.MultigetSlice(
+			tk, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
+		return &transactionError{ire, ue, te, err}
 	})
 
 	if err != nil {
@@ -355,13 +358,14 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 	tk := r.buildMultiKeys(keys)
 
 	var ret thrift.TMap
-	err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := r.pool.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.MultigetCount(tk, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
-		return ire, ue, te, err
+		ret, ire, ue, te, err = c.client.MultigetCount(
+			tk, cp, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
+		return &transactionError{ire, ue, te, err}
 	})
 
 	if err != nil {
@@ -385,13 +389,14 @@ func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret thrift.TList
-	err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := r.pool.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetRangeSlices(cp, sp, kr, cassandra.ConsistencyLevel(r.consistencyLevel))
-		return ire, ue, te, err
+		ret, ire, ue, te, err = c.client.GetRangeSlices(
+			cp, sp, kr, cassandra.ConsistencyLevel(r.consistencyLevel))
+		return &transactionError{ire, ue, te, err}
 	})
 
 	if err != nil {
@@ -419,13 +424,14 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret thrift.TList
-	err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := r.pool.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var ue *cassandra.UnavailableException
 		var te *cassandra.TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetIndexedSlices(cp, ic, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
-		return ire, ue, te, err
+		ret, ire, ue, te, err = c.client.GetIndexedSlices(
+			cp, ic, sp, cassandra.ConsistencyLevel(r.consistencyLevel))
+		return &transactionError{ire, ue, te, err}
 	})
 
 	if err != nil {

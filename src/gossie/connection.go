@@ -169,7 +169,7 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	}
 
 	var ksDef *cassandra.KsDef
-	err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := cp.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var nfe *cassandra.NotFoundException
 		var err error
@@ -177,7 +177,7 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 		if nfe != nil {
 			ksDef = nil
 		}
-		return ire, nil, nil, err
+		return &transactionError{ire: ire, err: err}
 	})
 
 	if err != nil {
@@ -196,7 +196,27 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	return cp, nil
 }
 
-type transaction func(*connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error)
+type transactionError struct {
+	ire *cassandra.InvalidRequestException
+	ue  *cassandra.UnavailableException
+	te  *cassandra.TimedOutException
+	err error
+}
+
+func (e transactionError) Error() string {
+	if e.ire != nil {
+		return e.ire.Why
+	}
+	if e.ue != nil {
+		return "Consistency level couldn't be reached"
+	}
+	if e.te != nil {
+		return "Thrift RPC timeout was exceeded"
+	}
+	return e.err.Error()
+}
+
+type transaction func(*connection) *transactionError
 
 func (cp *connectionPool) run(t transaction) error {
 	return cp.runWithRetries(t, cp.options.Retries)
@@ -207,7 +227,6 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 	var err error
 
 	for tries := 0; tries < retries; tries++ {
-
 		// acquire a new connection if we are just starting out or after discarding one
 		if c == nil {
 			c, err = cp.acquire()
@@ -217,36 +236,26 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			}
 		}
 
-		ire, ue, te, err := t(c)
-
+		terr := t(c)
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if ire != nil {
+		if terr.ire != nil || terr.err != nil {
 			cp.release(c)
-			return errors.New(ire.String())
+			return terr
 		}
-
-		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if err != nil {
-			cp.release(c)
-			return err
-		}
-
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
-		if te != nil {
+		if terr.te != nil {
 			cp.blacklist(c.node)
 			c.close()
 			c = nil
 			continue
 		}
-
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
-		if ue != nil {
+		if terr.ue != nil {
 			cp.release(c)
 			c = nil
 			continue
 		}
-
 		// no errors, release connection and return
 		cp.release(c)
 		return nil
