@@ -1,3 +1,12 @@
+drop keyspace TestGossie;
+
+create keyspace TestGossie
+  with placement_strategy = 'SimpleStrategy' and
+  strategy_options = {replication_factor: 1} and
+  durable_writes = true;
+
+use TestGossie;
+
 create column family AllTypes with
 	comparator = AsciiType and
 	key_validation_class = BytesType and
