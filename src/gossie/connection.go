@@ -86,7 +86,17 @@ const (
 )
 
 var (
-	ErrorConnectionTimeout = errors.New("Connection timeout")
+	ErrorConnectionTimeout    = errors.New("Connection timeout")
+	ErrorEmptyNodeList        = errors.New("At least one node is required")
+	ErrorInvalidThriftVersion = errors.New("Cannot parse the Thrift API version number")
+	ErrorKeySpaceNotFound     = errors.New("Keyspace not found while trying to parse schema")
+	ErrorMaxRetriesReached    = errors.New("Max retries hit trying to run a Cassandra transaction")
+	ErrorPoolExhausted        = errors.New("All nodes are marked down, cannot acquire new connection")
+	ErrorSchemaNotParseable   = errors.New("Cannot parse schema")
+	ErrorWrongThriftVersion   = fmt.Errorf("Unsupported Thrift API version, lowest supported is %d", LOWEST_COMPATIBLE_VERSION)
+	ErrorAuthenticationFailed = errors.New("Login error: cannot authenticate with the given credentials")
+	ErrorAuthorizationFailed  = errors.New("Login error: the given credentials are not authorized to access the server")
+	ErrorSetKeyspace          = errors.New("Cannot set the keyspace")
 )
 
 func (o *PoolOptions) defaults() {
@@ -138,7 +148,7 @@ type connectionPool struct {
 // nodes is in the format of "host:port" strings.
 func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (ConnectionPool, error) {
 	if len(nodes) <= 0 {
-		return nil, errors.New("At least one node is required")
+		return nil, ErrorEmptyNodeList
 	}
 
 	options.defaults()
@@ -175,12 +185,12 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	}
 
 	if ksDef == nil {
-		return nil, errors.New("Keyspace not found while trying to parse schema")
+		return nil, ErrorKeySpaceNotFound
 	}
 
 	cp.schema = newSchema(ksDef)
 	if cp.schema == nil {
-		return nil, errors.New("Cannot parse schema")
+		return nil, ErrorSchemaNotParseable
 	}
 
 	return cp, nil
@@ -243,7 +253,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 	}
 
 	// loop exited normally so it hit the retry limit
-	return errors.New("Max retries hit trying to run a Cassandra transaction")
+	return ErrorMaxRetriesReached
 }
 
 func (cp *connectionPool) randomNode(now int) (string, error) {
@@ -259,7 +269,7 @@ func (cp *connectionPool) randomNode(now int) (string, error) {
 		i = (i + 1) % n
 	}
 
-	return node, errors.New("All nodes are marked down, cannot acquire new connection")
+	return node, ErrorPoolExhausted
 }
 
 func (cp *connectionPool) acquire() (*connection, error) {
@@ -401,15 +411,14 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 	}
 	versionComponents := strings.Split(version, ".")
 	if len(versionComponents) < 1 {
-		return nil, errors.New(fmt.Sprint("Cannot parse the Thrift API version number: ", version))
+		return nil, ErrorInvalidThriftVersion
 	}
 	majorVersion, err := strconv.Atoi(versionComponents[0])
 	if err != nil {
-		return nil, errors.New(fmt.Sprint("Cannot parse the Thrift API version number: ", version))
+		return nil, ErrorInvalidThriftVersion
 	}
 	if majorVersion < LOWEST_COMPATIBLE_VERSION {
-		return nil, errors.New(fmt.Sprint("Unsupported Thrift API version, lowest supported is ", LOWEST_COMPATIBLE_VERSION,
-			", server reports ", majorVersion))
+		return nil, ErrorWrongThriftVersion
 	}
 
 	if len(authentication) > 0 {
@@ -420,10 +429,10 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 		}
 		autE, auzE, err := c.client.Login(ar)
 		if autE != nil {
-			return nil, errors.New("Login error: cannot authenticate with the given credentials")
+			return nil, ErrorAuthenticationFailed
 		}
 		if auzE != nil {
-			return nil, errors.New("Login error: the given credentials are not authorized to access the server")
+			return nil, ErrorAuthorizationFailed
 		}
 		if err != nil {
 			return nil, err
@@ -437,7 +446,7 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 	}
 	if ire != nil {
 		c.close()
-		return nil, errors.New("Cannot set the keyspace")
+		return nil, ErrorSetKeyspace
 	}
 
 	c.keyspace = keyspace
