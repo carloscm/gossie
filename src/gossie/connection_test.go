@@ -63,7 +63,9 @@ func TestNewConnectionPool(t *testing.T) {
 		t.Fatal("Invalid keyspace")
 	}
 
-	cp.Close()
+	if err = cp.Close(); err != nil {
+		t.Fatal("Error closing connection pool:", err)
+	}
 }
 
 // possible test for users of SimpleAuthenticator
