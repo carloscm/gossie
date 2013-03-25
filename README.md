@@ -35,7 +35,7 @@ GOPATH=$GOPATH:`pwd` go test gossie
 
 # Running the tests
 
-Launch a Cassandra instance in localhost:9160, create a keyspace named TestGossie, and execute the provided schema-test.txt to create the test column families. Now you can run the Gossie tests.
+Launch a Cassandra instance in localhost:9160 and execute the provided schema-test.txt with cassandra-cli to create the test keyspace and column families. Now you can run the Gossie tests.
 
 
 # Quickstart
