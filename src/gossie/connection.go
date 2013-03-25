@@ -18,7 +18,6 @@ import (
    timeout while waiting for an available connection slot
    panic handling inside run()?
    maybe more pooling options
-   Close()
 */
 
 // ConnectionPool implements a pool of Cassandra connections to one or more nodes
@@ -51,6 +50,7 @@ type PoolOptions struct {
 	ReadConsistency  int               // default read consistency
 	WriteConsistency int               // default write consistency
 	Timeout          int               // socket timeout in ms
+	CloseTimeout     int               // close timeout in ms
 	Recycle          int               // close connections after Recycle seconds
 	RecycleJitter    int               // max jitter to add to Recycle so not all connections close at the same time
 	Grace            int               // if a node is blacklisted try to contact it again after Grace seconds
@@ -75,6 +75,7 @@ const (
 	DEFAULT_READ_CONSISTENCY  = CONSISTENCY_QUORUM
 	DEFAULT_WRITE_CONSISTENCY = CONSISTENCY_QUORUM
 	DEFAULT_TIMEOUT           = 1000
+	DEFAULT_CLOSE_TIMEOUT     = 1000
 	DEFAULT_RECYCLE           = 60
 	DEFAULT_RECYCLE_JITTER    = 10
 	DEFAULT_GRACE             = 5
@@ -86,7 +87,18 @@ const (
 )
 
 var (
-	ErrorConnectionTimeout = errors.New("Connection timeout")
+	ErrorAuthenticationFailed = errors.New("Login error: cannot authenticate with the given credentials")
+	ErrorAuthorizationFailed  = errors.New("Login error: the given credentials are not authorized to access the server")
+	ErrorConnectionTimeout    = errors.New("Connection timeout")
+	ErrorEmptyNodeList        = errors.New("At least one node is required")
+	ErrorInvalidThriftVersion = errors.New("Cannot parse the Thrift API version number")
+	ErrorKeySpaceNotFound     = errors.New("Keyspace not found while trying to parse schema")
+	ErrorMaxRetriesReached    = errors.New("Max retries hit trying to run a Cassandra transaction")
+	ErrorPoolExhausted        = errors.New("All nodes are marked down, cannot acquire new connection")
+	ErrorSchemaNotParseable   = errors.New("Cannot parse schema")
+	ErrorSetKeyspace          = errors.New("Cannot set the keyspace")
+	ErrorWrongThriftVersion   = fmt.Errorf("Unsupported Thrift API version, lowest supported is %d", LOWEST_COMPATIBLE_VERSION)
+	ErrorCloseTimedOut        = errors.New("Connection pool close timed out")
 )
 
 func (o *PoolOptions) defaults() {
@@ -101,6 +113,9 @@ func (o *PoolOptions) defaults() {
 	}
 	if o.Timeout == 0 {
 		o.Timeout = DEFAULT_TIMEOUT
+	}
+	if o.CloseTimeout == 0 {
+		o.CloseTimeout = DEFAULT_CLOSE_TIMEOUT
 	}
 	if o.Recycle == 0 {
 		o.Recycle = DEFAULT_RECYCLE
@@ -138,7 +153,7 @@ type connectionPool struct {
 // nodes is in the format of "host:port" strings.
 func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (ConnectionPool, error) {
 	if len(nodes) <= 0 {
-		return nil, errors.New("At least one node is required")
+		return nil, ErrorEmptyNodeList
 	}
 
 	options.defaults()
@@ -159,7 +174,7 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	}
 
 	var ksDef *cassandra.KsDef
-	err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+	err := cp.run(func(c *connection) *transactionError {
 		var ire *cassandra.InvalidRequestException
 		var nfe *cassandra.NotFoundException
 		var err error
@@ -167,7 +182,7 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 		if nfe != nil {
 			ksDef = nil
 		}
-		return ire, nil, nil, err
+		return &transactionError{ire: ire, err: err}
 	})
 
 	if err != nil {
@@ -175,18 +190,38 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	}
 
 	if ksDef == nil {
-		return nil, errors.New("Keyspace not found while trying to parse schema")
+		return nil, ErrorKeySpaceNotFound
 	}
 
 	cp.schema = newSchema(ksDef)
 	if cp.schema == nil {
-		return nil, errors.New("Cannot parse schema")
+		return nil, ErrorSchemaNotParseable
 	}
 
 	return cp, nil
 }
 
-type transaction func(*connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error)
+type transactionError struct {
+	ire *cassandra.InvalidRequestException
+	ue  *cassandra.UnavailableException
+	te  *cassandra.TimedOutException
+	err error
+}
+
+func (e transactionError) Error() string {
+	if e.ire != nil {
+		return e.ire.Why
+	}
+	if e.ue != nil {
+		return "Consistency level couldn't be reached"
+	}
+	if e.te != nil {
+		return "Thrift RPC timeout was exceeded"
+	}
+	return e.err.Error()
+}
+
+type transaction func(*connection) *transactionError
 
 func (cp *connectionPool) run(t transaction) error {
 	return cp.runWithRetries(t, cp.options.Retries)
@@ -197,7 +232,6 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 	var err error
 
 	for tries := 0; tries < retries; tries++ {
-
 		// acquire a new connection if we are just starting out or after discarding one
 		if c == nil {
 			c, err = cp.acquire()
@@ -207,43 +241,33 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			}
 		}
 
-		ire, ue, te, err := t(c)
-
+		terr := t(c)
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if ire != nil {
+		if terr.ire != nil || terr.err != nil {
 			cp.release(c)
-			return errors.New(ire.String())
+			return terr
 		}
-
-		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if err != nil {
-			cp.release(c)
-			return err
-		}
-
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
-		if te != nil {
+		if terr.te != nil {
 			cp.blacklist(c.node)
 			c.close()
 			c = nil
 			continue
 		}
-
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
-		if ue != nil {
+		if terr.ue != nil {
 			cp.release(c)
 			c = nil
 			continue
 		}
-
 		// no errors, release connection and return
 		cp.release(c)
 		return nil
 	}
 
 	// loop exited normally so it hit the retry limit
-	return errors.New("Max retries hit trying to run a Cassandra transaction")
+	return ErrorMaxRetriesReached
 }
 
 func (cp *connectionPool) randomNode(now int) (string, error) {
@@ -259,7 +283,7 @@ func (cp *connectionPool) randomNode(now int) (string, error) {
 		i = (i + 1) % n
 	}
 
-	return node, errors.New("All nodes are marked down, cannot acquire new connection")
+	return node, ErrorPoolExhausted
 }
 
 func (cp *connectionPool) acquire() (*connection, error) {
@@ -270,7 +294,9 @@ func (cp *connectionPool) acquire() (*connection, error) {
 	now := int(time.Now().Unix())
 	if s.lastUsage+cp.options.Recycle+(rand.Int()%cp.options.RecycleJitter) < now {
 		if s.conn != nil {
-			s.conn.close()
+			if err := s.conn.close(); err != nil {
+				return nil, err
+			}
 		}
 		s.conn = nil
 	}
@@ -317,6 +343,27 @@ func (cp *connectionPool) blacklist(badNode string) {
 	cp.releaseEmpty()
 }
 
+func (cp *connectionPool) close() (err error) {
+	poolCloseTimeout := time.After(
+		time.Duration(cp.options.CloseTimeout) * time.Millisecond)
+
+	for i := 0; i < cp.options.Size; i++ {
+		select {
+		case s := <-cp.available:
+			if s.conn != nil {
+				if err = s.conn.close(); err != nil {
+					return err
+				}
+			}
+		case <-poolCloseTimeout:
+			return ErrorCloseTimedOut
+		default:
+			continue
+		}
+	}
+	return nil
+}
+
 func (cp *connectionPool) Reader() Reader {
 	return newReader(cp, cp.options.ReadConsistency)
 }
@@ -342,7 +389,7 @@ func (cp *connectionPool) Schema() *Schema {
 }
 
 func (cp *connectionPool) Close() error {
-	return nil
+	return cp.close()
 }
 
 type connection struct {
@@ -401,15 +448,14 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 	}
 	versionComponents := strings.Split(version, ".")
 	if len(versionComponents) < 1 {
-		return nil, errors.New(fmt.Sprint("Cannot parse the Thrift API version number: ", version))
+		return nil, ErrorInvalidThriftVersion
 	}
 	majorVersion, err := strconv.Atoi(versionComponents[0])
 	if err != nil {
-		return nil, errors.New(fmt.Sprint("Cannot parse the Thrift API version number: ", version))
+		return nil, ErrorInvalidThriftVersion
 	}
 	if majorVersion < LOWEST_COMPATIBLE_VERSION {
-		return nil, errors.New(fmt.Sprint("Unsupported Thrift API version, lowest supported is ", LOWEST_COMPATIBLE_VERSION,
-			", server reports ", majorVersion))
+		return nil, ErrorWrongThriftVersion
 	}
 
 	if len(authentication) > 0 {
@@ -420,10 +466,10 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 		}
 		autE, auzE, err := c.client.Login(ar)
 		if autE != nil {
-			return nil, errors.New("Login error: cannot authenticate with the given credentials")
+			return nil, ErrorAuthenticationFailed
 		}
 		if auzE != nil {
-			return nil, errors.New("Login error: the given credentials are not authorized to access the server")
+			return nil, ErrorAuthorizationFailed
 		}
 		if err != nil {
 			return nil, err
@@ -437,7 +483,7 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 	}
 	if ire != nil {
 		c.close()
-		return nil, errors.New("Cannot set the keyspace")
+		return nil, ErrorSetKeyspace
 	}
 
 	c.keyspace = keyspace
@@ -445,6 +491,6 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 	return c, nil
 }
 
-func (c *connection) close() {
-	c.transport.Close()
+func (c *connection) close() error {
+	return c.transport.Close()
 }
