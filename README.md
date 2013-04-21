@@ -154,13 +154,13 @@ Use a new `Batch()` call for every batch of writes you want to perform. Its inte
 - Query: secondary index read with buffering
 - High level mapping for Go slices
 - High level mapping for Go maps
-- Add low level interface for CQL 3.0 with prepared statement support
 
 
 # Not planned
 
 - Supercolumns
 - Dynamic composite comparator
+- CQL3. See https://github.com/tux21b/gocql
 
 
 # License
