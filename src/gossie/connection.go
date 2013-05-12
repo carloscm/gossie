@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/apesternikov/gossie/src/cassandra"
 	thrift "github.com/apesternikov/thrift4go/lib/go/src/thrift"
+	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -229,6 +230,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
 		if te != nil {
+			log.Printf("Node %s timed out, blacklisted", c.node)
 			cp.blacklist(c.node)
 			c.close()
 			c = nil
@@ -238,6 +240,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
 		if ue != nil {
+			log.Printf("Unavailable exception")
 			cp.release(c)
 			c = nil
 			continue
