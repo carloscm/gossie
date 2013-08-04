@@ -1,6 +1,7 @@
 package gossie
 
 import (
+	"bytes"
 	"errors"
 	"github.com/apesternikov/gossie/src/cassandra"
 )
@@ -123,6 +124,10 @@ type Reader interface {
 	// slice of Row pointers to the gathered rows, which may be empty if none were found. It returns nil only
 	// on error conditions
 	IndexedGet(*IndexedRange) ([]*Row, error)
+
+	//WideRowScan performs sequential scan for a range of columns in a single row. It will call the callback
+	// function with data read. Callback should return true to continue scanning or false to stop
+	WideRowScan(key, startColumn []byte, batchSize int64, callback func(*Column) bool) error
 }
 
 type reader struct {
@@ -416,6 +421,55 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 	}
 
 	return rowsFromTListKeySlice(ret), nil
+}
+
+func (r *reader) WideRowScan(key, startColumn []byte, batchSize int64, callback func(*Column) bool) error {
+	keyRange := cassandra.NewKeyRange()
+	keyRange.StartKey = key
+	keyRange.EndKey = key
+
+	var ret []*cassandra.KeySlice
+	for {
+		err := r.pool.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+			var ire *cassandra.InvalidRequestException
+			var ue *cassandra.UnavailableException
+			var te *cassandra.TimedOutException
+			var err error
+			ret, ire, ue, te, err = c.client.GetPagedSlice(r.cf, keyRange, startColumn, cassandra.ConsistencyLevel(r.consistencyLevel))
+			return ire, ue, te, err
+		})
+
+		if err != nil {
+			return err
+		}
+		if len(ret) == 0 {
+			return nil //finished
+		}
+		if len(ret) != 1 {
+			return errors.New("Unexpected return vector length")
+		}
+		columns := ret[0].Columns
+		if len(columns) != 0 && bytes.Equal(columns[0].Column.Name, startColumn) {
+			//skip the column we saw already
+			columns = columns[1:]
+		}
+		if len(columns) == 0 {
+			return nil //finished
+		}
+		startColumn = columns[len(columns)-1].Column.Name
+		for _, col := range columns {
+			c := &Column{
+				Name:      col.Column.Name,
+				Value:     col.Column.Value,
+				Timestamp: col.Column.Timestamp,
+				Ttl:       col.Column.Ttl,
+			}
+			if !callback(c) {
+				return nil // aborted by callback
+			}
+		}
+	}
+
 }
 
 func rowFromTListColumns(key []byte, tl []*cassandra.ColumnOrSuperColumn) *Row {
