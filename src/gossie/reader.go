@@ -127,7 +127,7 @@ type Reader interface {
 
 	//WideRowScan performs sequential scan for a range of columns in a single row. It will call the callback
 	// function with data read. Callback should return true to continue scanning or false to stop
-	WideRowScan(key, startColumn []byte, batchSize int64, callback func(*Column) bool) error
+	WideRowScan(key, startColumn []byte, batchSize int32, callback func(*Column) bool) error
 }
 
 type reader struct {
@@ -423,10 +423,11 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 	return rowsFromTListKeySlice(ret), nil
 }
 
-func (r *reader) WideRowScan(key, startColumn []byte, batchSize int64, callback func(*Column) bool) error {
+func (r *reader) WideRowScan(key, startColumn []byte, batchSize int32, callback func(*Column) bool) error {
 	keyRange := cassandra.NewKeyRange()
 	keyRange.StartKey = key
 	keyRange.EndKey = key
+	keyRange.Count = batchSize //yes, it is weird but this count means columns count for GetPagedSlice
 
 	var ret []*cassandra.KeySlice
 	for {
