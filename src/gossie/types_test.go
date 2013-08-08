@@ -374,3 +374,22 @@ func TestMarshalTime(t *testing.T) {
 	errorMarshal(t, v, BooleanType)
 	errorMarshal(t, v, DoubleType)
 }
+
+func TestMarshalUnmarshalZeroTime(t *testing.T) {
+	zeroT := *new(time.Time)
+	b, err := marshalTime(zeroT, LongType)
+	if err != nil {
+		t.Fatalf("Failed to marshal time: %v", err)
+	}
+	// now get back to where we were
+	unmarshaledT := new(time.Time)
+	err = unmarshalTime(b, LongType, unmarshaledT)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal time: %v", err)
+	}
+
+	// must still be zero time
+	if !unmarshaledT.IsZero() {
+		t.Fatalf("Unmarshaled time is not zero time: %#v", unmarshaledT)
+	}
+}
