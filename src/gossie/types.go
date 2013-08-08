@@ -229,7 +229,12 @@ func marshalInt(value int64, size int, typeDesc TypeDesc) ([]byte, error) {
 }
 
 func marshalTime(value time.Time, typeDesc TypeDesc) ([]byte, error) {
+	if value.IsZero() {
+		return []byte{}, nil
+	}
+
 	switch typeDesc {
+
 	// following Java conventions Cassandra standarizes this as millis
 	case LongType, BytesType, DateType:
 		valueI := value.UnixNano() / 1e6
@@ -421,6 +426,12 @@ func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) error {
 }
 
 func unmarshalTime(b []byte, typeDesc TypeDesc, value *time.Time) error {
+
+	if len(b) == 0 {
+		*value = *new(time.Time)
+		return nil
+	}
+
 	switch typeDesc {
 	case LongType, BytesType, DateType:
 		if len(b) != 8 {
