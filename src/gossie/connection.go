@@ -3,7 +3,7 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	"github.com/carloscm/gossie/src/cassandra"
+	"github.com/hailocab/gossie/src/cassandra"
 	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"math/rand"
 	"net"
