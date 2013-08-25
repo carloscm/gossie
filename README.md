@@ -1,3 +1,10 @@
+# This repo is not maintained anymore
+
+I've moved on from Cassandra, both for professional reasons and because I do not agree with the path the project is taking. For this reason I haven't worked on Gossie for months and I declare this repo unmaintained. I will keep it intact to avoid breaking imports.
+
+Happy forking!
+
+
 # About
 
 Gossie is a Go library for Apache Cassandra. It includes a wrapper for the Cassandra 1.0 Thrift bindings with utilities for connection pooling, primitive type marshaling and easy query building. It also includes a higher level layer that allows mapping structs to Cassandra column famlilies, with support for advanced features like composite column names.
