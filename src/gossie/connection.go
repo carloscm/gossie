@@ -3,7 +3,6 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	log "github.com/cihub/seelog"
 	"github.com/hailocab/gossie/src/cassandra"
 	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"math/rand"
@@ -289,16 +288,12 @@ func (cp *connectionPool) randomNode(now int) (string, error) {
 
 func (cp *connectionPool) acquire() (*connection, error) {
 	var c *connection
-	log.Debugf("ETF-129 attempting acquire. Channels avail %s", len(cp.available))
 	s := <-cp.available
-	defer log.Debugf("ETF-129 acquire finished. Channels avail %s", len(cp.available))
 
 	now := int(time.Now().Unix())
 	if s.lastUsage+cp.options.Recycle+(rand.Int()%cp.options.RecycleJitter) < now {
 		if s.conn != nil {
-			log.Debugf("ETF-129 Recycle close")
 			if err := s.conn.close(); err != nil {
-				log.Debug("ETF-129 Error during recycle close")
 				cp.releaseEmpty()
 				return nil, err
 			}
@@ -309,23 +304,19 @@ func (cp *connectionPool) acquire() (*connection, error) {
 	if s.conn == nil {
 		node, err := cp.randomNode(now)
 		if err != nil {
-			log.Debug("ETF-129 randomNode() failure")
 			cp.releaseEmpty()
 			return nil, err
 		}
 		c, err = newConnection(node, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
 		if err == ErrorConnectionTimeout {
-			log.Debugf("ETF-129 connection timeout on newConnection. Blacklisting %+v", node)
 			cp.blacklist(node)
 			return nil, err
 		}
 		if err != nil {
-			log.Debug("ETF-129 error on newConnection. ")
 			cp.releaseEmpty()
 			return nil, err
 		}
 	} else {
-		log.Debugf("ETF-129 acquired from slot %+v", s.conn)
 		c = s.conn
 	}
 
