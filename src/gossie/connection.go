@@ -295,6 +295,7 @@ func (cp *connectionPool) acquire() (*connection, error) {
 	if s.lastUsage+cp.options.Recycle+(rand.Int()%cp.options.RecycleJitter) < now {
 		if s.conn != nil {
 			if err := s.conn.close(); err != nil {
+				cp.releaseEmpty()
 				return nil, err
 			}
 		}
