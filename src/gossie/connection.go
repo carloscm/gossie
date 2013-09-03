@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hailocab/gossie/src/cassandra"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/hailocab/thrift4go/lib/go/src/thrift"
 	"math/rand"
 	"net"
 	"strconv"
