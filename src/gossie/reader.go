@@ -2,8 +2,8 @@ package gossie
 
 import (
 	"errors"
-	"github.com/apesternikov/thrift4go/lib/go/src/thrift"
 	"github.com/hailocab/gossie/src/cassandra"
+	"github.com/hailocab/thrift4go/lib/go/src/thrift"
 )
 
 /*

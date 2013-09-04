@@ -6,7 +6,7 @@ package cassandra
 
 import (
 	"fmt"
-	"github.com/apesternikov/thrift4go/lib/go/src/thrift"
+	"github.com/hailocab/thrift4go/lib/go/src/thrift"
 	"math"
 )
 
