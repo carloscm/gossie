@@ -237,6 +237,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			c, err = cp.acquire()
 			// nothing to do, cannot acquire a connection
 			if err != nil {
+				fmt.Printf("[PPROF] acquire error: %+v", terr)
 				return err
 			}
 		}
@@ -244,11 +245,13 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		terr := t(c)
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if terr.ire != nil || terr.err != nil {
+			fmt.Printf("[PPROF] irl error (release but note blacklist): %+v", terr)
 			cp.release(c)
 			return terr
 		}
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
 		if terr.te != nil {
+			fmt.Printf("[PPROF] te error (blacklist): %+v", terr)
 			cp.blacklist(c.node)
 			c.close()
 			c = nil
@@ -257,6 +260,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
 		if terr.ue != nil {
+			fmt.Printf("[PPROF] ue error (release but note blacklist): %+v", terr)
 			cp.release(c)
 			c = nil
 			continue
