@@ -247,11 +247,16 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		fmt.Printf("[PPROF] terr ire: %T,%+v te: %T,%+v ue: %T,%+v err: %T,%+v\n", terr.ire, terr.ire, terr.te, terr.te, terr.ue, terr.ue, terr.err, terr.err)
 
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if terr.ire != nil || terr.err != nil {
-			fmt.Printf("[PPROF] ire error (release but not blacklist): ire: %T\n", terr)
+		if terr.err != nil {
+			fmt.Printf("[PPROF] Thrift transport error: %T: %+v \n", terr.err, terr.err)
 			c.close()
 			c = nil
 			cp.releaseEmpty()
+			return terr
+		}
+		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
+		if terr.ire != nil {
+			cp.release(c)
 			return terr
 		}
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
