@@ -237,7 +237,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			c, err = cp.acquire()
 			// nothing to do, cannot acquire a connection
 			if err != nil {
-				fmt.Printf("[PPROF] acquire error: %+v", terr)
+				fmt.Printf("[PPROF] acquire error: %+v", err)
 				return err
 			}
 		}
