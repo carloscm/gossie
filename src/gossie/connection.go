@@ -246,9 +246,9 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if terr.ire != nil || terr.err != nil {
 			fmt.Printf("[PPROF] ire error (release but not blacklist): %+v\n", terr)
-			cp.blacklist(c.node)
 			c.close()
 			c = nil
+			cp.releaseEmpty()
 			return terr
 		}
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
