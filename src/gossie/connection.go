@@ -243,9 +243,12 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		}
 
 		terr := t(c)
+
+		fmt.Printf("[PPROF] terr ire: %T,%+v te: %T,%+v ue: %T,%+v err: %T,%+v\n", terr.ire, terr.ire, terr.te, terr.te, terr.ue, terr.ue, terr.err, terr.err)
+
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if terr.ire != nil || terr.err != nil {
-			fmt.Printf("[PPROF] ire error (release but not blacklist): %T: %+v\n", terr, terr)
+			fmt.Printf("[PPROF] ire error (release but not blacklist): ire: %T\n", terr)
 			c.close()
 			c = nil
 			cp.releaseEmpty()
