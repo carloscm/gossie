@@ -251,7 +251,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			return terr
 		}
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if terr.ire != nil || terr.err != nil {
+		if terr.ire != nil {
 			cp.release(c)
 			return terr
 		}
