@@ -477,7 +477,7 @@ func rowFromTListColumns(key []byte, tl []*cassandra.ColumnOrSuperColumn) *Row {
 	if tl == nil || len(tl) <= 0 {
 		return nil
 	}
-	r := &Row{Key: key}
+	r := &Row{Key: key, Columns: make([]*Column, 0, len(tl))}
 	for _, col := range tl {
 		if col.Column != nil {
 			c := &Column{
@@ -501,7 +501,7 @@ func rowFromTListColumns(key []byte, tl []*cassandra.ColumnOrSuperColumn) *Row {
 
 func rowsFromTMap(tm map[string][]*cassandra.ColumnOrSuperColumn) []*Row {
 	if tm == nil || len(tm) <= 0 {
-		return make([]*Row, 0) //TODO: nil slice work as empty slice
+		return nil
 	}
 	r := make([]*Row, 0, len(tm))
 	for skey, columns := range tm {
@@ -515,7 +515,7 @@ func rowsFromTMap(tm map[string][]*cassandra.ColumnOrSuperColumn) []*Row {
 
 func rowsColumnCountFromTMap(tm map[string]int32) []*RowColumnCount {
 	if tm == nil || len(tm) <= 0 {
-		return make([]*RowColumnCount, 0) //TODO: according to spec nil slice acts as enpty slice
+		return nil
 	}
 	r := make([]*RowColumnCount, 0, len(tm))
 	for skey, count := range tm {
@@ -528,7 +528,7 @@ func rowsColumnCountFromTMap(tm map[string]int32) []*RowColumnCount {
 
 func rowsFromTListKeySlice(tl []*cassandra.KeySlice) []*Row {
 	if tl == nil || len(tl) <= 0 {
-		return make([]*Row, 0) //TODO: according to spec nil slice acts as enpty slice
+		return nil
 	}
 	r := make([]*Row, 0)
 	for _, keySlice := range tl {
