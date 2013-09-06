@@ -478,25 +478,26 @@ func rowFromTListColumns(key []byte, tl []*cassandra.ColumnOrSuperColumn) *Row {
 		return nil
 	}
 	r := &Row{Key: key}
-	if len(tl) != 0 {
-		r.Columns = make([]*Column, 0, len(tl))
-		for _, col := range tl {
-			if col.Column != nil {
-				c := &Column{
-					Name:      col.Column.Name,
-					Value:     col.Column.Value,
-					Timestamp: col.Column.Timestamp,
-					Ttl:       col.Column.Ttl,
-				}
-				r.Columns = append(r.Columns, c)
-			} else if col.CounterColumn != nil {
-				v, _ := Marshal(col.CounterColumn.Value, LongType)
-				c := &Column{
-					Name:  col.CounterColumn.Name,
-					Value: v,
-				}
-				r.Columns = append(r.Columns, c)
+	if len(tl) == 0 {
+		return r
+	}
+	r.Columns = make([]*Column, 0, len(tl))
+	for _, col := range tl {
+		if col.Column != nil {
+			c := &Column{
+				Name:      col.Column.Name,
+				Value:     col.Column.Value,
+				Timestamp: col.Column.Timestamp,
+				Ttl:       col.Column.Ttl,
 			}
+			r.Columns = append(r.Columns, c)
+		} else if col.CounterColumn != nil {
+			v, _ := Marshal(col.CounterColumn.Value, LongType)
+			c := &Column{
+				Name:  col.CounterColumn.Name,
+				Value: v,
+			}
+			r.Columns = append(r.Columns, c)
 		}
 	}
 	return r
