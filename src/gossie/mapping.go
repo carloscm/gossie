@@ -85,7 +85,7 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 			Value:     serializedV,
 			Ttl:       0,
 			Timestamp: timeStamp,
-		})
+		}
 		c++
 	}
 	return &Row{

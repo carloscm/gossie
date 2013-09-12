@@ -261,11 +261,9 @@ func TestMapToRow(t *testing.T) {
 		if !reflect.DeepEqual(row.Key, []byte(id)) {
 			t.Fatal("Row key is incorrect", string(row.Key), m["Id"])
 		}
-		// For some reason cassandra returns empty columns too?!
-		// TODO: investigate.
-		//if len(row.Columns) != len(m)-1 {
-		//	t.Fatal(len(row.Columns), len(m))
-		//}
+		if len(row.Columns) != len(m) {
+			t.Fatal(len(row.Columns), len(m))
+		}
 		m1, err := RowToMap("Id", m, row)
 		if err != nil {
 			t.Fatal(err)
