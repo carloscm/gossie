@@ -69,7 +69,6 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 		return nil, errors.New(fmt.Sprint("Error marshaling key ", keyField, " with value ", key, "", err))
 	}
 	cols := make([]*Column, len(m))
-	c := 0
 	for k, v := range m {
 		ctype := defaultType(reflect.TypeOf(v))
 		serializedV, err := Marshal(v, ctype)
@@ -86,7 +85,6 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 			Ttl:       0,
 			Timestamp: timeStamp,
 		})
-		c++ // Excuse me the pun
 	}
 	return &Row{
 		Key:     serializedKey,
@@ -103,6 +101,9 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 func RowToMap(keyField string, scheme map[string]interface{}, r *Row) (map[string]interface{}, error) {
 	ret := map[string]interface{}{}
 	for _, col := range r.Columns {
+		if col == nil {
+			continue
+		}
 		colName := string(col.Name)
 		schVal, has := scheme[colName]
 		if !has {
@@ -110,17 +111,17 @@ func RowToMap(keyField string, scheme map[string]interface{}, r *Row) (map[strin
 		}
 		schValType := reflect.TypeOf(schVal)
 		ctype := defaultType(schValType)
-		mapVal := reflect.Zero(schValType).Interface()
-		err := Unmarshal(col.Value, ctype, &mapVal)
+		mapVal := reflect.New(schValType).Interface()
+		err := Unmarshal(col.Value, ctype, mapVal)
 		if err != nil {
 			return nil, errors.New(fmt.Sprint("Error marshaling field value for field ", colName, ":", err))
 		}
 		mapKey := ""
-		err = Unmarshal(col.Value, UTF8Type, &mapKey)
+		err = Unmarshal(col.Name, UTF8Type, &mapKey)
 		if err != nil {
 			return nil, errors.New(fmt.Sprint("Error marshaling field name for field ", colName, ":", err))
 		}
-		ret[mapKey] = mapVal
+		ret[mapKey] = reflect.Indirect(reflect.ValueOf(mapVal)).Interface()
 	}
 	return ret, nil
 }

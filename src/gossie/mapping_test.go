@@ -225,3 +225,53 @@ func TestMap(t *testing.T) {
 		shell.checkFullMap(t)
 	}
 }
+
+var testMaps = []map[string]interface{}{
+	{
+		"Id":       "Hello",
+		"Age":      25,
+		"Whatever": 0.2,
+	},
+	// Testing all gossie supported times.
+	{
+		"Id":         "34e8f7-c45wc-c45w45cdx",
+		"AnInt":      25,
+		"AnInt8":     int8(5),
+		"AnInt16":    int16(5),
+		"AnInt32":    int32(5),
+		"AnInt64":    int64(5),
+		"AFloat":     1.45,
+		"AFloat32":   float32(1.5),
+		"AFloat64":   float64(1.5),
+		"AString":    "Heyy",
+		"ABool":      false,
+		"AByteSlice": []byte("Ahoi"),
+	},
+}
+
+// We are using the serialized maps themselves as
+// a scheme for unserializing.
+func TestMapToRow(t *testing.T) {
+	for _, m := range testMaps {
+		id := m["Id"].(string)
+		row, err := MapToRow("Id", m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(row.Key, []byte(id)) {
+			t.Fatal("Row key is incorrect", string(row.Key), m["Id"])
+		}
+		// For some reason cassandra returns empty columns too?!
+		// TODO: investigate.
+		//if len(row.Columns) != len(m)-1 {
+		//	t.Fatal(len(row.Columns), len(m))
+		//}
+		m1, err := RowToMap("Id", m, row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(m, m1) {
+			t.Fatal(m, m1)
+		}
+	}
+}
