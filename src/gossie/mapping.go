@@ -69,6 +69,7 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 		return nil, errors.New(fmt.Sprint("Error marshaling key ", keyField, " with value ", key, "", err))
 	}
 	cols := make([]*Column, len(m))
+	c := 0
 	for k, v := range m {
 		ctype := defaultType(reflect.TypeOf(v))
 		serializedV, err := Marshal(v, ctype)
@@ -79,12 +80,13 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 		if err != nil {
 			return nil, errors.New(fmt.Sprint("Error marshaling field name for field ", k, ":", err))
 		}
-		cols = append(cols, &Column{
+		cols[c] = &Column{
 			Name:      serializedK,
 			Value:     serializedV,
 			Ttl:       0,
 			Timestamp: timeStamp,
 		})
+		c++
 	}
 	return &Row{
 		Key:     serializedKey,
@@ -101,9 +103,6 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 func RowToMap(keyField string, scheme map[string]interface{}, r *Row) (map[string]interface{}, error) {
 	ret := map[string]interface{}{}
 	for _, col := range r.Columns {
-		if col == nil {
-			continue
-		}
 		colName := string(col.Name)
 		schVal, has := scheme[colName]
 		if !has {
