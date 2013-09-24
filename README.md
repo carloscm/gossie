@@ -1,9 +1,6 @@
-# This repo is not maintained anymore
+# This is a fork
 
-I've moved on from Cassandra, both for professional reasons and because I do not agree with the path the project is taking. For this reason I haven't worked on Gossie for months and I declare this repo unmaintained. I will keep it intact to avoid breaking imports.
-
-Happy forking!
-
+This is a fork of the original Gossie library created by carloscm.
 
 # About
 
