@@ -1,3 +1,4 @@
+// Experimental fork of carloscm/gossie
 package gossie
 
 import (
