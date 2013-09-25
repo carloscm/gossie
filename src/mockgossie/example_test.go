@@ -10,7 +10,7 @@ type ExampleData struct {
 	Value string `name:"value"`
 }
 
-func ExampleMock() {
+func Example() {
 	mock := NewMockConnectionPool()
 
 	data := &ExampleData{
