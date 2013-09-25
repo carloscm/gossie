@@ -1,7 +1,7 @@
 package gossie
 
 import (
-	"github.com/carloscm/gossie/src/cassandra"
+	"github.com/wadey/gossie/src/cassandra"
 	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"time"
 )
