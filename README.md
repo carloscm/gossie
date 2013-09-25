@@ -2,6 +2,10 @@
 
 This is a fork of the original Gossie library created by carloscm.
 
+Some of the changes / additions in this fork:
+
+- the `mockgossie` package, which implements an in-memory store for your tests.
+
 # About
 
 Gossie is a Go library for Apache Cassandra. It includes a wrapper for the Cassandra 1.0 Thrift bindings with utilities for connection pooling, primitive type marshaling and easy query building. It also includes a higher level layer that allows mapping structs to Cassandra column famlilies, with support for advanced features like composite column names.
