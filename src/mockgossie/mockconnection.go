@@ -1,3 +1,14 @@
+// Mock in-memory implementation for gossie. use NewMockConnectionPool to
+// create a gossie.ConnectionPool that stores Batch() mutations in an internal
+// map[string][]*gossie.Row.
+//
+// TODO:
+//   - Not all methods are implemented
+//   - Change the internal map key from string to []byte
+//
+// Warning: API not finalized, subject to change.
+//
+// See the example.
 package mockgossie
 
 import (
