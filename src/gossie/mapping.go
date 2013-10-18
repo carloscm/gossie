@@ -159,7 +159,7 @@ func (m *sparseMapping) MarshalComponent(component interface{}, position int) ([
 	return b, nil
 }
 
-func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *structInspection, []byte, error) {
+func (m *sparseMapping) startMap(source interface{}, compact bool) (*Row, *reflect.Value, *structInspection, []byte, error) {
 	v, si, err := validateAndInspectStruct(source)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -179,16 +179,29 @@ func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *str
 	}
 
 	// prepare composite, if needed
-	composite := make([]byte, 0)
-	for _, c := range m.components {
+	var composite []byte
+	if compact && len(m.components) == 1 {
+		c := m.components[0]
 		if f, found := si.goFields[c]; found {
-			b, err := f.marshalValue(v)
+			composite, err = f.marshalValue(v)
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
-			composite = append(composite, packComposite(b, eocEquals)...)
 		} else {
 			return nil, nil, nil, nil, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+		}
+	} else {
+		composite = make([]byte, 0)
+		for _, c := range m.components {
+			if f, found := si.goFields[c]; found {
+				b, err := f.marshalValue(v)
+				if err != nil {
+					return nil, nil, nil, nil, err
+				}
+				composite = append(composite, packComposite(b, eocEquals)...)
+			} else {
+				return nil, nil, nil, nil, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+			}
 		}
 	}
 
@@ -196,7 +209,7 @@ func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *str
 }
 
 func (m *sparseMapping) Map(source interface{}) (*Row, error) {
-	row, v, si, composite, err := m.startMap(source)
+	row, v, si, composite, err := m.startMap(source, false)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +388,7 @@ func (m *compactMapping) Cf() string {
 }
 
 func (m *compactMapping) Map(source interface{}) (*Row, error) {
-	row, v, si, composite, err := m.startMap(source)
+	row, v, si, composite, err := m.startMap(source, true)
 	if err != nil {
 		return nil, err
 	}
@@ -408,12 +421,24 @@ func (m *compactMapping) Unmap(destination interface{}, provider RowProvider) er
 		return err
 	}
 
-	components, err := m.extractComponents(column, v, 0)
-	if err != nil {
-		return err
-	}
-	if err := m.unmapComponents(v, si, components); err != nil {
-		return err
+	if len(m.components) == 1 {
+		c := m.components[0]
+		if f, found := si.goFields[c]; found {
+			err := f.unmarshalValue(column.Name, v)
+			if err != nil {
+				return err
+			}
+		} else {
+			return errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+		}
+	} else {
+		components, err := m.extractComponents(column, v, 0)
+		if err != nil {
+			return err
+		}
+		if err := m.unmapComponents(v, si, components); err != nil {
+			return err
+		}
 	}
 	if f, found := si.goFields[m.value]; found {
 		err := f.unmarshalValue(column.Value, v)
