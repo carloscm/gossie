@@ -6,7 +6,7 @@ package cassandra
 
 import (
 	"fmt"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/hailocab/thrift4go/lib/go/src/thrift"
 	"math"
 )
 
@@ -296,7 +296,7 @@ func (p CqlResultType) IsEnum() bool {
  * @param value. The data associated with the name.  Maximum 2GB long, but in practice you should limit it to small numbers of MB (since Thrift must read the full value into memory to operate on it).
  * @param timestamp. The timestamp is used for conflict detection/resolution when two columns with same name need to be compared.
  * @param ttl. An optional, positive delay (in seconds) after which the column will be automatically deleted.
- * 
+ *
  * Attributes:
  *  - Name
  *  - Value
@@ -674,7 +674,7 @@ func (p *Column) TStructFields() thrift.TFieldContainer {
  * @param name. see Column.name.
  * @param columns. A collection of standard Columns.  The columns within a super column are defined in an adhoc manner.
  *                 Columns within a super column do not have to have matching structures (similarly named child columns).
- * 
+ *
  * Attributes:
  *  - Name
  *  - Columns
@@ -1429,15 +1429,15 @@ func (p *CounterSuperColumn) TStructFields() thrift.TFieldContainer {
  * instances of ColumnOrSuperColumn will have the requested SuperColumn in the attribute super_column. For queries resulting
  * in Columns, those values will be in the attribute column. This change was made between 0.3 and 0.4 to standardize on
  * single query methods that may return either a SuperColumn or Column.
- * 
+ *
  * If the query was on a counter column family, you will either get a counter_column (instead of a column) or a
  * counter_super_column (instead of a super_column)
- * 
+ *
  * @param column. The Column returned by get() or get_slice().
  * @param super_column. The SuperColumn returned by get() or get_slice().
  * @param counter_column. The Counterolumn returned by get() or get_slice().
  * @param counter_super_column. The CounterSuperColumn returned by get() or get_slice().
- * 
+ *
  * Attributes:
  *  - Column
  *  - SuperColumn
@@ -1930,7 +1930,7 @@ func (p *NotFoundException) TStructFields() thrift.TFieldContainer {
 /**
  * Invalid request could mean keyspace or column family does not exist, required parameters are missing, or a parameter is malformed.
  * why contains an associated error message.
- * 
+ *
  * Attributes:
  *  - Why
  */
@@ -2317,7 +2317,7 @@ func (p *TimedOutException) TStructFields() thrift.TFieldContainer {
 
 /**
  * invalid authentication request (invalid keyspace, user does not exist, or credentials invalid)
- * 
+ *
  * Attributes:
  *  - Why
  */
@@ -2490,7 +2490,7 @@ func (p *AuthenticationException) TStructFields() thrift.TFieldContainer {
 
 /**
  * invalid authorization request (user does not have access to keyspace)
- * 
+ *
  * Attributes:
  *  - Why
  */
@@ -2771,9 +2771,9 @@ func (p *SchemaDisagreementException) TStructFields() thrift.TFieldContainer {
 /**
  * ColumnParent is used when selecting groups of columns from the same ColumnFamily. In directory structure terms, imagine
  * ColumnParent as ColumnPath + '/../'.
- * 
+ *
  * See also <a href="cassandra.html#Struct_ColumnPath">ColumnPath</a>
- * 
+ *
  * Attributes:
  *  - ColumnFamily
  *  - SuperColumn
@@ -3017,13 +3017,13 @@ func (p *ColumnParent) TStructFields() thrift.TFieldContainer {
 /**
  * The ColumnPath is the path to a single column in Cassandra. It might make sense to think of ColumnPath and
  * ColumnParent in terms of a directory structure.
- * 
+ *
  * ColumnPath is used to looking up a single column.
- * 
+ *
  * @param column_family. The name of the CF of the column being looked up.
  * @param super_column. The super column name.
  * @param column. The column name.
- * 
+ *
  * Attributes:
  *  - ColumnFamily
  *  - SuperColumn
@@ -3335,7 +3335,7 @@ func (p *ColumnPath) TStructFields() thrift.TFieldContainer {
 /**
  * A slice range is a structure that stores basic range, ordering and limit information for a query that will return
  * multiple columns. It could be thought of as Cassandra's version of LIMIT and ORDER BY
- * 
+ *
  * @param start. The column name to start the slice with. This attribute is not required, though there is no default value,
  *               and can be safely set to '', i.e., an empty byte array, to start with the first column name. Otherwise, it
  *               must a valid value under the rules of the Comparator defined for the given ColumnFamily.
@@ -3347,7 +3347,7 @@ func (p *ColumnPath) TStructFields() thrift.TFieldContainer {
  *               materialize the whole result into memory before returning it to the client, so be aware that you may
  *               be better served by iterating through slices by passing the last value of one call in as the 'start'
  *               of the next instead of increasing 'count' arbitrarily large.
- * 
+ *
  * Attributes:
  *  - Start
  *  - Finish
@@ -3707,15 +3707,15 @@ func (p *SliceRange) TStructFields() thrift.TFieldContainer {
 /**
  * A SlicePredicate is similar to a mathematic predicate (see http://en.wikipedia.org/wiki/Predicate_(mathematical_logic)),
  * which is described as "a property that the elements of a set have in common."
- * 
+ *
  * SlicePredicate's in Cassandra are described with either a list of column_names or a SliceRange.  If column_names is
  * specified, slice_range is ignored.
- * 
+ *
  * @param column_name. A list of column names to retrieve. This can be used similar to Memcached's "multi-get" feature
  *                     to fetch N known column names. For instance, if you know you wish to fetch columns 'Joe', 'Jack',
  *                     and 'Jim' you can pass those column names as a list to fetch all three at once.
  * @param slice_range. A SliceRange describing how to range, order, and/or limit the slice.
- * 
+ *
  * Attributes:
  *  - ColumnNames
  *  - SliceRange
@@ -4613,7 +4613,7 @@ func (p *IndexClause) TStructFields() thrift.TFieldContainer {
  * than the start one.  Thus, a range from keyX to keyX is a
  * one-element range, but a range from tokenY to tokenY is the
  * full ring.
- * 
+ *
  * Attributes:
  *  - StartKey
  *  - EndKey
@@ -5055,11 +5055,11 @@ func (p *KeyRange) TStructFields() thrift.TFieldContainer {
 
 /**
  * A KeySlice is key followed by the data it maps to. A collection of KeySlice is returned by the get_range_slice operation.
- * 
+ *
  * @param key. a row key
  * @param columns. List of data represented by the key. Typically, the list is pared down to only the columns specified by
  *                 a SlicePredicate.
- * 
+ *
  * Attributes:
  *  - Key
  *  - Columns
@@ -5552,7 +5552,7 @@ func (p *KeyCount) TStructFields() thrift.TFieldContainer {
 
 /**
  * Note that the timestamp is only optional in case of counter deletion.
- * 
+ *
  * Attributes:
  *  - Timestamp
  *  - SuperColumn
@@ -5869,7 +5869,7 @@ func (p *Deletion) TStructFields() thrift.TFieldContainer {
  * A Mutation is either an insert (represented by filling column_or_supercolumn) or a deletion (represented by filling the deletion attribute).
  * @param column_or_supercolumn. An insert to a column or supercolumn (possibly counter column or supercolumn)
  * @param deletion. A deletion of a column or supercolumn
- * 
+ *
  * Attributes:
  *  - ColumnOrSupercolumn
  *  - Deletion
@@ -6420,7 +6420,7 @@ func (p *EndpointDetails) TStructFields() thrift.TFieldContainer {
  * @param end_token The last token in the range
  * @param endpoints The endpoints responsible for the range (listed by their configured listen_address)
  * @param rpc_endpoints The endpoints responsible for the range (listed by their configured rpc_address)
- * 
+ *
  * Attributes:
  *  - StartToken
  *  - EndToken
@@ -6920,7 +6920,7 @@ func (p *TokenRange) TStructFields() thrift.TFieldContainer {
 
 /**
  * Authentication requests can contain any data, dependent on the IAuthenticator used
- * 
+ *
  * Attributes:
  *  - Credentials
  */
@@ -10129,7 +10129,7 @@ func (p *KsDef) TStructFields() thrift.TFieldContainer {
 
 /**
  * Row returned from a CQL query
- * 
+ *
  * Attributes:
  *  - Key
  *  - Columns

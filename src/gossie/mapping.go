@@ -54,6 +54,76 @@ var (
 	noMoreComponents = errors.New("No more components allowed")
 )
 
+// Converts a map to a cassandra row.
+// TODO: consider implementing the Mapping interface.
+func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
+	timeStamp := now()
+	key, hasKey := m[keyField]
+	if !hasKey {
+		return nil, errors.New(fmt.Sprint("Error mapping map to row, keyfield ", keyField, "is empty"))
+	}
+	delete(m, keyField)
+	serializedKey, err := Marshal(key, UTF8Type)
+	if err != nil {
+		return nil, errors.New(fmt.Sprint("Error marshaling key ", keyField, " with value ", key, "", err))
+	}
+	cols := make([]*Column, len(m))
+	c := 0
+	for k, v := range m {
+		ctype := defaultType(reflect.TypeOf(v))
+		serializedV, err := Marshal(v, ctype)
+		if err != nil {
+			return nil, errors.New(fmt.Sprint("Error marshaling field value for field ", k, ":", err))
+		}
+		serializedK, err := Marshal(k, UTF8Type)
+		if err != nil {
+			return nil, errors.New(fmt.Sprint("Error marshaling field name for field ", k, ":", err))
+		}
+		cols[c] = &Column{
+			Name:      serializedK,
+			Value:     serializedV,
+			Ttl:       0,
+			Timestamp: timeStamp,
+		}
+		c++
+	}
+	return &Row{
+		Key:     serializedKey,
+		Columns: cols,
+	}, nil
+}
+
+// Converts a cassandra row to a map.
+// Since the data comes out of cassandra as []byte, without any kind of type, we
+// have to use a scheme map to obtain the type information from.
+// What's the point of not using a struct when you still have to define a scheme as a map?
+// The answer is maps can still be created at runtime, while structs must be known at compile time.
+// This way, we can still handle data which structure is not known ahead of time (eg. or comes from a config).
+func RowToMap(keyField string, scheme map[string]interface{}, r *Row) (map[string]interface{}, error) {
+	ret := map[string]interface{}{}
+	for _, col := range r.Columns {
+		colName := string(col.Name)
+		schVal, has := scheme[colName]
+		if !has {
+			return nil, errors.New(fmt.Sprint("Error unmarshaling field with key", colName, ": not present in scheme map."))
+		}
+		schValType := reflect.TypeOf(schVal)
+		ctype := defaultType(schValType)
+		mapVal := reflect.New(schValType).Interface()
+		err := Unmarshal(col.Value, ctype, mapVal)
+		if err != nil {
+			return nil, errors.New(fmt.Sprint("Error marshaling field value for field ", colName, ":", err))
+		}
+		mapKey := ""
+		err = Unmarshal(col.Name, UTF8Type, &mapKey)
+		if err != nil {
+			return nil, errors.New(fmt.Sprint("Error marshaling field name for field ", colName, ":", err))
+		}
+		ret[mapKey] = reflect.Indirect(reflect.ValueOf(mapVal)).Interface()
+	}
+	return ret, nil
+}
+
 // NewMapping looks up the field tag 'mapping' in the passed struct type
 // to decide which mapping it is using, then builds a mapping using the 'cf',
 // 'key', 'cols' and 'value' field tags.

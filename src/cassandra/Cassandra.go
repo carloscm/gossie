@@ -6,7 +6,7 @@ package cassandra
 
 import (
 	"fmt"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/hailocab/thrift4go/lib/go/src/thrift"
 	"math"
 )
 
@@ -34,7 +34,7 @@ type ICassandra interface {
 	/**
 	 * Get the Column or SuperColumn at the given column_path. If no value is present, NotFoundException is thrown. (This is
 	 * the only method that can throw an exception under non-failure conditions.)
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - ColumnPath
@@ -44,7 +44,7 @@ type ICassandra interface {
 	/**
 	 * Get the group of columns contained by column_parent (either a ColumnFamily name or a ColumnFamily/SuperColumn name
 	 * pair) specified by the given SlicePredicate. If no matching values are found, an empty list is returned.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - ColumnParent
@@ -55,7 +55,7 @@ type ICassandra interface {
 	/**
 	 * returns the number of columns matching <code>predicate</code> for a particular <code>key</code>,
 	 * <code>ColumnFamily</code> and optionally <code>SuperColumn</code>.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - ColumnParent
@@ -65,7 +65,7 @@ type ICassandra interface {
 	GetCount(key []byte, column_parent *ColumnParent, predicate *SlicePredicate, consistency_level ConsistencyLevel) (retval450 int32, ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 * Performs a get_slice for column_parent and predicate for the given keys in parallel.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Keys
 	 *  - ColumnParent
@@ -75,7 +75,7 @@ type ICassandra interface {
 	MultigetSlice(keys thrift.TList, column_parent *ColumnParent, predicate *SlicePredicate, consistency_level ConsistencyLevel) (retval451 thrift.TMap, ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 * Perform a get_count in parallel on the given list<binary> keys. The return value maps keys to the count found.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Keys
 	 *  - ColumnParent
@@ -85,7 +85,7 @@ type ICassandra interface {
 	MultigetCount(keys thrift.TList, column_parent *ColumnParent, predicate *SlicePredicate, consistency_level ConsistencyLevel) (retval452 thrift.TMap, ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 * returns a subset of columns for a contiguous range of keys.
-	 * 
+	 *
 	 * Parameters:
 	 *  - ColumnParent
 	 *  - Predicate
@@ -95,7 +95,7 @@ type ICassandra interface {
 	GetRangeSlices(column_parent *ColumnParent, predicate *SlicePredicate, range_a1 *KeyRange, consistency_level ConsistencyLevel) (retval453 thrift.TList, ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 * Returns the subset of columns specified in SlicePredicate for the rows matching the IndexClause
-	 * 
+	 *
 	 * Parameters:
 	 *  - ColumnParent
 	 *  - IndexClause
@@ -105,7 +105,7 @@ type ICassandra interface {
 	GetIndexedSlices(column_parent *ColumnParent, index_clause *IndexClause, column_predicate *SlicePredicate, consistency_level ConsistencyLevel) (retval454 thrift.TList, ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 * Insert a Column at the given column_parent.column_family and optional column_parent.super_column.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - ColumnParent
@@ -115,7 +115,7 @@ type ICassandra interface {
 	Insert(key []byte, column_parent *ColumnParent, column *Column, consistency_level ConsistencyLevel) (ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 * Increment or decrement a counter.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - ColumnParent
@@ -127,7 +127,7 @@ type ICassandra interface {
 	 * Remove data from the row specified by key at the granularity specified by column_path, and the given timestamp. Note
 	 * that all the values in column_path besides column_path.column_family are truly optional: you can remove the entire
 	 * row by just specifying the ColumnFamily, or you can remove a SuperColumn or a single Column by specifying those levels too.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - ColumnPath
@@ -139,7 +139,7 @@ type ICassandra interface {
 	 * Remove a counter at the specified location.
 	 * Note that counters have limited support for deletes: if you remove a counter, you must wait to issue any following update
 	 * until the delete has reached all the nodes and all of them have been fully compacted.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Key
 	 *  - Path
@@ -148,10 +148,10 @@ type ICassandra interface {
 	RemoveCounter(key []byte, path *ColumnPath, consistency_level ConsistencyLevel) (ire *InvalidRequestException, ue *UnavailableException, te *TimedOutException, err error)
 	/**
 	 *   Mutate many columns or super columns for many row keys. See also: Mutation.
-	 * 
+	 *
 	 *   mutation_map maps key to column family to a list of Mutation objects to take place at that scope.
 	 * *
-	 * 
+	 *
 	 * Parameters:
 	 *  - MutationMap
 	 *  - ConsistencyLevel
@@ -164,7 +164,7 @@ type ICassandra interface {
 	 * only marks the data as deleted.
 	 * The operation succeeds only if all hosts in the cluster at available and will throw an UnavailableException if
 	 * some hosts are down.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Cfname
 	 */
@@ -193,10 +193,10 @@ type ICassandra interface {
 	 * to list of endpoints, because you can't use Thrift structs as
 	 * map keys:
 	 * https://issues.apache.org/jira/browse/THRIFT-162
-	 * 
+	 *
 	 * for the same reason, we can't return a set here, even though
 	 * order is neither important nor predictable.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Keyspace
 	 */
@@ -211,7 +211,7 @@ type ICassandra interface {
 	DescribeSnitch() (retval467 string, err error)
 	/**
 	 * describe specified keyspace
-	 * 
+	 *
 	 * Parameters:
 	 *  - Keyspace
 	 */
@@ -219,10 +219,10 @@ type ICassandra interface {
 	/**
 	 * experimental API for hadoop/parallel query support.
 	 * may change violently and without warning.
-	 * 
+	 *
 	 * returns list of token strings such that first subrange is (list[0], list[1]],
 	 * next is (list[1], list[2]], etc.
-	 * 
+	 *
 	 * Parameters:
 	 *  - CfName
 	 *  - StartToken
@@ -232,42 +232,42 @@ type ICassandra interface {
 	DescribeSplits(cfName string, start_token string, end_token string, keys_per_split int32) (retval469 thrift.TList, ire *InvalidRequestException, err error)
 	/**
 	 * adds a column family. returns the new schema id.
-	 * 
+	 *
 	 * Parameters:
 	 *  - CfDef
 	 */
 	SystemAddColumnFamily(cf_def *CfDef) (retval470 string, ire *InvalidRequestException, sde *SchemaDisagreementException, err error)
 	/**
 	 * drops a column family. returns the new schema id.
-	 * 
+	 *
 	 * Parameters:
 	 *  - ColumnFamily
 	 */
 	SystemDropColumnFamily(column_family string) (retval471 string, ire *InvalidRequestException, sde *SchemaDisagreementException, err error)
 	/**
 	 * adds a keyspace and any column families that are part of it. returns the new schema id.
-	 * 
+	 *
 	 * Parameters:
 	 *  - KsDef
 	 */
 	SystemAddKeyspace(ks_def *KsDef) (retval472 string, ire *InvalidRequestException, sde *SchemaDisagreementException, err error)
 	/**
 	 * drops a keyspace and any column families that are part of it. returns the new schema id.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Keyspace
 	 */
 	SystemDropKeyspace(keyspace string) (retval473 string, ire *InvalidRequestException, sde *SchemaDisagreementException, err error)
 	/**
 	 * updates properties of a keyspace. returns the new schema id.
-	 * 
+	 *
 	 * Parameters:
 	 *  - KsDef
 	 */
 	SystemUpdateKeyspace(ks_def *KsDef) (retval474 string, ire *InvalidRequestException, sde *SchemaDisagreementException, err error)
 	/**
 	 * updates properties of a column family. returns the new schema id.
-	 * 
+	 *
 	 * Parameters:
 	 *  - CfDef
 	 */
@@ -275,7 +275,7 @@ type ICassandra interface {
 	/**
 	 * Executes a CQL (Cassandra Query Language) statement and returns a
 	 * CqlResult containing the results.
-	 * 
+	 *
 	 * Parameters:
 	 *  - Query
 	 *  - Compression
@@ -443,7 +443,7 @@ func (p *CassandraClient) RecvSetKeyspace() (ire *InvalidRequestException, err e
 /**
  * Get the Column or SuperColumn at the given column_path. If no value is present, NotFoundException is thrown. (This is
  * the only method that can throw an exception under non-failure conditions.)
- * 
+ *
  * Parameters:
  *  - Key
  *  - ColumnPath
@@ -524,7 +524,7 @@ func (p *CassandraClient) RecvGet() (value *ColumnOrSuperColumn, ire *InvalidReq
 /**
  * Get the group of columns contained by column_parent (either a ColumnFamily name or a ColumnFamily/SuperColumn name
  * pair) specified by the given SlicePredicate. If no matching values are found, an empty list is returned.
- * 
+ *
  * Parameters:
  *  - Key
  *  - ColumnParent
@@ -604,7 +604,7 @@ func (p *CassandraClient) RecvGetSlice() (value thrift.TList, ire *InvalidReques
 /**
  * returns the number of columns matching <code>predicate</code> for a particular <code>key</code>,
  * <code>ColumnFamily</code> and optionally <code>SuperColumn</code>.
- * 
+ *
  * Parameters:
  *  - Key
  *  - ColumnParent
@@ -683,7 +683,7 @@ func (p *CassandraClient) RecvGetCount() (value int32, ire *InvalidRequestExcept
 
 /**
  * Performs a get_slice for column_parent and predicate for the given keys in parallel.
- * 
+ *
  * Parameters:
  *  - Keys
  *  - ColumnParent
@@ -762,7 +762,7 @@ func (p *CassandraClient) RecvMultigetSlice() (value thrift.TMap, ire *InvalidRe
 
 /**
  * Perform a get_count in parallel on the given list<binary> keys. The return value maps keys to the count found.
- * 
+ *
  * Parameters:
  *  - Keys
  *  - ColumnParent
@@ -841,7 +841,7 @@ func (p *CassandraClient) RecvMultigetCount() (value thrift.TMap, ire *InvalidRe
 
 /**
  * returns a subset of columns for a contiguous range of keys.
- * 
+ *
  * Parameters:
  *  - ColumnParent
  *  - Predicate
@@ -920,7 +920,7 @@ func (p *CassandraClient) RecvGetRangeSlices() (value thrift.TList, ire *Invalid
 
 /**
  * Returns the subset of columns specified in SlicePredicate for the rows matching the IndexClause
- * 
+ *
  * Parameters:
  *  - ColumnParent
  *  - IndexClause
@@ -999,7 +999,7 @@ func (p *CassandraClient) RecvGetIndexedSlices() (value thrift.TList, ire *Inval
 
 /**
  * Insert a Column at the given column_parent.column_family and optional column_parent.super_column.
- * 
+ *
  * Parameters:
  *  - Key
  *  - ColumnParent
@@ -1077,7 +1077,7 @@ func (p *CassandraClient) RecvInsert() (ire *InvalidRequestException, ue *Unavai
 
 /**
  * Increment or decrement a counter.
- * 
+ *
  * Parameters:
  *  - Key
  *  - ColumnParent
@@ -1157,7 +1157,7 @@ func (p *CassandraClient) RecvAdd() (ire *InvalidRequestException, ue *Unavailab
  * Remove data from the row specified by key at the granularity specified by column_path, and the given timestamp. Note
  * that all the values in column_path besides column_path.column_family are truly optional: you can remove the entire
  * row by just specifying the ColumnFamily, or you can remove a SuperColumn or a single Column by specifying those levels too.
- * 
+ *
  * Parameters:
  *  - Key
  *  - ColumnPath
@@ -1237,7 +1237,7 @@ func (p *CassandraClient) RecvRemove() (ire *InvalidRequestException, ue *Unavai
  * Remove a counter at the specified location.
  * Note that counters have limited support for deletes: if you remove a counter, you must wait to issue any following update
  * until the delete has reached all the nodes and all of them have been fully compacted.
- * 
+ *
  * Parameters:
  *  - Key
  *  - Path
@@ -1313,10 +1313,10 @@ func (p *CassandraClient) RecvRemoveCounter() (ire *InvalidRequestException, ue 
 
 /**
  *   Mutate many columns or super columns for many row keys. See also: Mutation.
- * 
+ *
  *   mutation_map maps key to column family to a list of Mutation objects to take place at that scope.
  * *
- * 
+ *
  * Parameters:
  *  - MutationMap
  *  - ConsistencyLevel
@@ -1395,7 +1395,7 @@ func (p *CassandraClient) RecvBatchMutate() (ire *InvalidRequestException, ue *U
  * only marks the data as deleted.
  * The operation succeeds only if all hosts in the cluster at available and will throw an UnavailableException if
  * some hosts are down.
- * 
+ *
  * Parameters:
  *  - Cfname
  */
@@ -1716,10 +1716,10 @@ func (p *CassandraClient) RecvDescribeVersion() (value string, err error) {
  * to list of endpoints, because you can't use Thrift structs as
  * map keys:
  * https://issues.apache.org/jira/browse/THRIFT-162
- * 
+ *
  * for the same reason, we can't return a set here, even though
  * order is neither important nor predictable.
- * 
+ *
  * Parameters:
  *  - Keyspace
  */
@@ -1906,7 +1906,7 @@ func (p *CassandraClient) RecvDescribeSnitch() (value string, err error) {
 
 /**
  * describe specified keyspace
- * 
+ *
  * Parameters:
  *  - Keyspace
  */
@@ -1977,10 +1977,10 @@ func (p *CassandraClient) RecvDescribeKeyspace() (value *KsDef, nfe *NotFoundExc
 /**
  * experimental API for hadoop/parallel query support.
  * may change violently and without warning.
- * 
+ *
  * returns list of token strings such that first subrange is (list[0], list[1]],
  * next is (list[1], list[2]], etc.
- * 
+ *
  * Parameters:
  *  - CfName
  *  - StartToken
@@ -2053,7 +2053,7 @@ func (p *CassandraClient) RecvDescribeSplits() (value thrift.TList, ire *Invalid
 
 /**
  * adds a column family. returns the new schema id.
- * 
+ *
  * Parameters:
  *  - CfDef
  */
@@ -2123,7 +2123,7 @@ func (p *CassandraClient) RecvSystemAddColumnFamily() (value string, ire *Invali
 
 /**
  * drops a column family. returns the new schema id.
- * 
+ *
  * Parameters:
  *  - ColumnFamily
  */
@@ -2193,7 +2193,7 @@ func (p *CassandraClient) RecvSystemDropColumnFamily() (value string, ire *Inval
 
 /**
  * adds a keyspace and any column families that are part of it. returns the new schema id.
- * 
+ *
  * Parameters:
  *  - KsDef
  */
@@ -2263,7 +2263,7 @@ func (p *CassandraClient) RecvSystemAddKeyspace() (value string, ire *InvalidReq
 
 /**
  * drops a keyspace and any column families that are part of it. returns the new schema id.
- * 
+ *
  * Parameters:
  *  - Keyspace
  */
@@ -2333,7 +2333,7 @@ func (p *CassandraClient) RecvSystemDropKeyspace() (value string, ire *InvalidRe
 
 /**
  * updates properties of a keyspace. returns the new schema id.
- * 
+ *
  * Parameters:
  *  - KsDef
  */
@@ -2403,7 +2403,7 @@ func (p *CassandraClient) RecvSystemUpdateKeyspace() (value string, ire *Invalid
 
 /**
  * updates properties of a column family. returns the new schema id.
- * 
+ *
  * Parameters:
  *  - CfDef
  */
@@ -2474,7 +2474,7 @@ func (p *CassandraClient) RecvSystemUpdateColumnFamily() (value string, ire *Inv
 /**
  * Executes a CQL (Cassandra Query Language) statement and returns a
  * CqlResult containing the results.
- * 
+ *
  * Parameters:
  *  - Query
  *  - Compression
