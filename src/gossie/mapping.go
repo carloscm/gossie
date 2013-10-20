@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 )
 
 /*
@@ -58,7 +57,7 @@ var (
 // Converts a map to a cassandra row.
 // TODO: consider implementing the Mapping interface.
 func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
-	timeStamp := time.Now().UnixNano()
+	timeStamp := now()
 	key, hasKey := m[keyField]
 	if !hasKey {
 		return nil, errors.New(fmt.Sprint("Error mapping map to row, keyfield ", keyField, "is empty"))
