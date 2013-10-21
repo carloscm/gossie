@@ -164,7 +164,23 @@ func (q *query) buildSlice(reader Reader) error {
 		components = append(components, q.betweenStart)
 	}
 
-	if len(components) > 0 {
+	if _, ok := q.mapping.(*compactMapping); ok && len(q.components) == 1 {
+		if len(components) == 1 {
+			c := components[0]
+			b, err := q.mapping.MarshalComponent(c, 0)
+			if err != nil {
+				return err
+			}
+			start = b
+			end = b
+		} else if q.betweenEnd != nil {
+			b, err := q.mapping.MarshalComponent(q.betweenEnd, 0)
+			if err != nil {
+				return err
+			}
+			end = b
+		}
+	} else if len(components) > 0 {
 		last := len(components) - 1
 		for i, c := range components {
 			b, err := q.mapping.MarshalComponent(c, i)
