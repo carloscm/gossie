@@ -232,7 +232,7 @@ var testMaps = []map[string]interface{}{
 		"Age":      25,
 		"Whatever": 0.2,
 	},
-	// Testing all gossie supported times.
+	// Testing all gossie supported types.
 	{
 		"Id":         "34e8f7-c45wc-c45w45cdx",
 		"AnInt":      25,
