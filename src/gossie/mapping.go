@@ -56,16 +56,11 @@ var (
 
 // Converts a map to a cassandra row.
 // TODO: consider implementing the Mapping interface.
-func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
+func MapToRow(key string, m map[string]interface{}) (*Row, error) {
 	timeStamp := now()
-	key, hasKey := m[keyField]
-	if !hasKey {
-		return nil, errors.New(fmt.Sprint("Error mapping map to row, keyfield ", keyField, "is empty"))
-	}
-	delete(m, keyField)
 	serializedKey, err := Marshal(key, UTF8Type)
 	if err != nil {
-		return nil, errors.New(fmt.Sprint("Error marshaling key ", keyField, " with value ", key, "", err))
+		return nil, errors.New(fmt.Sprint("Error marshaling key with value ", key, ":", err))
 	}
 	cols := make([]*Column, len(m))
 	c := 0
@@ -99,7 +94,10 @@ func MapToRow(keyField string, m map[string]interface{}) (*Row, error) {
 // What's the point of not using a struct when you still have to define a scheme as a map?
 // The answer is maps can still be created at runtime, while structs must be known at compile time.
 // This way, we can still handle data which structure is not known ahead of time (eg. or comes from a config).
-func RowToMap(keyField string, scheme map[string]interface{}, r *Row) (map[string]interface{}, error) {
+func RowToMap(scheme map[string]interface{}, r *Row) (map[string]interface{}, error) {
+	if r == nil {
+		return nil, errors.New("RowToMap: row is nil")
+	}
 	ret := map[string]interface{}{}
 	for _, col := range r.Columns {
 		colName := string(col.Name)
