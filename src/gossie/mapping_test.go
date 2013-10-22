@@ -254,7 +254,7 @@ var testMaps = []map[string]interface{}{
 func TestMapToRow(t *testing.T) {
 	for _, m := range testMaps {
 		id := m["Id"].(string)
-		row, err := MapToRow("Id", m)
+		row, err := MapToRow(id, m)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -264,7 +264,14 @@ func TestMapToRow(t *testing.T) {
 		if len(row.Columns) != len(m) {
 			t.Fatal(len(row.Columns), len(m))
 		}
-		m1, err := RowToMap("Id", m, row)
+		// m is used for schema here, do not worry the function doesn't just
+		// return the input m :) But as a proof lets copy and change a field:
+		changedMap := map[string]interface{}{}
+		for k, v := range m {
+			changedMap[k] = v
+		}
+		changedMap["AString"] = "for the paranoid"
+		m1, err := RowToMap(changedMap, row)
 		if err != nil {
 			t.Fatal(err)
 		}
