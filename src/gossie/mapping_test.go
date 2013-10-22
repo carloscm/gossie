@@ -225,3 +225,58 @@ func TestMap(t *testing.T) {
 		shell.checkFullMap(t)
 	}
 }
+
+var testMaps = []map[string]interface{}{
+	{
+		"Id":       "Hello",
+		"Age":      25,
+		"Whatever": 0.2,
+	},
+	// Testing all gossie supported types.
+	{
+		"Id":         "34e8f7-c45wc-c45w45cdx",
+		"AnInt":      25,
+		"AnInt8":     int8(5),
+		"AnInt16":    int16(5),
+		"AnInt32":    int32(5),
+		"AnInt64":    int64(5),
+		"AFloat":     1.45,
+		"AFloat32":   float32(1.5),
+		"AFloat64":   float64(1.5),
+		"AString":    "Heyy",
+		"ABool":      false,
+		"AByteSlice": []byte("Ahoi"),
+	},
+}
+
+// We are using the serialized maps themselves as
+// a scheme for unserializing.
+func TestMapToRow(t *testing.T) {
+	for _, m := range testMaps {
+		id := m["Id"].(string)
+		row, err := MapToRow(id, m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(row.Key, []byte(id)) {
+			t.Fatal("Row key is incorrect", string(row.Key), m["Id"])
+		}
+		if len(row.Columns) != len(m) {
+			t.Fatal(len(row.Columns), len(m))
+		}
+		// m is used for schema here, do not worry the function doesn't just
+		// return the input m :) But as a proof lets copy and change a field:
+		changedMap := map[string]interface{}{}
+		for k, v := range m {
+			changedMap[k] = v
+		}
+		changedMap["AString"] = "for the paranoid"
+		m1, err := RowToMap(changedMap, row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(m, m1) {
+			t.Fatal(m, m1)
+		}
+	}
+}
