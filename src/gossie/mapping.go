@@ -103,7 +103,8 @@ func RowToMap(scheme map[string]interface{}, r *Row) (map[string]interface{}, er
 		colName := string(col.Name)
 		schVal, has := scheme[colName]
 		if !has {
-			return nil, errors.New(fmt.Sprint("Error unmarshaling field with key", colName, ": not present in scheme map."))
+			// Ignore keys not present in scheme map
+			continue
 		}
 		schValType := reflect.TypeOf(schVal)
 		ctype := defaultType(schValType)
