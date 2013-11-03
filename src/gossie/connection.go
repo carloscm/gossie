@@ -222,10 +222,13 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			return errors.New(ire.Why)
 		}
 
-		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
+		// nonrecoverable error, drop the connection (but do not blacklist) and retry
 		if err != nil {
-			cp.release(c)
-			return err
+			log.Printf("Node %s error %s", c.node, err.Error())
+			cp.releaseEmpty()
+			c.close()
+			c = nil
+			continue
 		}
 
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
