@@ -366,7 +366,6 @@ type connection struct {
 
 func newConnection(node, keyspace string, timeout time.Duration, authentication map[string]string) (*connection, error) {
 
-	fmt.Print("Connecting to node ", node)
 	addr, err := net.ResolveTCPAddr("tcp", node)
 	if err != nil {
 		return nil, err
