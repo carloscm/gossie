@@ -28,6 +28,13 @@ func (w *MockWriter) ConsistencyLevel(l int) Writer {
 func (w *MockWriter) Insert(cf string, row *Row) Writer {
 	rows := w.pool.Rows(cf)
 
+	t := now()
+	for _, c := range row.Columns {
+		if c.Timestamp == 0 {
+			c.Timestamp = t
+		}
+	}
+
 	i := sort.Search(len(rows), func(i int) bool { return bytes.Compare(rows[i].Key, row.Key) >= 0 })
 	if i < len(rows) && bytes.Equal(rows[i].Key, row.Key) {
 		// Row already exists, merge the columns
