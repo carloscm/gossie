@@ -62,3 +62,40 @@ func (m *MockConnectionPool) Rows(cf string) Rows {
 	}
 	return rows
 }
+
+type RowDump map[string][]byte
+type CFDump map[string]RowDump
+type Dump map[string]CFDump
+
+// Utility method to make validating tests easier
+// result is: map[cf]map[rowKey]map[columnName]columnValue
+func (m *MockConnectionPool) Dump() Dump {
+	d := Dump{}
+
+	for cf, _ := range m.Data {
+		d[cf] = m.DumpCF(cf)
+	}
+
+	return d
+}
+
+// Utility method to make validating tests easier
+// result is: map[rowKey]map[columnName]columnValue
+func (m *MockConnectionPool) DumpCF(cf string) CFDump {
+	d := CFDump{}
+
+	rows, ok := m.Data[cf]
+	if !ok {
+		return d
+	}
+
+	for _, row := range rows {
+		rowMap := map[string][]byte{}
+		d[string(row.Key)] = rowMap
+		for _, column := range row.Columns {
+			rowMap[string(column.Name)] = column.Value
+		}
+	}
+
+	return d
+}
