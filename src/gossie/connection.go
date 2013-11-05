@@ -3,8 +3,8 @@ package gossie
 import (
 	"errors"
 	"fmt"
+	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/apesternikov/gossie/src/cassandra"
-	thrift "github.com/apesternikov/thrift4go/lib/go/src/thrift"
 	"log"
 	"math/rand"
 	"net"
@@ -57,7 +57,7 @@ type PoolOptions struct {
 	Size             int               // keep up to Size connections open and ready
 	ReadConsistency  int               // default read consistency
 	WriteConsistency int               // default write consistency
-	Timeout          int               // socket timeout in ms
+	Timeout          time.Duration     // socket timeout
 	Recycle          int               // close connections after Recycle seconds
 	RecycleJitter    int               // max jitter to add to Recycle so not all connections close at the same time
 	Grace            int               // if a node is blacklisted try to contact it again after Grace seconds
@@ -81,7 +81,7 @@ const (
 	DEFAULT_SIZE              = 10
 	DEFAULT_READ_CONSISTENCY  = CONSISTENCY_QUORUM
 	DEFAULT_WRITE_CONSISTENCY = CONSISTENCY_QUORUM
-	DEFAULT_TIMEOUT           = 1000
+	DEFAULT_TIMEOUT           = time.Second * 1
 	DEFAULT_RECYCLE           = 60
 	DEFAULT_RECYCLE_JITTER    = 10
 	DEFAULT_GRACE             = 5
@@ -357,15 +357,16 @@ func (cp *connectionPool) Close() {
 }
 
 type connection struct {
-	socket    *thrift.TNonblockingSocket
+	socket    *thrift.TSocket
 	transport *thrift.TFramedTransport
-	client    cassandra.ICassandra
+	client    cassandra.Cassandra
 	node      string
 	keyspace  string
 }
 
-func newConnection(node, keyspace string, timeout int, authentication map[string]string) (*connection, error) {
+func newConnection(node, keyspace string, timeout time.Duration, authentication map[string]string) (*connection, error) {
 
+	fmt.Print("Connecting to node ", node)
 	addr, err := net.ResolveTCPAddr("tcp", node)
 	if err != nil {
 		return nil, err
@@ -373,35 +374,13 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 
 	c := &connection{node: node}
 
-	c.socket, err = thrift.NewTNonblockingSocketAddr(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	// socket not open yet, so no error expected. it expects nanos, we have milis, so it's 1e6
-	c.socket.SetTimeout(int64(timeout) * 1e6)
+	c.socket = thrift.NewTSocketFromAddrTimeout(addr, timeout)
 
 	c.transport = thrift.NewTFramedTransport(c.socket)
-	protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
-	c.client = cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
+	protocol := thrift.NewTBinaryProtocolTransport(c.transport)
+	c.client = cassandra.NewCassandraClientProtocol(c.transport, protocol, protocol)
 
-	// simulate timeout support for the underlying Dial() in .Open(). needless to say this sucks
-	// restore sanity to this for Go v1 with the new DialTimeout() func
-	ch := make(chan bool, 1)
-	go func() {
-		err = c.transport.Open()
-		ch <- true
-	}()
-	timedOut := false
-	select {
-	case <-time.After(time.Duration(timeout) * time.Millisecond):
-		timedOut = true
-	case <-ch:
-	}
-	if timedOut {
-		return nil, ErrorConnectionTimeout
-	}
-	if err != nil {
+	if err = c.transport.Open(); err != nil {
 		return nil, err
 	}
 
