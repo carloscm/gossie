@@ -3,6 +3,7 @@ package gossie
 import (
 	"errors"
 	"github.com/apesternikov/gossie/src/cassandra"
+	"github.com/stretchrcom/testify/assert"
 	"testing"
 	"time"
 )
@@ -15,20 +16,18 @@ func TestConnection(t *testing.T) {
 	       t.Fatal("Invalid connection parameters did not return error")
 	   }
 	*/
-
-	c, err := newConnection(localEndpoint, "NotExists", shortTimeout, map[string]string{})
+	n := &node{node: localEndpoint}
+	c, err := newConnection(n, "NotExists", shortTimeout, map[string]string{})
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
-	c, err = newConnection(localEndpoint, keyspace, shortTimeout, map[string]string{})
+	c, err = newConnection(n, keyspace, shortTimeout, map[string]string{})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	if c.keyspace != keyspace {
-		t.Fatal("Invalid keyspace")
-	}
+	assert.Equal(t, c.node, n)
 
 	c.close()
 }
@@ -115,37 +114,38 @@ func TestAcquireRelease(t *testing.T) {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 	cp := cpI.(*connectionPool)
+	n := cp.nodes[0]
 
-	check := func(expectedAvailable int, expectedError bool) {
-		if len(cp.available) != expectedAvailable {
-			t.Error("Available connection slots chan has wrong size")
-		}
-		if !expectedError && err != nil {
-			t.Error("The error condition did not match the expected one")
-		}
-	}
-
-	check(1, false)
+	assert.Equal(t, len(n.available.l), 1)
+	assert.NoError(t, err)
 
 	c, err = cp.acquire()
-	check(0, false)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 
 	cp.release(c)
-	check(1, false)
+	assert.Equal(t, len(n.available.l), 1)
+	assert.NoError(t, err)
 
 	c, err = cp.acquire()
-	check(0, false)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 
-	cp.blacklist(localEndpoint)
-	check(1, false)
+	n.blacklist()
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 
 	c, err = cp.acquire()
-	check(1, true)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.Error(t, err)
+	assert.Nil(t, c)
 
+	//TODO: replace with fake clock for testability
 	time.Sleep(2e9)
 
 	c, err = cp.acquire()
-	check(0, false)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 }
 
 func TestRun(t *testing.T) {

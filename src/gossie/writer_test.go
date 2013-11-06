@@ -30,8 +30,7 @@ func TestWriterInsert(t *testing.T) {
 		socket:    nil,
 		transport: nil,
 		client:    cli,
-		node:      "node",
-		keyspace:  "keyspace",
+		node:      &node{node: "node"},
 	}
 	cp := &stubTransactionRunner{conn: conn}
 	w := newWriter(cp, CONSISTENCY_ONE)
