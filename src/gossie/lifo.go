@@ -27,3 +27,18 @@ func (q *lifo) Pop() (*connection, bool) {
 	q.m.Unlock()
 	return value, true
 }
+
+//This function return the item from the bottom of the stack
+//Should not be used very extensively because it creates garbage in memory
+//We are using it for bleeder
+func (q *lifo) PopBottom() (*connection, bool) {
+	q.m.Lock()
+	if len(q.l) == 0 {
+		q.m.Unlock()
+		return nil, false
+	}
+	value := q.l[0]
+	q.l = q.l[1:]
+	q.m.Unlock()
+	return value, true
+}

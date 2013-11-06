@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/apesternikov/gossie/src/cassandra"
+	"github.com/golang/glog"
 	"log"
 	"math/rand"
 	"net"
@@ -58,6 +59,7 @@ type PoolOptions struct {
 	ReadConsistency  cassandra.ConsistencyLevel // default read consistency
 	WriteConsistency cassandra.ConsistencyLevel // default write consistency
 	Timeout          time.Duration              // socket timeout
+	BleederInterval  time.Duration              // <del>kill a kitten</del> Close a least used connection every BleederInterval.
 	Grace            int                        // if a node is blacklisted try to contact it again after Grace seconds
 	Retries          int                        // retry queries for Retries times before raising an error
 	Authentication   map[string]string          // if one or more keys are present, login() is called with the values from Authentication
@@ -80,6 +82,7 @@ const (
 	DEFAULT_READ_CONSISTENCY  = CONSISTENCY_QUORUM
 	DEFAULT_WRITE_CONSISTENCY = CONSISTENCY_QUORUM
 	DEFAULT_TIMEOUT           = time.Second * 1
+	DEFAULT_BLEEDER           = time.Second * 2
 	DEFAULT_GRACE             = 5
 	DEFAULT_RETRIES           = 5
 )
@@ -104,6 +107,9 @@ func (o *PoolOptions) defaults() {
 	}
 	if o.Timeout == 0 {
 		o.Timeout = DEFAULT_TIMEOUT
+	}
+	if o.BleederInterval == 0 {
+		o.BleederInterval = DEFAULT_BLEEDER
 	}
 	if o.Grace == 0 {
 		o.Grace = DEFAULT_GRACE
@@ -171,8 +177,25 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	if cp.schema == nil {
 		return nil, errors.New("Cannot parse schema")
 	}
+	go cp.bleeder(options.BleederInterval)
 
 	return cp, nil
+}
+
+func (cp *connectionPool) bleeder(d time.Duration) {
+	l := len(cp.nodes)
+	c := time.Tick(d)
+	nodeidx := -1
+	for _ = range c {
+		for i := 0; i < l; i++ {
+			nodeidx++
+			if c, ok := cp.nodes[nodeidx%l].available.PopBottom(); ok {
+				glog.V(1).Info("Closing connection to ", cp.nodes[nodeidx%l].node)
+				c.close()
+				break
+			}
+		}
+	}
 }
 
 type transaction func(*connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error)
@@ -279,6 +302,11 @@ func (cp *connectionPool) release(c *connection) {
 
 func (n *node) blacklist() {
 	n.lastFailure = int(nowfunc().Unix())
+	//close all connections
+	glog.V(1).Info("closing %d connections to blacklisted node %s", len(n.available.l), n.node)
+	for c, ok := n.available.Pop(); ok; c, ok = n.available.Pop() {
+		c.close()
+	}
 }
 
 func (cp *connectionPool) Reader() Reader {
