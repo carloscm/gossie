@@ -54,27 +54,27 @@ type connectionRunner interface {
 
 // PoolOptions stores the options for the creation of a ConnectionPool
 type PoolOptions struct {
-	Size             int               // keep up to Size connections open and ready
-	ReadConsistency  int               // default read consistency
-	WriteConsistency int               // default write consistency
-	Timeout          time.Duration     // socket timeout
-	Recycle          int               // close connections after Recycle seconds
-	RecycleJitter    int               // max jitter to add to Recycle so not all connections close at the same time
-	Grace            int               // if a node is blacklisted try to contact it again after Grace seconds
-	Retries          int               // retry queries for Retries times before raising an error
-	Authentication   map[string]string // if one or more keys are present, login() is called with the values from Authentication
+	Size             int                        // keep up to Size connections open and ready
+	ReadConsistency  cassandra.ConsistencyLevel // default read consistency
+	WriteConsistency cassandra.ConsistencyLevel // default write consistency
+	Timeout          time.Duration              // socket timeout
+	Recycle          int                        // close connections after Recycle seconds
+	RecycleJitter    int                        // max jitter to add to Recycle so not all connections close at the same time
+	Grace            int                        // if a node is blacklisted try to contact it again after Grace seconds
+	Retries          int                        // retry queries for Retries times before raising an error
+	Authentication   map[string]string          // if one or more keys are present, login() is called with the values from Authentication
 }
 
 const (
-	CONSISTENCY_DEFAULT      = 0
-	CONSISTENCY_ONE          = 1
-	CONSISTENCY_QUORUM       = 2
-	CONSISTENCY_LOCAL_QUORUM = 3
-	CONSISTENCY_EACH_QUORUM  = 4
-	CONSISTENCY_ALL          = 5
-	CONSISTENCY_ANY          = 6
-	CONSISTENCY_TWO          = 7
-	CONSISTENCY_THREE        = 8
+	CONSISTENCY_DEFAULT      cassandra.ConsistencyLevel = 0
+	CONSISTENCY_ONE                                     = cassandra.ConsistencyLevel_ONE
+	CONSISTENCY_QUORUM                                  = cassandra.ConsistencyLevel_QUORUM
+	CONSISTENCY_LOCAL_QUORUM                            = cassandra.ConsistencyLevel_LOCAL_QUORUM
+	CONSISTENCY_EACH_QUORUM                             = cassandra.ConsistencyLevel_EACH_QUORUM
+	CONSISTENCY_ALL                                     = cassandra.ConsistencyLevel_ALL
+	CONSISTENCY_ANY                                     = cassandra.ConsistencyLevel_ANY
+	CONSISTENCY_TWO                                     = cassandra.ConsistencyLevel_TWO
+	CONSISTENCY_THREE                                   = cassandra.ConsistencyLevel_THREE
 )
 
 const (

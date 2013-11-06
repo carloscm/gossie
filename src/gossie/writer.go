@@ -12,7 +12,7 @@ type Writer interface {
 	// ConsistencyLevel sets the consistency level for this particular call.
 	// It is optional, if left uncalled it will default to your connection
 	// pool options value.
-	ConsistencyLevel(int) Writer
+	ConsistencyLevel(cassandra.ConsistencyLevel) Writer
 
 	// Insert adds a new row insertion to the mutation
 	Insert(cf string, row *Row) Writer
@@ -38,12 +38,12 @@ type Writer interface {
 
 type writer struct {
 	pool             connectionRunner
-	consistencyLevel int
+	consistencyLevel cassandra.ConsistencyLevel
 	writers          map[string]map[string][]*cassandra.Mutation
 	usedCounters     bool
 }
 
-func newWriter(cp connectionRunner, cl int) *writer {
+func newWriter(cp connectionRunner, cl cassandra.ConsistencyLevel) *writer {
 	return &writer{
 		pool:             cp,
 		consistencyLevel: cl,
@@ -65,7 +65,7 @@ func (w *writer) addWriter(cf string, key []byte) *cassandra.Mutation {
 	return tm
 }
 
-func (w *writer) ConsistencyLevel(l int) Writer {
+func (w *writer) ConsistencyLevel(l cassandra.ConsistencyLevel) Writer {
 	w.consistencyLevel = l
 	return w
 }

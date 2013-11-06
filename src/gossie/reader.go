@@ -79,7 +79,7 @@ type Reader interface {
 
 	// ConsistencyLevel sets the consistency level for this particular call.
 	// It is optional, if left uncalled it will default to your connection pool options value.
-	ConsistencyLevel(int) Reader
+	ConsistencyLevel(cassandra.ConsistencyLevel) Reader
 
 	// Cf sets the column family name for the reader.
 	// This method must be always called.
@@ -132,7 +132,7 @@ type Reader interface {
 
 type reader struct {
 	pool             *connectionPool
-	consistencyLevel int
+	consistencyLevel cassandra.ConsistencyLevel
 	cf               string
 	slice            Slice
 	setSlice         bool
@@ -142,14 +142,14 @@ type reader struct {
 	expressions      []*cassandra.IndexExpression
 }
 
-func newReader(cp *connectionPool, cl int) *reader {
+func newReader(cp *connectionPool, cl cassandra.ConsistencyLevel) *reader {
 	return &reader{
 		pool:             cp,
 		consistencyLevel: cl,
 	}
 }
 
-func (r *reader) ConsistencyLevel(l int) Reader {
+func (r *reader) ConsistencyLevel(l cassandra.ConsistencyLevel) Reader {
 	r.consistencyLevel = l
 	return r
 }
