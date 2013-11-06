@@ -1087,6 +1087,10 @@ func (p *NotFoundException) String() string {
 	return fmt.Sprintf("NotFoundException(%+v)", *p)
 }
 
+func (p *NotFoundException) Error() string {
+	return p.String()
+}
+
 type InvalidRequestException struct {
 	Why string `thrift:"why,1,required"`
 }
@@ -1172,6 +1176,10 @@ func (p *InvalidRequestException) String() string {
 	return fmt.Sprintf("InvalidRequestException(%+v)", *p)
 }
 
+func (p *InvalidRequestException) Error() string {
+	return p.String()
+}
+
 type UnavailableException struct {
 }
 
@@ -1219,6 +1227,10 @@ func (p *UnavailableException) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("UnavailableException(%+v)", *p)
+}
+
+func (p *UnavailableException) Error() string {
+	return p.String()
 }
 
 type TimedOutException struct {
@@ -1348,6 +1360,10 @@ func (p *TimedOutException) String() string {
 	return fmt.Sprintf("TimedOutException(%+v)", *p)
 }
 
+func (p *TimedOutException) Error() string {
+	return p.String()
+}
+
 type AuthenticationException struct {
 	Why string `thrift:"why,1,required"`
 }
@@ -1431,6 +1447,10 @@ func (p *AuthenticationException) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("AuthenticationException(%+v)", *p)
+}
+
+func (p *AuthenticationException) Error() string {
+	return p.String()
 }
 
 type AuthorizationException struct {
@@ -1518,6 +1538,10 @@ func (p *AuthorizationException) String() string {
 	return fmt.Sprintf("AuthorizationException(%+v)", *p)
 }
 
+func (p *AuthorizationException) Error() string {
+	return p.String()
+}
+
 type SchemaDisagreementException struct {
 }
 
@@ -1565,6 +1589,10 @@ func (p *SchemaDisagreementException) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("SchemaDisagreementException(%+v)", *p)
+}
+
+func (p *SchemaDisagreementException) Error() string {
+	return p.String()
 }
 
 type ColumnParent struct {

@@ -226,14 +226,14 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if ire != nil {
-			glog.Errorf("Node %s Invalid request: %s", c.node, ire.Why)
+			glog.Errorf("Node %s Invalid request: %s", c.node.node, ire.Why)
 			cp.release(c)
-			return errors.New(ire.Why)
+			return ire
 		}
 
 		// nonrecoverable error, drop the connection (but do not blacklist) and retry
 		if err != nil {
-			glog.Errorf("Node %s error %s", c.node, err.Error())
+			glog.Errorf("Node %s error %s", c.node.node, err)
 			c.close()
 			c = nil
 			continue
@@ -241,7 +241,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
 		if te != nil {
-			glog.Infof("Node %s timed out, blacklisted", c.node)
+			glog.Infof("Node %s %s, blacklisted", c.node.node, te)
 			c.node.blacklist()
 			c.close()
 			c = nil
@@ -251,7 +251,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
 		if ue != nil {
-			glog.Info("Unavailable exception")
+			glog.Info("Node %s %s", c.node.node, ue)
 			cp.release(c)
 			c = nil
 			continue
