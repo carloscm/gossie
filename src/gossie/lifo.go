@@ -29,11 +29,12 @@ func (q *lifo) Pop() (*connection, bool) {
 }
 
 //This function return the item from the bottom of the stack
+//if size is more than n
 //Should not be used very extensively because it creates garbage in memory
 //We are using it for bleeder
-func (q *lifo) PopBottom() (*connection, bool) {
+func (q *lifo) PopBottom(n int) (*connection, bool) {
 	q.m.Lock()
-	if len(q.l) == 0 {
+	if len(q.l) < n {
 		q.m.Unlock()
 		return nil, false
 	}

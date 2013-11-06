@@ -6,7 +6,6 @@ import (
 	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/apesternikov/gossie/src/cassandra"
 	"github.com/golang/glog"
-	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -55,7 +54,7 @@ type connectionRunner interface {
 
 // PoolOptions stores the options for the creation of a ConnectionPool
 type PoolOptions struct {
-	Size             int                        // keep up to Size connections open and ready
+	Size             int                        // keep up to Size connections PER NODE open and ready
 	ReadConsistency  cassandra.ConsistencyLevel // default read consistency
 	WriteConsistency cassandra.ConsistencyLevel // default write consistency
 	Timeout          time.Duration              // socket timeout
@@ -63,6 +62,17 @@ type PoolOptions struct {
 	Grace            int                        // if a node is blacklisted try to contact it again after Grace seconds
 	Retries          int                        // retry queries for Retries times before raising an error
 	Authentication   map[string]string          // if one or more keys are present, login() is called with the values from Authentication
+}
+
+var DefaultPoolOptions = PoolOptions{
+	Size:             10,
+	ReadConsistency:  CONSISTENCY_QUORUM,
+	WriteConsistency: CONSISTENCY_QUORUM,
+	Timeout:          time.Second * 1,
+	BleederInterval:  time.Second * 2,
+	Grace:            5,
+	Retries:          5,
+	// Authentication   is empty
 }
 
 const (
@@ -78,16 +88,6 @@ const (
 )
 
 const (
-	DEFAULT_SIZE              = 10
-	DEFAULT_READ_CONSISTENCY  = CONSISTENCY_QUORUM
-	DEFAULT_WRITE_CONSISTENCY = CONSISTENCY_QUORUM
-	DEFAULT_TIMEOUT           = time.Second * 1
-	DEFAULT_BLEEDER           = time.Second * 2
-	DEFAULT_GRACE             = 5
-	DEFAULT_RETRIES           = 5
-)
-
-const (
 	LOWEST_COMPATIBLE_VERSION = 19
 )
 
@@ -95,27 +95,30 @@ var (
 	ErrorConnectionTimeout = errors.New("Connection timeout")
 )
 
-func (o *PoolOptions) defaults() {
-	if o.Size == 0 {
-		o.Size = DEFAULT_SIZE
+func (o *PoolOptions) mergeFrom(r *PoolOptions) {
+	if r.Size != 0 {
+		o.Size = r.Size
 	}
-	if o.ReadConsistency == 0 {
-		o.ReadConsistency = DEFAULT_READ_CONSISTENCY
+	if r.ReadConsistency != 0 {
+		o.ReadConsistency = r.ReadConsistency
 	}
-	if o.WriteConsistency == 0 {
-		o.WriteConsistency = DEFAULT_WRITE_CONSISTENCY
+	if r.WriteConsistency != 0 {
+		o.WriteConsistency = r.WriteConsistency
 	}
-	if o.Timeout == 0 {
-		o.Timeout = DEFAULT_TIMEOUT
+	if r.Timeout != 0 {
+		o.Timeout = r.Timeout
 	}
-	if o.BleederInterval == 0 {
-		o.BleederInterval = DEFAULT_BLEEDER
+	if r.BleederInterval != 0 {
+		o.BleederInterval = r.BleederInterval
 	}
-	if o.Grace == 0 {
-		o.Grace = DEFAULT_GRACE
+	if r.Grace != 0 {
+		o.Grace = r.Grace
 	}
-	if o.Retries == 0 {
-		o.Retries = DEFAULT_RETRIES
+	if r.Retries != 0 {
+		o.Retries = r.Retries
+	}
+	if r.Authentication != nil {
+		o.Authentication = r.Authentication
 	}
 }
 
@@ -141,13 +144,12 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 		return nil, errors.New("At least one node is required")
 	}
 
-	options.defaults()
-
 	cp := &connectionPool{
 		keyspace: keyspace,
-		options:  options,
+		options:  DefaultPoolOptions,
 		nodes:    make([]*node, len(nodes)),
 	}
+	cp.options.mergeFrom(&options)
 
 	for i, n := range nodes {
 		cp.nodes[i] = &node{node: n}
@@ -189,7 +191,7 @@ func (cp *connectionPool) bleeder(d time.Duration) {
 	for _ = range c {
 		for i := 0; i < l; i++ {
 			nodeidx++
-			if c, ok := cp.nodes[nodeidx%l].available.PopBottom(); ok {
+			if c, ok := cp.nodes[nodeidx%l].available.PopBottom(cp.options.Size); ok {
 				glog.V(1).Info("Closing connection to ", cp.nodes[nodeidx%l].node)
 				c.close()
 				break
@@ -215,6 +217,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			c, err = cp.acquire()
 			// nothing to do, cannot acquire a connection
 			if err != nil {
+				glog.Error("Unable to acquire cassandra connection: ", err)
 				return err
 			}
 		}
@@ -223,13 +226,14 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if ire != nil {
+			glog.Errorf("Node %s Invalid request: %s", c.node, ire.Why)
 			cp.release(c)
 			return errors.New(ire.Why)
 		}
 
 		// nonrecoverable error, drop the connection (but do not blacklist) and retry
 		if err != nil {
-			log.Printf("Node %s error %s", c.node, err.Error())
+			glog.Errorf("Node %s error %s", c.node, err.Error())
 			c.close()
 			c = nil
 			continue
@@ -237,7 +241,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
 		if te != nil {
-			log.Printf("Node %s timed out, blacklisted", c.node)
+			glog.Infof("Node %s timed out, blacklisted", c.node)
 			c.node.blacklist()
 			c.close()
 			c = nil
@@ -247,7 +251,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
 		if ue != nil {
-			log.Printf("Unavailable exception")
+			glog.Info("Unavailable exception")
 			cp.release(c)
 			c = nil
 			continue

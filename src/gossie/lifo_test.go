@@ -24,7 +24,7 @@ func Testpushpop(t *testing.T) {
 	assert.False(t, ok2)
 }
 
-func Testpushpop2(t *testing.T) {
+func TestPushPop2(t *testing.T) {
 	var l lifo
 	conn := &connection{}
 	conn2 := &connection{}
@@ -32,7 +32,7 @@ func Testpushpop2(t *testing.T) {
 	l.Push(&connection{})
 	l.Push(conn2)
 
-	cb, okb := l.PopBottom()
+	cb, okb := l.PopBottom(0)
 	assert.NotNil(t, cb)
 	assert.True(t, okb)
 	assert.Equal(t, cb, conn)
@@ -41,9 +41,30 @@ func Testpushpop2(t *testing.T) {
 	assert.NotNil(t, c)
 	assert.True(t, ok)
 	assert.Equal(t, c, conn2)
-	c2, ok2 := l.Pop()
-	assert.Nil(t, c2)
-	assert.False(t, ok2)
 
-	assert.Equal(t, 1, len(l.l))
+	c2, ok2 := l.Pop()
+	assert.NotNil(t, c2)
+	assert.True(t, ok2)
+
+	assert.Equal(t, 0, len(l.l))
+}
+
+func TestKeepN(t *testing.T) {
+	var l lifo
+	conn := &connection{}
+	conn2 := &connection{}
+	l.Push(conn)
+	l.Push(&connection{})
+	l.Push(conn2)
+
+	cb, okb := l.PopBottom(5)
+	assert.Nil(t, cb)
+	assert.False(t, okb)
+
+	c, ok := l.Pop()
+	assert.NotNil(t, c)
+	assert.True(t, ok)
+	assert.Equal(t, c, conn2)
+
+	assert.Equal(t, 2, len(l.l))
 }
