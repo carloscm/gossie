@@ -106,6 +106,14 @@ func TestNewConnectionPoolWithAuth(t *testing.T) {
 */
 
 func TestAcquireRelease(t *testing.T) {
+	oldnow := nowfunc
+	defer func() {
+		nowfunc = oldnow
+	}()
+	virtualtime := time.Now()
+	nowfunc = func() time.Time {
+		return virtualtime
+	}
 	var err error
 	var c *connection
 
@@ -140,8 +148,7 @@ func TestAcquireRelease(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, c)
 
-	//TODO: replace with fake clock for testability
-	time.Sleep(2e9)
+	virtualtime = virtualtime.Add(time.Second * 2)
 
 	c, err = cp.acquire()
 	assert.Equal(t, len(n.available.l), 0)

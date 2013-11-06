@@ -126,6 +126,8 @@ type connectionPool struct {
 	nodes    []*node
 }
 
+var nowfunc func() time.Time = time.Now
+
 // NewConnectionPool creates a new connection pool for the given nodes and keyspace.
 // nodes is in the format of "host:port" strings.
 func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (ConnectionPool, error) {
@@ -255,7 +257,7 @@ func (cp *connectionPool) randomNode(now int) (*node, error) {
 
 func (cp *connectionPool) acquire() (*connection, error) {
 
-	now := int(time.Now().Unix())
+	now := int(nowfunc().Unix())
 	n, err := cp.randomNode(now)
 	if err != nil {
 		return nil, err
@@ -276,7 +278,7 @@ func (cp *connectionPool) release(c *connection) {
 }
 
 func (n *node) blacklist() {
-	n.lastFailure = int(time.Now().Unix())
+	n.lastFailure = int(nowfunc().Unix())
 }
 
 func (cp *connectionPool) Reader() Reader {
