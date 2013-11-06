@@ -23,7 +23,7 @@ func (s *stubTransactionRunner) runWithRetries(t transaction, retries int) error
 func TestWriterInsert(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
-	cli := mock_cassandra.NewMockICassandra(ctrl)
+	cli := mock_cassandra.NewMockCassandra(ctrl)
 	//expectingBatch := thrift.NewTMap(k, v, s)
 	cli.EXPECT().BatchMutate(gomock.Any(), cassandra.ConsistencyLevel_ONE)
 	conn := &connection{

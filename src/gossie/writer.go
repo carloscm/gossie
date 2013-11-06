@@ -2,7 +2,6 @@ package gossie
 
 import (
 	"github.com/apesternikov/gossie/src/cassandra"
-	"time"
 )
 
 // Writer is the interface for all the write operations over Cassandra.
@@ -52,7 +51,7 @@ func newWriter(cp connectionRunner, cl cassandra.ConsistencyLevel) *writer {
 }
 
 func now() int64 {
-	return nowfunc.UnixNano() / 1000
+	return nowfunc().UnixNano() / 1000
 }
 
 func (w *writer) addWriter(cf string, key []byte) *cassandra.Mutation {
