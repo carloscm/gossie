@@ -100,12 +100,14 @@ func (m *MockConnectionPool) DumpCF(cf string) CFDump {
 	return d
 }
 
+// Utility method for loading data in for tests
 func (m *MockConnectionPool) Load(dump Dump) {
 	for cf, d := range dump {
 		m.LoadCF(cf, d)
 	}
 }
 
+// Utility method for loading data in for tests
 func (m *MockConnectionPool) LoadCF(cf string, dump CFDump) {
 	rows := []*Row{}
 	for key, columns := range dump {
