@@ -99,3 +99,28 @@ func (m *MockConnectionPool) DumpCF(cf string) CFDump {
 
 	return d
 }
+
+func (m *MockConnectionPool) Load(dump Dump) {
+	for cf, d := range dump {
+		m.LoadCF(cf, d)
+	}
+}
+
+func (m *MockConnectionPool) LoadCF(cf string, dump CFDump) {
+	rows := []*Row{}
+	for key, columns := range dump {
+		cols := []*Column{}
+
+		for name, value := range columns {
+			cols = append(cols, &Column{
+				Name:  []byte(name),
+				Value: value,
+			})
+		}
+		rows = append(rows, &Row{
+			Key:     []byte(key),
+			Columns: cols,
+		})
+	}
+	m.Data[cf] = rows
+}
