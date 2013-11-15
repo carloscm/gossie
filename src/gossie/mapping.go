@@ -112,6 +112,14 @@ func NewMapping(source interface{}) (Mapping, error) {
 	return nil, errors.New(fmt.Sprint("Unrecognized mapping type ", mapping, " in passed struct of type ", si.rtype.Name()))
 }
 
+func MustNewMapping(source interface{}) Mapping {
+	ret, err := NewMapping(source)
+	if err != nil {
+		panic(err)
+	}
+	return ret
+}
+
 func newSparseMapping(si *structInspection, cf string, keyField string, componentFields ...string) Mapping {
 	cm := make(map[string]bool, 0)
 	for _, f := range componentFields {
