@@ -110,12 +110,12 @@ type Tweet struct {
 	Body    string
 }
 
-mapping, err = gossie.NewMapping(&Tweet{})
+mapping := gossie.MustNewMapping(&Tweet{})
 row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
 err = pool.Writer().Insert("Timeline", row).Run()
 ````
 
-When calling NewMapping() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
+When calling [Must]NewMapping() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
 
 The tags `mapping`, `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `mapping` is optional and can have a value of `sparse` (the default) or `compact`. See [CQL3.0](http://www.datastax.com/dev/blog/whats-new-in-cql-3-0) for more information. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is optional and it is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows, and it is ignored in sparse storage rows.
 
