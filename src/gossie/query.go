@@ -49,6 +49,9 @@ type Query interface {
 	// column names the Result will allow you to iterate over the entire row.
 	Get(key interface{}) (Result, error)
 
+	// Like Get() but returns exactly one record or error
+	GetOne(key interface{}, destination interface{}) error
+
 	// MultiGet looks up multiple rows given the keys.
 	MultiGet(keys []interface{}) (Result, error)
 }
@@ -113,6 +116,14 @@ func (q *query) Between(start, end interface{}) Query {
 
 func (q *query) Get(key interface{}) (Result, error) {
 	return q.MultiGet([]interface{}{key})
+}
+
+func (q *query) GetOne(key interface{}, destination interface{}) error {
+	res, err := q.Get(key)
+	if err != nil {
+		return err
+	}
+	return res.Next(destination)
 }
 
 func (q *query) MultiGet(keys []interface{}) (Result, error) {

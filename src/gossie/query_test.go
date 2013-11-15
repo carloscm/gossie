@@ -253,6 +253,11 @@ func TestQueryGet(t *testing.T) {
 		t.Fatal("Result Next is not Done:", err)
 	}
 
+	err = cp.Query(m0).GetOne("nope", r0)
+	if err != Done {
+		t.Fatal("Result is not Done:", err)
+	}
+
 	res, err = cp.Query(m0).Get("testuser")
 	if err != nil {
 		t.Fatal("Query get error:", err)
@@ -271,6 +276,15 @@ func TestQueryGet(t *testing.T) {
 	err = res.Next(r0)
 	if err != Done {
 		t.Fatal("Result Next is not Done:", err)
+	}
+
+	r01 := &ReasonableZero{}
+	err = cp.Query(m0).GetOne("testuser", r01)
+	if err != nil {
+		t.Fatal("Query get error:", err)
+	}
+	if !reflect.DeepEqual(r01, &ReasonableZero{"testuser", 1.00002, -38.11, "hey this thing appears to work, nice!"}) {
+		t.Error("Read does not match Write")
 	}
 
 	/////
