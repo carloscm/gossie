@@ -2,7 +2,7 @@ package gossie
 
 import (
 	"errors"
-	"github.com/apesternikov/gossie/src/cassandra"
+	. "github.com/apesternikov/gossie/src/cassandra"
 )
 
 /*
@@ -26,7 +26,7 @@ type Query interface {
 	// ConsistencyLevel sets the consistency level for this particular call.
 	// It is optional, if left uncalled it will default to your connection
 	// pool options value.
-	ConsistencyLevel(cassandra.ConsistencyLevel) Query
+	ConsistencyLevel(ConsistencyLevel) Query
 
 	// Limit sets the column and rows to buffer at once.
 	Limit(columns, rows int) Query
@@ -68,7 +68,7 @@ type Result interface {
 type query struct {
 	pool             *connectionPool
 	mapping          Mapping
-	consistencyLevel cassandra.ConsistencyLevel
+	consistencyLevel ConsistencyLevel
 	columnLimit      int
 	rowLimit         int
 	reversed         bool
@@ -87,7 +87,7 @@ func newQuery(cp *connectionPool, m Mapping) *query {
 	}
 }
 
-func (q *query) ConsistencyLevel(c cassandra.ConsistencyLevel) Query {
+func (q *query) ConsistencyLevel(c ConsistencyLevel) Query {
 	q.consistencyLevel = c
 	return q
 }
@@ -213,12 +213,12 @@ type result struct {
 
 func (r *result) feedRow() error {
 	if r.row == nil {
-		if len(r.buffer) <= 0 {
+		if len(r.buffer) == 0 {
 			return Done
 		}
 		r.row = r.buffer[0]
 		r.position = 0
-		r.buffer = r.buffer[1:len(r.buffer)]
+		r.buffer = r.buffer[1:]
 	}
 	return nil
 }
