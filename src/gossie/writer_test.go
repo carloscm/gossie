@@ -2,7 +2,7 @@ package gossie
 
 import (
 	"code.google.com/p/gomock/gomock"
-	"github.com/apesternikov/gossie/src/cassandra"
+	. "github.com/apesternikov/gossie/src/cassandra"
 	"github.com/apesternikov/gossie/src/gossie/mock_cassandra"
 	"testing"
 )
@@ -25,7 +25,7 @@ func TestWriterInsert(t *testing.T) {
 	defer ctrl.Finish()
 	cli := mock_cassandra.NewMockCassandra(ctrl)
 	//expectingBatch := thrift.NewTMap(k, v, s)
-	cli.EXPECT().BatchMutate(gomock.Any(), cassandra.ConsistencyLevel_ONE)
+	cli.EXPECT().BatchMutate(gomock.Any(), ConsistencyLevel_ONE)
 	conn := &connection{
 		socket:    nil,
 		transport: nil,

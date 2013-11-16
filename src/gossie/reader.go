@@ -490,10 +490,14 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 			}
 			kr.StartToken = ""
 			kr.StartKey = ksv[len(ksv)-1].Key
-			glog.V(2).Infof("Next batch starts with %q", kr.StartToken)
+			glog.V(2).Infof("Next batch starts with %q", kr.StartKey)
 			for _, ks := range ksv {
+				glog.V(2).Infof("Raw row key %s columns %v", string(ks.Key), ks.Columns)
 				row := rowFromTListColumns(ks.Key, ks.Columns)
-				data <- row
+				glog.V(2).Infof("Row %q", row)
+				if row != nil {
+					data <- row
+				}
 			}
 		}
 	}()
@@ -541,7 +545,6 @@ func (r *reader) WideRowScan(key, startColumn []byte, batchSize int32, callback 
 			}
 		}
 	}
-
 }
 
 func rowFromTListColumns(key []byte, tl []*ColumnOrSuperColumn) *Row {

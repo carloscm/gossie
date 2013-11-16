@@ -1,6 +1,7 @@
 package gossie
 
 import (
+	. "github.com/apesternikov/gossie/src/cassandra"
 	"reflect"
 	"testing"
 )
