@@ -262,3 +262,58 @@ func (r *result) Next(destination interface{}) error {
 	}
 	return err
 }
+
+type StreamingResult struct {
+	Mapping
+	RowsChannel <-chan *Row
+	row         *Row
+	position    int
+}
+
+func (r *StreamingResult) feedRow() error {
+	if r.row == nil {
+		var ok bool
+		r.row, ok = <-r.RowsChannel
+		if !ok {
+			return Done
+		}
+		r.position = 0
+	}
+	return nil
+}
+
+func (r *StreamingResult) Key() ([]byte, error) {
+	if err := r.feedRow(); err != nil {
+		return nil, err
+	}
+	return r.row.Key, nil
+}
+
+func (r *StreamingResult) NextColumn() (*Column, error) {
+	if err := r.feedRow(); err != nil {
+		return nil, err
+	}
+	if r.position >= len(r.row.Columns) {
+		return nil, EndBeforeLimit
+	}
+	c := r.row.Columns[r.position]
+	r.position++
+	return c, nil
+}
+
+func (r *StreamingResult) Rewind() {
+	r.position--
+	if r.position < 0 {
+		r.position = 0
+	}
+}
+
+func (r *StreamingResult) Next(destination interface{}) error {
+	err := r.Unmap(destination, r)
+	if err == Done {
+		// force new row feed and try again, just once
+		r.row = nil
+		err = r.Unmap(destination, r)
+	}
+	return err
+}
