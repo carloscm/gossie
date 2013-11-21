@@ -2,6 +2,7 @@ package gossie
 
 import (
 	. "github.com/apesternikov/gossie/src/cassandra"
+	"github.com/stretchrcom/testify/assert"
 	"reflect"
 	"testing"
 )
@@ -225,4 +226,39 @@ func TestMap(t *testing.T) {
 	for _, shell := range shells {
 		shell.checkFullMap(t)
 	}
+}
+
+func TestMarshalStringKey(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	bv, err := mE.MarshalKey("keyhere")
+	assert.NoError(t, err)
+	assert.Equal(t, string(bv), "keyhere")
+}
+
+func TestMarshalIntKey(t *testing.T) {
+	mE := MustNewMapping(&tagsA{})
+	bv, err := mE.MarshalKey(1)
+	assert.NoError(t, err)
+	assert.Equal(t, bv, []byte{0, 0, 0, 0, 0, 0, 0, 1})
+}
+
+func TestMarshalFieldNoField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	bv, err := mE.MarshalField("NoSuchFIeld", "keyhere")
+	assert.Error(t, err)
+	assert.Nil(t, bv)
+}
+
+func TestMarshalStringField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	bv, err := mE.MarshalField("Key", "keyhere")
+	assert.NoError(t, err)
+	assert.Equal(t, string(bv), "keyhere")
+}
+
+func TestMarshalIntField(t *testing.T) {
+	mE := MustNewMapping(&tagsA{})
+	bv, err := mE.MarshalField("B", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, bv, []byte{0, 0, 0, 0, 0, 0, 0, 1})
 }

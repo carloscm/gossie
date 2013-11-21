@@ -66,21 +66,22 @@ type Result interface {
 }
 
 type query struct {
-	pool             *connectionPool
-	mapping          Mapping
-	consistencyLevel ConsistencyLevel
-	columnLimit      int
-	rowLimit         int
-	reversed         bool
-	components       []interface{}
-	betweenStart     interface{}
-	betweenEnd       interface{}
+	pool         *connectionPool
+	mapping      Mapping
+	reader       Reader
+	columnLimit  int
+	rowLimit     int
+	reversed     bool
+	components   []interface{}
+	betweenStart interface{}
+	betweenEnd   interface{}
 }
 
 func newQuery(cp *connectionPool, m Mapping) *query {
 	return &query{
 		pool:        cp,
 		mapping:     m,
+		reader:      cp.Reader().Cf(m.Cf()),
 		columnLimit: DEFAULT_COLUMN_LIMIT,
 		rowLimit:    DEFAULT_ROW_LIMIT,
 		components:  make([]interface{}, 0),
@@ -88,7 +89,7 @@ func newQuery(cp *connectionPool, m Mapping) *query {
 }
 
 func (q *query) ConsistencyLevel(c ConsistencyLevel) Query {
-	q.consistencyLevel = c
+	q.reader.ConsistencyLevel(c)
 	return q
 }
 
@@ -126,6 +127,11 @@ func (q *query) GetOne(key interface{}, destination interface{}) error {
 	return res.Next(destination)
 }
 
+// func (q *query) Where(field string, op Operator, val interface{}) {
+// 	q.mapping
+
+// }
+
 func (q *query) MultiGet(keys []interface{}) (Result, error) {
 	var err error
 
@@ -139,11 +145,7 @@ func (q *query) MultiGet(keys []interface{}) (Result, error) {
 		keysB = append(keysB, keyB)
 	}
 
-	reader := q.pool.Reader().Cf(q.mapping.Cf())
-
-	if q.consistencyLevel != 0 {
-		reader.ConsistencyLevel(q.consistencyLevel)
-	}
+	reader := q.reader
 
 	q.buildSlice(reader)
 

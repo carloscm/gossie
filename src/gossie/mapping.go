@@ -23,6 +23,9 @@ type Mapping interface {
 	// MarshalKey marshals the passed key value into a []byte
 	MarshalKey(key interface{}) ([]byte, error)
 
+	// MarshalField marshals the single field value into a []byte
+	MarshalField(field string, value interface{}) ([]byte, error)
+
 	// MarshalComponent marshals the passed component value at the position into a []byte
 	MarshalComponent(component interface{}, position int) ([]byte, error)
 
@@ -145,6 +148,18 @@ type sparseMapping struct {
 
 func (m *sparseMapping) Cf() string {
 	return m.cf
+}
+
+func (m *sparseMapping) MarshalField(field string, value interface{}) ([]byte, error) {
+	f, ok := m.si.goFields[field]
+	if !ok {
+		return nil, fmt.Errorf("No such field %s", field)
+	}
+	b, err := Marshal(value, f.cassandraType)
+	if err != nil {
+		return nil, errors.New(fmt.Sprint("Error marshaling passed value for the key in field ", f.name, ":", err))
+	}
+	return b, nil
 }
 
 func (m *sparseMapping) MarshalKey(key interface{}) ([]byte, error) {
