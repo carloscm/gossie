@@ -45,6 +45,14 @@ type Query interface {
 	// inclusive, end is exclusive.
 	Between(start, end interface{}) Query
 
+	// Where adds filter expression (see Reader.Where)
+	// first field must be a part of secondary index and first op must be EQ
+	// use Range to abtain result
+	Where(field string, op Operator, value interface{}) Query
+
+	// scan range filtered by Where statement(s)
+	RangeGet(*Range) (Result, error)
+
 	// Get looks up a row with the given key. If the row uses a composite
 	// column names the Result will allow you to iterate over the entire row.
 	Get(key interface{}) (Result, error)
@@ -127,10 +135,14 @@ func (q *query) GetOne(key interface{}, destination interface{}) error {
 	return res.Next(destination)
 }
 
-// func (q *query) Where(field string, op Operator, val interface{}) {
-// 	q.mapping
-
-// }
+func (q *query) Where(field string, op Operator, val interface{}) Query {
+	bv, err := q.mapping.MarshalField(field, val)
+	if err != nil {
+		panic(err)
+	}
+	q.reader.Where([]byte(field), op, bv)
+	return q
+}
 
 func (q *query) MultiGet(keys []interface{}) (Result, error) {
 	var err error
@@ -145,14 +157,12 @@ func (q *query) MultiGet(keys []interface{}) (Result, error) {
 		keysB = append(keysB, keyB)
 	}
 
-	reader := q.reader
+	q.buildSlice(q.reader)
 
-	q.buildSlice(reader)
-
-	rows := make([]*Row, 0)
+	var rows []*Row
 
 	if len(keysB) == 1 {
-		row, err := reader.Get(keysB[0])
+		row, err := q.reader.Get(keysB[0])
 		if err != nil {
 			return nil, err
 		}
@@ -160,12 +170,21 @@ func (q *query) MultiGet(keys []interface{}) (Result, error) {
 			rows = []*Row{row}
 		}
 	} else {
-		rows, err = reader.MultiGet(keysB)
+		rows, err = q.reader.MultiGet(keysB)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	return &result{query: *q, buffer: rows}, nil
+}
+
+func (q *query) RangeGet(r *Range) (Result, error) {
+	q.buildSlice(q.reader)
+	rows, err := q.reader.RangeGet(r)
+	if err != nil {
+		return nil, err
+	}
 	return &result{query: *q, buffer: rows}, nil
 }
 
