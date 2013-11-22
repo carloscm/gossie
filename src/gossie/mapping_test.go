@@ -262,3 +262,26 @@ func TestMarshalIntField(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, bv, []byte{0, 0, 0, 0, 0, 0, 0, 1})
 }
+
+func TestUnmarshalFieldNoField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	var s string
+	err := mE.UnmarshalField("NoSuchFIeld", []byte{}, &s)
+	assert.Error(t, err)
+}
+
+func TestUnmarshalStringField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	var s string
+	err := mE.UnmarshalField("Key", []byte("keyhere"), &s)
+	assert.NoError(t, err)
+	assert.Equal(t, s, "keyhere")
+}
+
+func TestUnmarshalIntField(t *testing.T) {
+	mE := MustNewMapping(&tagsA{})
+	var i int
+	err := mE.UnmarshalField("B", []byte{0, 0, 0, 0, 0, 0, 0, 1}, &i)
+	assert.NoError(t, err)
+	assert.Equal(t, i, 1)
+}

@@ -37,7 +37,7 @@ type ConnectionPool interface {
 	Writer() Writer
 
 	// Query returns a high level interface for read operations over structs
-	Query(Mapping) Query
+	Query(mapping Mapping) Query
 
 	// Batch returns a high level interface for write operations over structs
 	Batch() Batch

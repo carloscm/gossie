@@ -70,14 +70,14 @@ type Reader interface {
 
 	// Cf sets the column family name for the reader.
 	// This method must be always called.
-	Cf(string) Reader
+	Cf(cf string) Reader
 
 	// Slice optionally sets a slice to set a range of column names and potentially iterate over the
 	// columns of the returned row(s)
-	Slice(*Slice) Reader
+	Slice(slice *Slice) Reader
 
 	// Columns optionally filters the returned columns to only the passed set of column names
-	Columns([][]byte) Reader
+	Columns(columns [][]byte) Reader
 
 	// Each call to this method adds a new comparison to be checked against the returned rows of
 	// IndexedGet
@@ -104,14 +104,14 @@ type Reader interface {
 	// RangeGet performs a sequential Get operation for a range of rows. See the docs for Range for an
 	// explanation on how to page results. It returns a slice of Row pointers to the gathered rows, which
 	// may be empty if none were found. It returns nil only on error conditions
-	RangeGet(*Range) ([]*Row, error)
+	RangeGet(r *Range) ([]*Row, error)
 
 	// IndexedGet performs a sequential Get operation for a range of rows and returns only those that match
 	// the Where clauses. See the docs for Range for an explanation on how to page results. It returns a
 	// slice of Row pointers to the gathered rows, which may be empty if none were found. It returns nil only
 	// on error conditions
 	// Deprecated, please use RangeGet with Where() instead
-	IndexedGet(*IndexedRange) ([]*Row, error)
+	IndexedGet(indexedRange *IndexedRange) ([]*Row, error)
 
 	//Set range to use with RangeScan
 	//Default token range is -1 to 170141183460469231731687303715884105728
@@ -369,12 +369,18 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 	return rowsColumnCountFromTMap(ret), nil
 }
 
+var defaultRange = &Range{Count: 100}
+
 func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	if r.cf == "" {
 		return nil, errors.New("No column family specified")
 	}
 
-	if rang == nil || rang.Count <= 0 {
+	if rang == nil {
+		rang = defaultRange
+	}
+
+	if rang.Count <= 0 {
 		return nil, nil
 	}
 

@@ -53,6 +53,9 @@ type Query interface {
 	// scan range filtered by Where statement(s)
 	RangeGet(*Range) (Result, error)
 
+	// scan range for one record and unmarshal it into destination
+	RangeOne(destination interface{}) error
+
 	// Get looks up a row with the given key. If the row uses a composite
 	// column names the Result will allow you to iterate over the entire row.
 	Get(key interface{}) (Result, error)
@@ -129,6 +132,16 @@ func (q *query) Get(key interface{}) (Result, error) {
 
 func (q *query) GetOne(key interface{}, destination interface{}) error {
 	res, err := q.Get(key)
+	if err != nil {
+		return err
+	}
+	return res.Next(destination)
+}
+
+var rangeOne = &Range{Count: 1}
+
+func (q *query) RangeOne(destination interface{}) error {
+	res, err := q.RangeGet(rangeOne)
 	if err != nil {
 		return err
 	}
