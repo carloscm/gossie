@@ -3,8 +3,8 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	"github.com/carloscm/gossie/src/cassandra"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/hailocab/gossie/src/cassandra"
+	"github.com/hailocab/thrift4go/lib/go/src/thrift"
 	"math/rand"
 	"net"
 	"strconv"
@@ -242,8 +242,16 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		}
 
 		terr := t(c)
+
+		// This error bubble from thrift (in some cases), we are doing this to specifically catch *thrift.tTransportException.
+		if terr.err != nil {
+			c.close()
+			c = nil
+			cp.releaseEmpty()
+			return terr
+		}
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if terr.ire != nil || terr.err != nil {
+		if terr.ire != nil {
 			cp.release(c)
 			return terr
 		}
@@ -288,13 +296,13 @@ func (cp *connectionPool) randomNode(now int) (string, error) {
 
 func (cp *connectionPool) acquire() (*connection, error) {
 	var c *connection
-
 	s := <-cp.available
 
 	now := int(time.Now().Unix())
 	if s.lastUsage+cp.options.Recycle+(rand.Int()%cp.options.RecycleJitter) < now {
 		if s.conn != nil {
 			if err := s.conn.close(); err != nil {
+				cp.releaseEmpty()
 				return nil, err
 			}
 		}
