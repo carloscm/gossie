@@ -103,6 +103,16 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
 			return nil, ErrorUnsupportedNilMarshaling
 		}
 		dvalue = *v
+	case *uint32:
+		if v == nil {
+			return nil, ErrorUnsupportedNilMarshaling
+		}
+		dvalue = *v
+	case *uint64:
+		if v == nil {
+			return nil, ErrorUnsupportedNilMarshaling
+		}
+		dvalue = *v
 	case *string:
 		if v == nil {
 			return nil, ErrorUnsupportedNilMarshaling
@@ -733,7 +743,7 @@ func defaultType(t reflect.Type) TypeDesc {
 		return BooleanType
 	case reflect.String:
 		return UTF8Type
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint32, reflect.Uint64:
 		return LongType
 	case reflect.Float32:
 		return FloatType
