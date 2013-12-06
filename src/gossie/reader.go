@@ -136,7 +136,6 @@ const (
 type reader struct {
 	pool             *connectionPool
 	consistencyLevel ConsistencyLevel
-	cf               string
 	slice            Slice
 	setSlice         bool
 	columns          [][]byte
@@ -144,6 +143,7 @@ type reader struct {
 	expressions      []*IndexExpression
 	startToken       string
 	endToken         string
+	columnParent     ColumnParent
 }
 
 func newReader(cp *connectionPool, cl ConsistencyLevel) *reader {
@@ -164,7 +164,7 @@ func (r *reader) ConsistencyLevel(l ConsistencyLevel) Reader {
 }
 
 func (r *reader) Cf(cf string) Reader {
-	r.cf = cf
+	r.columnParent.ColumnFamily = cf
 	return r
 }
 
@@ -226,12 +226,6 @@ func (r *reader) buildPredicate() *SlicePredicate {
 	return sp
 }
 
-func (r *reader) buildColumnParent() *ColumnParent {
-	cp := NewColumnParent()
-	cp.ColumnFamily = r.cf
-	return cp
-}
-
 func (q *reader) buildKeyRange(r *Range) *KeyRange {
 	kr := NewKeyRange()
 	kr.StartKey = r.Start
@@ -262,11 +256,10 @@ func (r *reader) buildIndexClause(ir *IndexedRange) *IndexClause {
 }
 
 func (r *reader) Get(key []byte) (*Row, error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		return nil, errors.New("No column family specified")
 	}
 
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	var ret []*ColumnOrSuperColumn
@@ -275,7 +268,7 @@ func (r *reader) Get(key []byte) (*Row, error) {
 		var ue *UnavailableException
 		var te *TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetSlice(key, cp, sp, r.consistencyLevel)
+		ret, ire, ue, te, err = c.client.GetSlice(key, &r.columnParent, sp, r.consistencyLevel)
 		return ire, ue, te, err
 	})
 
@@ -287,11 +280,10 @@ func (r *reader) Get(key []byte) (*Row, error) {
 }
 
 func (r *reader) Count(key []byte) (int, error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		return 0, errors.New("No column family specified")
 	}
 
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	var ret int32
@@ -300,7 +292,7 @@ func (r *reader) Count(key []byte) (int, error) {
 		var ue *UnavailableException
 		var te *TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetCount(key, cp, sp, r.consistencyLevel)
+		ret, ire, ue, te, err = c.client.GetCount(key, &r.columnParent, sp, r.consistencyLevel)
 		return ire, ue, te, err
 	})
 
@@ -312,7 +304,7 @@ func (r *reader) Count(key []byte) (int, error) {
 }
 
 func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		return nil, errors.New("No column family specified")
 	}
 
@@ -320,7 +312,6 @@ func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
 		return make([]*Row, 0), nil
 	}
 
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	var ret map[string][]*ColumnOrSuperColumn
@@ -329,7 +320,7 @@ func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
 		var ue *UnavailableException
 		var te *TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.MultigetSlice(keys, cp, sp, r.consistencyLevel)
+		ret, ire, ue, te, err = c.client.MultigetSlice(keys, &r.columnParent, sp, r.consistencyLevel)
 		return ire, ue, te, err
 	})
 
@@ -341,7 +332,7 @@ func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
 }
 
 func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		return nil, errors.New("No column family specified")
 	}
 
@@ -349,7 +340,6 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 		return make([]*RowColumnCount, 0), nil
 	}
 
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	var ret map[string]int32
@@ -358,7 +348,7 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 		var ue *UnavailableException
 		var te *TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.MultigetCount(keys, cp, sp, r.consistencyLevel)
+		ret, ire, ue, te, err = c.client.MultigetCount(keys, &r.columnParent, sp, r.consistencyLevel)
 		return ire, ue, te, err
 	})
 
@@ -372,7 +362,7 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 var defaultRange = &Range{Count: 100}
 
 func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		return nil, errors.New("No column family specified")
 	}
 
@@ -385,7 +375,6 @@ func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	}
 
 	kr := r.buildKeyRange(rang)
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	var ret []*KeySlice
@@ -394,7 +383,7 @@ func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 		var ue *UnavailableException
 		var te *TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetRangeSlices(cp, sp, kr, r.consistencyLevel)
+		ret, ire, ue, te, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
 		return ire, ue, te, err
 	})
 
@@ -406,7 +395,7 @@ func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 }
 
 func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		return nil, errors.New("No column family specified")
 	}
 
@@ -419,7 +408,6 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 	}
 
 	ic := r.buildIndexClause(rang)
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	var ret []*KeySlice
@@ -428,7 +416,7 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 		var ue *UnavailableException
 		var te *TimedOutException
 		var err error
-		ret, ire, ue, te, err = c.client.GetIndexedSlices(cp, ic, sp, r.consistencyLevel)
+		ret, ire, ue, te, err = c.client.GetIndexedSlices(&r.columnParent, ic, sp, r.consistencyLevel)
 		return ire, ue, te, err
 	})
 
@@ -440,7 +428,7 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 }
 
 func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
-	if r.cf == "" {
+	if r.columnParent.ColumnFamily == "" {
 		panic(errors.New("No column family specified"))
 	}
 	kr := NewKeyRange()
@@ -455,7 +443,6 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 		kr.EndToken = DEF_END_TOKEN
 	}
 	kr.RowFilter = r.expressions
-	cp := r.buildColumnParent()
 	sp := r.buildPredicate()
 
 	data := make(chan *Row)
@@ -472,7 +459,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				var ue *UnavailableException
 				var te *TimedOutException
 				var err error
-				ksv, ire, ue, te, err = c.client.GetRangeSlices(cp, sp, kr, r.consistencyLevel)
+				ksv, ire, ue, te, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
 				return ire, ue, te, err
 			})
 
@@ -523,7 +510,7 @@ func (r *reader) WideRowScan(key, startColumn []byte, batchSize int32, callback 
 			var ue *UnavailableException
 			var te *TimedOutException
 			var err error
-			ret, ire, ue, te, err = c.client.GetPagedSlice(r.cf, keyRange, startColumn, r.consistencyLevel)
+			ret, ire, ue, te, err = c.client.GetPagedSlice(r.columnParent.ColumnFamily, keyRange, startColumn, r.consistencyLevel)
 			return ire, ue, te, err
 		})
 
