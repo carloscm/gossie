@@ -157,6 +157,10 @@ func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
 		return marshalInt(int64(v), 4, typeDesc)
 	case int64:
 		return marshalInt(v, 8, typeDesc)
+	case uint32:
+		return marshalUint(uint64(v), 4, typeDesc)
+	case uint64:
+		return marshalUint(v, 8, typeDesc)
 	case string:
 		return marshalString(v, typeDesc)
 	case UUID:
@@ -237,6 +241,24 @@ func marshalInt(value int64, size int, typeDesc TypeDesc) ([]byte, error) {
 	}
 	return nil, ErrorUnsupportedMarshaling
 }
+
+func marshalUint(value uint64, size int, typeDesc TypeDesc) ([]byte, error) {
+	switch typeDesc {
+
+	case LongType:
+		b := make([]byte, 8)
+		enc.BigEndian.PutUint64(b, uint64(value))
+		return b, nil
+
+	case Int32Type:
+		b := make([]byte, 4)
+		enc.BigEndian.PutUint32(b, uint32(value))
+		return b, nil
+	}
+	return nil, ErrorUnsupportedMarshaling
+
+}
+
 
 func marshalTime(value time.Time, typeDesc TypeDesc) ([]byte, error) {
 	if value.IsZero() {
@@ -349,6 +371,11 @@ func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) error {
 		return unmarshalInt32(b, typeDesc, v)
 	case *int64:
 		return unmarshalInt64(b, typeDesc, v)
+	case *uint32:
+		return unmarshalUint32(b, typeDesc, v)
+	case *uint64:
+		return unmarshalUint64(b, typeDesc, v)
+
 	case *UUID:
 		return unmarshalUUID(b, typeDesc, v)
 	case *float32:
@@ -435,6 +462,30 @@ func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) error {
 	return ErrorUnsupportedCassandraTypeUnmarshaling
 }
 
+func unmarshalUint64(b []byte, typeDesc TypeDesc, value *uint64) error {
+	switch typeDesc {
+	case LongType, BytesType, DateType, CounterColumnType:
+		if len(b) != 8 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		*value = uint64(enc.BigEndian.Uint64(b))
+		return nil
+
+	case AsciiType, UTF8Type:
+		var r string
+		err := unmarshalString(b, AsciiType, &r)
+		if err != nil {
+			return err
+		}
+		*value, err = strconv.ParseUint(r, 10, 64)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
 func unmarshalTime(b []byte, typeDesc TypeDesc, value *time.Time) error {
 
 	if len(b) == 0 {
@@ -491,6 +542,38 @@ func unmarshalInt32(b []byte, typeDesc TypeDesc, value *int32) error {
 			return err
 		}
 		*value = int32(i)
+		return nil
+	}
+	return ErrorUnsupportedCassandraTypeUnmarshaling
+}
+
+func unmarshalUint32(b []byte, typeDesc TypeDesc, value *uint32) error {
+	switch typeDesc {
+	case LongType:
+		if len(b) != 8 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		*value = uint32(enc.BigEndian.Uint64(b))
+		return nil
+
+	case BytesType, Int32Type:
+		if len(b) != 4 {
+			return ErrorCassandraTypeSerializationUnmarshaling
+		}
+		*value = uint32(enc.BigEndian.Uint32(b))
+		return nil
+
+	case AsciiType, UTF8Type:
+		var r string
+		err := unmarshalString(b, AsciiType, &r)
+		if err != nil {
+			return err
+		}
+		i, err := strconv.ParseUint(r, 10, 32)
+		if err != nil {
+			return err
+		}
+		*value = uint32(i)
 		return nil
 	}
 	return ErrorUnsupportedCassandraTypeUnmarshaling
