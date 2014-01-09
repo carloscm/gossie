@@ -41,6 +41,14 @@ func (m *MockQuery) Get(key interface{}) (Result, error) {
 	}, nil
 }
 
+func (m *MockQuery) GetOne(key interface{}, destination interface{}) error {
+	res, err := m.Get(key)
+	if err != nil {
+		return err
+	}
+	return res.Next(destination)
+}
+
 type result struct {
 	MockQuery
 	buffer   []*Row
