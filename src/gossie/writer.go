@@ -97,7 +97,7 @@ func (w *writer) InsertTtl(cf string, row *Row, ttl int) Writer {
 		if ttl > 0 {
 			c.Ttl = int32(ttl)
 		} else {
-			c.Ttl = c.Ttl
+			c.Ttl = col.Ttl
 		}
 		if col.Timestamp > 0 {
 			c.Timestamp = col.Timestamp
