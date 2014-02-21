@@ -28,7 +28,7 @@ func NewMockConnectionPool() *MockConnectionPool {
 
 func (*MockConnectionPool) Keyspace() string { return "MockKeyspace" }
 func (*MockConnectionPool) Schema() *Schema  { panic("Schema Not Implemented") }
-func (*MockConnectionPool) Reader() Reader   { panic("Reader Not Implemented") }
+func (m *MockConnectionPool) Reader() Reader   { return newReader(m) }
 func (m *MockConnectionPool) Writer() Writer { return newWriter(m) }
 func (m *MockConnectionPool) Batch() Batch   { return newBatch(m) }
 func (*MockConnectionPool) Close() error     { return nil }

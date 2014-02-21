@@ -84,7 +84,30 @@ func (w *MockWriter) Delete(cf string, key []byte) Writer {
 }
 
 func (w *MockWriter) DeleteColumns(cf string, key []byte, columns [][]byte) Writer {
-	panic("Not Implemented")
+	rows := w.pool.Rows(cf)
+
+	t := now()
+
+	i := sort.Search(len(rows), func(i int) bool { return bytes.Compare(rows[i].Key, key) >= 0 })
+	if i < len(rows) && bytes.Equal(rows[i].Key, key) {
+		// Row exists, delete the columns
+		e := rows[i]
+		cols := e.Columns
+		for _, c := range columns {
+			j := sort.Search(len(cols), func(j int) bool { return bytes.Compare(cols[j].Name, c) >= 0 })
+			if j < len(cols) && bytes.Equal(cols[j].Name, c) {
+				if t >= cols[j].Timestamp {
+					// TODO store tombstone?
+					copy(cols[j:], cols[j+1:])
+					cols[len(cols)-1] = nil
+					cols = cols[:len(cols)-1]
+				}
+			}
+		}
+		e.Columns = cols
+	}
+
+	return w
 }
 
 func (w *MockWriter) Run() error {
