@@ -31,6 +31,7 @@ func (m *MockQuery) Get(key interface{}) (Result, error) {
 	buffer := make([]*Row, 0)
 	for _, r := range rows {
 		if bytes.Equal(r.Key, k) {
+			checkExpired(r)
 			buffer = append(buffer, r)
 		}
 	}

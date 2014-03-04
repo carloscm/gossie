@@ -40,6 +40,7 @@ func (m *MockReader) Get(key []byte) (*Row, error) {
 
 	for _, r := range rows {
 		if bytes.Equal(r.Key, key) {
+			checkExpired(r)
 			return r, nil
 		}
 	}

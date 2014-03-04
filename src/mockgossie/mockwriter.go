@@ -26,6 +26,10 @@ func (w *MockWriter) ConsistencyLevel(l int) Writer {
 }
 
 func (w *MockWriter) Insert(cf string, row *Row) Writer {
+	return w.InsertTtl(cf, row, -1)
+}
+
+func (w *MockWriter) InsertTtl(cf string, row *Row, ttl int) Writer {
 	rows := w.pool.Rows(cf)
 
 	t := now()
@@ -33,12 +37,17 @@ func (w *MockWriter) Insert(cf string, row *Row) Writer {
 		if c.Timestamp == 0 {
 			c.Timestamp = t
 		}
+		if c.Ttl != -1 {
+			// reset to the actual time to expire
+			c.Ttl = int32(now()/1e6) + c.Ttl
+		}
 	}
 
 	i := sort.Search(len(rows), func(i int) bool { return bytes.Compare(rows[i].Key, row.Key) >= 0 })
 	if i < len(rows) && bytes.Equal(rows[i].Key, row.Key) {
 		// Row already exists, merge the columns
 		e := rows[i]
+		checkExpired(e)
 		cols := e.Columns
 		for _, c := range row.Columns {
 			j := sort.Search(len(cols), func(j int) bool { return bytes.Compare(cols[j].Name, c.Name) >= 0 })
@@ -71,8 +80,24 @@ func (w *MockWriter) Insert(cf string, row *Row) Writer {
 	return w
 }
 
-func (w *MockWriter) InsertTtl(cf string, row *Row, ttl int) Writer {
-	panic("Not Implemented")
+func checkExpired(r *Row) {
+	for i := 0; i < len(r.Columns); {
+		c := r.Columns[i]
+		if isExpired(c) {
+			copy(r.Columns[i:], r.Columns[i+1:])
+			r.Columns[len(r.Columns)-1] = nil
+			r.Columns = r.Columns[:len(r.Columns)-1]
+		} else {
+			i++
+		}
+	}
+}
+
+func isExpired(c *Column) bool {
+	if c.Ttl == -1 {
+		return false
+	}
+	return int32(now()/1e6) > c.Ttl
 }
 
 func (w *MockWriter) DeltaCounters(cf string, row *Row) Writer {
