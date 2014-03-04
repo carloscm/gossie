@@ -2,6 +2,7 @@ package mockgossie
 
 import (
 	"fmt"
+
 	"github.com/wadey/gossie/src/gossie"
 )
 

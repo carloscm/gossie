@@ -9,18 +9,18 @@ type MockReader struct {
 	pool        *MockConnectionPool
 	columnLimit int
 	rowLimit    int
-	cf string
+	cf          string
 }
 
-func (m *MockReader) ConsistencyLevel(int) Reader { panic("not implemented") }
-func (m *MockReader) Slice(*Slice) Reader { panic("not implemented") }
-func (m *MockReader) Columns([][]byte) Reader { panic("not implemented") }
+func (m *MockReader) ConsistencyLevel(int) Reader                           { panic("not implemented") }
+func (m *MockReader) Slice(*Slice) Reader                                   { panic("not implemented") }
+func (m *MockReader) Columns([][]byte) Reader                               { panic("not implemented") }
 func (m *MockReader) Where(column []byte, op Operator, value []byte) Reader { panic("not implemented") }
-func (m *MockReader) MultiGet(keys [][]byte) ([]*Row, error) { panic("not implemented") }
-func (m *MockReader) Count(key []byte) (int, error) { panic("not implemented") }
-func (m *MockReader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) { panic("not implemented") }
-func (m *MockReader) RangeGet(*Range) ([]*Row, error) { panic("not implemented") }
-func (m *MockReader) IndexedGet(*IndexedRange) ([]*Row, error) { panic("not implemented") }
+func (m *MockReader) MultiGet(keys [][]byte) ([]*Row, error)                { panic("not implemented") }
+func (m *MockReader) Count(key []byte) (int, error)                         { panic("not implemented") }
+func (m *MockReader) MultiCount(keys [][]byte) ([]*RowColumnCount, error)   { panic("not implemented") }
+func (m *MockReader) RangeGet(*Range) ([]*Row, error)                       { panic("not implemented") }
+func (m *MockReader) IndexedGet(*IndexedRange) ([]*Row, error)              { panic("not implemented") }
 
 func newReader(m *MockConnectionPool) *MockReader {
 	return &MockReader{

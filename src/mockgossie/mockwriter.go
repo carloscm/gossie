@@ -2,9 +2,9 @@ package mockgossie
 
 import (
 	"bytes"
-	. "github.com/wadey/gossie/src/gossie"
 	"sort"
 	"time"
+	. "github.com/wadey/gossie/src/gossie"
 )
 
 type MockWriter struct {
