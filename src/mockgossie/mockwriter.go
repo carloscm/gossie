@@ -37,10 +37,11 @@ func (w *MockWriter) InsertTtl(cf string, row *Row, ttl int) Writer {
 		if c.Timestamp == 0 {
 			c.Timestamp = t
 		}
-		if c.Ttl != -1 {
-			// reset to the actual time to expire
-			c.Ttl = int32(now()/1e6) + c.Ttl
+		if ttl > 0 {
+			c.Ttl = int32(ttl)
 		}
+		// reset to the actual time to expire
+		c.Ttl = int32(now()/1e6) + c.Ttl
 	}
 
 	i := sort.Search(len(rows), func(i int) bool { return bytes.Compare(rows[i].Key, row.Key) >= 0 })
@@ -94,10 +95,10 @@ func checkExpired(r *Row) {
 }
 
 func isExpired(c *Column) bool {
-	if c.Ttl == -1 {
-		return false
+	if c.Ttl > 0 {
+		return int32(now()/1e6) > c.Ttl
 	}
-	return int32(now()/1e6) > c.Ttl
+	return false
 }
 
 func (w *MockWriter) DeltaCounters(cf string, row *Row) Writer {
