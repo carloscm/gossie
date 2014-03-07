@@ -140,15 +140,15 @@ func TestMap(t *testing.T) {
 				Columns: []*Column{
 					&Column{
 						Name:  []byte{'B'},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 2},
+						Value: &[]byte{0, 0, 0, 0, 0, 0, 0, 2},
 					},
 					&Column{
 						Name:  []byte{'C'},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 3},
+						Value: &[]byte{0, 0, 0, 0, 0, 0, 0, 3},
 					},
 					&Column{
 						Name:  []byte{'D'},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+						Value: &[]byte{0, 0, 0, 0, 0, 0, 0, 4},
 					},
 				},
 			},
@@ -164,7 +164,7 @@ func TestMap(t *testing.T) {
 				Columns: []*Column{
 					&Column{
 						Name:  []byte{0, 1, '2', 0, 0, 1, 'Z', 0},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+						Value: &[]byte{0, 0, 0, 0, 0, 0, 0, 4},
 					},
 				},
 			},
@@ -180,7 +180,7 @@ func TestMap(t *testing.T) {
 				Columns: []*Column{
 					&Column{
 						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
-						Value: []byte{0, 0, 0, 0, 0, 0, 0, 4},
+						Value: &[]byte{0, 0, 0, 0, 0, 0, 0, 4},
 					},
 				},
 			},
@@ -196,7 +196,7 @@ func TestMap(t *testing.T) {
 				Columns: []*Column{
 					&Column{
 						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
-						Value: []byte{},
+						Value: nil,
 					},
 				},
 			},
@@ -216,7 +216,7 @@ func TestMap(t *testing.T) {
 							0, 0, 0, 0, 5, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 4, 65, 0, 0, 0, 0, 0,
 							8, 64, 34, 0, 0, 0, 0, 0, 0, 0, 0, 1, 98, 0, 0, 16, 0, 17, 34, 51, 68, 85, 102, 119, 136, 153, 170, 187, 204,
 							221, 238, 255, 0, 0, 3, 86, 97, 108, 0},
-						Value: []byte{99},
+						Value: &[]byte{99},
 					},
 				},
 			},

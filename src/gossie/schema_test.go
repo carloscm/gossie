@@ -12,7 +12,7 @@ func TestSchema(t *testing.T) {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	ksDef, _, _, _ := c.client.DescribeKeyspace(keyspace)
+	ksDef, _ := c.client.DescribeKeyspace(keyspace)
 
 	schema := newSchema(ksDef)
 	defer c.close()
