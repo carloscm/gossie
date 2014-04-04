@@ -4,13 +4,14 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	"github.com/wadey/gossie/src/cassandra"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"math/rand"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pomack/thrift4go/lib/go/src/thrift"
+	"github.com/wadey/gossie/src/cassandra"
 )
 
 /*
@@ -243,11 +244,23 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		}
 
 		terr := t(c)
+
+		// A Thrift-masked EPIPE will occur if Cassandra restarts underneath
+		// our client.  In such cases we should close the broken connection
+		// and try again per the existing retry counter.
+		if terr.err != nil && strings.HasPrefix(terr.err.Error(), "Cannot read. Remote side has closed.") {
+			cp.releaseEmpty()
+			c.close()
+			c = nil
+			continue
+		}
+
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
 		if terr.ire != nil || terr.err != nil {
 			cp.release(c)
 			return terr
 		}
+
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
 		if terr.te != nil {
 			cp.blacklist(c.node)
@@ -255,6 +268,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			c = nil
 			continue
 		}
+
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
 		if terr.ue != nil {
@@ -262,9 +276,11 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			c = nil
 			continue
 		}
+
 		// no errors, release connection and return
 		cp.release(c)
 		return nil
+
 	}
 
 	// loop exited normally so it hit the retry limit
