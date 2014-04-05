@@ -1,6 +1,7 @@
 package gossie
 
 import (
+	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/apesternikov/gossie/src/cassandra"
 )
 
@@ -81,7 +82,7 @@ func (w *writer) InsertTtl(cf string, row *Row, ttl int) Writer {
 		c.Name = col.Name
 		c.Value = col.Value
 		if ttl > 0 {
-			c.Ttl = NewInt32(ttl)
+			c.Ttl = thrift.Int32Ptr(int32(ttl))
 		}
 		if col.Timestamp != nil {
 			c.Timestamp = col.Timestamp
@@ -112,7 +113,7 @@ func (w *writer) DeltaCounters(cf string, row *Row) Writer {
 func (w *writer) Delete(cf string, key []byte) Writer {
 	tm := w.addWriter(cf, key)
 	d := cassandra.NewDeletion()
-	d.Timestamp = NewInt64(now())
+	d.Timestamp = thrift.Int64Ptr(now())
 	tm.Deletion = d
 	return w
 }
@@ -120,7 +121,7 @@ func (w *writer) Delete(cf string, key []byte) Writer {
 func (w *writer) DeleteColumns(cf string, key []byte, columns [][]byte) Writer {
 	tm := w.addWriter(cf, key)
 	d := cassandra.NewDeletion()
-	d.Timestamp = NewInt64(now())
+	d.Timestamp = thrift.Int64Ptr(now())
 	sp := cassandra.NewSlicePredicate()
 	sp.ColumnNames = &columns
 	d.Predicate = sp
