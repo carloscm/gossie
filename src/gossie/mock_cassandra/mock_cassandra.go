@@ -180,9 +180,9 @@ func (_mr *_MockCassandraRecorder) DescribeVersion() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "DescribeVersion")
 }
 
-func (_m *MockCassandra) ExecuteCql3Query(_param0 []byte, _param1 cassandra.Compression, _param2 cassandra.ConsistencyLevel) (*cassandra.CqlResult, error) {
+func (_m *MockCassandra) ExecuteCql3Query(_param0 []byte, _param1 cassandra.Compression, _param2 cassandra.ConsistencyLevel) (*cassandra.CqlResult_, error) {
 	ret := _m.ctrl.Call(_m, "ExecuteCql3Query", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*cassandra.CqlResult)
+	ret0, _ := ret[0].(*cassandra.CqlResult_)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -191,9 +191,9 @@ func (_mr *_MockCassandraRecorder) ExecuteCql3Query(arg0, arg1, arg2 interface{}
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "ExecuteCql3Query", arg0, arg1, arg2)
 }
 
-func (_m *MockCassandra) ExecuteCqlQuery(_param0 []byte, _param1 cassandra.Compression) (*cassandra.CqlResult, error) {
+func (_m *MockCassandra) ExecuteCqlQuery(_param0 []byte, _param1 cassandra.Compression) (*cassandra.CqlResult_, error) {
 	ret := _m.ctrl.Call(_m, "ExecuteCqlQuery", _param0, _param1)
-	ret0, _ := ret[0].(*cassandra.CqlResult)
+	ret0, _ := ret[0].(*cassandra.CqlResult_)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -202,9 +202,9 @@ func (_mr *_MockCassandraRecorder) ExecuteCqlQuery(arg0, arg1 interface{}) *gomo
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "ExecuteCqlQuery", arg0, arg1)
 }
 
-func (_m *MockCassandra) ExecutePreparedCql3Query(_param0 int32, _param1 [][]byte, _param2 cassandra.ConsistencyLevel) (*cassandra.CqlResult, error) {
+func (_m *MockCassandra) ExecutePreparedCql3Query(_param0 int32, _param1 [][]byte, _param2 cassandra.ConsistencyLevel) (*cassandra.CqlResult_, error) {
 	ret := _m.ctrl.Call(_m, "ExecutePreparedCql3Query", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*cassandra.CqlResult)
+	ret0, _ := ret[0].(*cassandra.CqlResult_)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -213,9 +213,9 @@ func (_mr *_MockCassandraRecorder) ExecutePreparedCql3Query(arg0, arg1, arg2 int
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "ExecutePreparedCql3Query", arg0, arg1, arg2)
 }
 
-func (_m *MockCassandra) ExecutePreparedCqlQuery(_param0 int32, _param1 [][]byte) (*cassandra.CqlResult, error) {
+func (_m *MockCassandra) ExecutePreparedCqlQuery(_param0 int32, _param1 [][]byte) (*cassandra.CqlResult_, error) {
 	ret := _m.ctrl.Call(_m, "ExecutePreparedCqlQuery", _param0, _param1)
-	ret0, _ := ret[0].(*cassandra.CqlResult)
+	ret0, _ := ret[0].(*cassandra.CqlResult_)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -332,9 +332,9 @@ func (_mr *_MockCassandraRecorder) MultigetSlice(arg0, arg1, arg2, arg3 interfac
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "MultigetSlice", arg0, arg1, arg2, arg3)
 }
 
-func (_m *MockCassandra) PrepareCql3Query(_param0 []byte, _param1 cassandra.Compression) (*cassandra.CqlPreparedResult, error) {
+func (_m *MockCassandra) PrepareCql3Query(_param0 []byte, _param1 cassandra.Compression) (*cassandra.CqlPreparedResult_, error) {
 	ret := _m.ctrl.Call(_m, "PrepareCql3Query", _param0, _param1)
-	ret0, _ := ret[0].(*cassandra.CqlPreparedResult)
+	ret0, _ := ret[0].(*cassandra.CqlPreparedResult_)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -343,9 +343,9 @@ func (_mr *_MockCassandraRecorder) PrepareCql3Query(arg0, arg1 interface{}) *gom
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "PrepareCql3Query", arg0, arg1)
 }
 
-func (_m *MockCassandra) PrepareCqlQuery(_param0 []byte, _param1 cassandra.Compression) (*cassandra.CqlPreparedResult, error) {
+func (_m *MockCassandra) PrepareCqlQuery(_param0 []byte, _param1 cassandra.Compression) (*cassandra.CqlPreparedResult_, error) {
 	ret := _m.ctrl.Call(_m, "PrepareCqlQuery", _param0, _param1)
-	ret0, _ := ret[0].(*cassandra.CqlPreparedResult)
+	ret0, _ := ret[0].(*cassandra.CqlPreparedResult_)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
