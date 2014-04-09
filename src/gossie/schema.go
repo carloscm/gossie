@@ -30,19 +30,19 @@ func newSchema(ksDef *cassandra.KsDef) *Schema {
 
 	for _, cfDef := range cfDefs {
 
-		if *cfDef.ColumnType != "Standard" {
+		if cfDef.ColumnType != "Standard" {
 			continue
 		}
 
 		cf := &ColumnFamily{}
 
-		cf.DefaultComparator = parseTypeClass(*cfDef.ComparatorType)
+		cf.DefaultComparator = parseTypeClass(cfDef.ComparatorType)
 		cf.DefaultValidator = parseTypeClass(*cfDef.DefaultValidationClass)
 		cf.KeyValidator = parseTypeClass(*cfDef.KeyValidationClass)
 
 		cf.NamedColumns = make(map[string]TypeClass)
 
-		for _, colDef := range *cfDef.ColumnMetadata {
+		for _, colDef := range cfDef.ColumnMetadata {
 			name := string(colDef.Name[0:(len(colDef.Name))])
 			cf.NamedColumns[name] = parseTypeClass(colDef.ValidationClass)
 		}

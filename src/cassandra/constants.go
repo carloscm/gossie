@@ -4,6 +4,7 @@
 package cassandra
 
 import (
+	"bytes"
 	"fmt"
 	"git.apache.org/thrift.git/lib/go/thrift"
 )
@@ -11,6 +12,7 @@ import (
 // (needed to ensure safety because of naive import list construction.)
 var _ = thrift.ZERO
 var _ = fmt.Printf
+var _ = bytes.Equal
 
 const VERSION = "19.36.0"
 

@@ -217,7 +217,7 @@ func fullSlice() *SliceRange {
 func (r *reader) buildPredicate() *SlicePredicate {
 	sp := NewSlicePredicate()
 	if r.setColumns {
-		sp.ColumnNames = &r.columns
+		sp.ColumnNames = r.columns
 	} else if r.setSlice {
 		sp.SliceRange = sliceToCassandra(&r.slice)
 	} else {
@@ -228,15 +228,17 @@ func (r *reader) buildPredicate() *SlicePredicate {
 
 func (q *reader) buildKeyRange(r *Range) *KeyRange {
 	kr := NewKeyRange()
-	kr.StartKey = &r.Start
-	kr.EndKey = &r.End
-	if r.Count == 0 {
-		r.Count = 100
+	kr.StartKey = r.Start
+	//nil start/end keys should be converted to empty slices
+	if kr.StartKey == nil {
+		kr.StartKey = []byte{}
+	}
+	kr.EndKey = r.End
+	if kr.EndKey == nil {
+		kr.EndKey = []byte{}
 	}
 	kr.Count = int32(r.Count)
-	if len(q.expressions) != 0 {
-		kr.RowFilter = &q.expressions
-	}
+	kr.RowFilter = q.expressions
 	return kr
 }
 
@@ -344,7 +346,7 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 	return rowsColumnCountFromTMap(ret), nil
 }
 
-var defaultRange = &Range{Count: 100}
+var defaultRange = &Range{Start: []byte{}, End: []byte{}, Count: 100}
 
 func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	if r.columnParent.ColumnFamily == "" {
@@ -422,7 +424,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 		kr.EndToken = &DEF_END_TOKEN
 	}
 	if len(r.expressions) != 0 {
-		kr.RowFilter = &r.expressions
+		kr.RowFilter = r.expressions
 	}
 	sp := r.buildPredicate()
 
@@ -451,7 +453,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				//phew. done
 				return
 			}
-			if kr.StartKey != nil && bytes.Equal(ksv[0].Key, *kr.StartKey) {
+			if kr.StartKey != nil && bytes.Equal(ksv[0].Key, kr.StartKey) {
 				//AP: I'm sending a diarrhea beam your way, dear designer of cassandra iteration
 				ksv = ksv[1:]
 			}
@@ -460,8 +462,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				return
 			}
 			kr.StartToken = nil
-			k := ksv[len(ksv)-1].Key //just in case it is mutable
-			kr.StartKey = &k
+			kr.StartKey = ksv[len(ksv)-1].Key //just in case it is mutable
 			glog.V(2).Infof("Next batch starts with %q", kr.StartKey)
 			for _, ks := range ksv {
 				glog.V(2).Infof("Raw row key %s columns %v", string(ks.Key), ks.Columns)
@@ -478,8 +479,8 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 
 func (r *reader) WideRowScan(key, startColumn []byte, batchSize int32, callback func(*Column) bool) error {
 	keyRange := NewKeyRange()
-	keyRange.StartKey = &key
-	keyRange.EndKey = &key
+	keyRange.StartKey = key
+	keyRange.EndKey = key
 	keyRange.Count = batchSize //yes, it is weird but this count means columns count for GetPagedSlice
 
 	var ret []*KeySlice
@@ -532,7 +533,7 @@ func rowFromTListColumns(key []byte, tl []*ColumnOrSuperColumn) *Row {
 			v, _ := Marshal(col.CounterColumn.Value, LongType)
 			c := &Column{
 				Name:  col.CounterColumn.Name,
-				Value: &v,
+				Value: v,
 			}
 			r.Columns = append(r.Columns, c)
 		}

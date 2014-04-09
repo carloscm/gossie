@@ -23,7 +23,7 @@ type testRow struct {
 func addColumn(row *Row, c *testColumn) {
 	n, _ := Marshal(c.name, c.nameType)
 	v, _ := Marshal(c.value, c.valueType)
-	row.Columns = append(row.Columns, &Column{Name: n, Value: &v})
+	row.Columns = append(row.Columns, &Column{Name: n, Value: v})
 }
 
 func buildRow(r *testRow) *Row {
@@ -106,7 +106,7 @@ func checkRow(t *testing.T, expected *testRow, actual *Row) {
 		if !reflect.DeepEqual(exName, actual.Columns[i].Name) {
 			t.Error("Column index ", i, ", named ", c.name, ", is not named the same in actual row: ", actual.Columns[i].Name)
 		}
-		if !reflect.DeepEqual(exValue, *actual.Columns[i].Value) {
+		if !reflect.DeepEqual(exValue, actual.Columns[i].Value) {
 			t.Error("Column index ", i, ", named ", c.name, ", has not the expected value: ", exValue, " vs ", actual.Columns[i].Value)
 		}
 	}
@@ -116,7 +116,7 @@ func buildIntSliceFromRow(row *Row) []int64 {
 	var r []int64
 	for _, c := range row.Columns {
 		var v int64
-		Unmarshal(*c.Value, LongType, &v)
+		Unmarshal(c.Value, LongType, &v)
 		r = append(r, v)
 	}
 	return r

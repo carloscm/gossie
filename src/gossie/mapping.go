@@ -259,7 +259,7 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 		if err != nil {
 			return nil, err
 		}
-		row.Columns = append(row.Columns, &Column{Name: columnName, Value: &columnValue})
+		row.Columns = append(row.Columns, &Column{Name: columnName, Value: columnValue})
 	}
 
 	return row, nil
@@ -386,7 +386,7 @@ func (m *sparseMapping) Unmap(destination interface{}, provider RowProvider) err
 		}
 		if f, found := si.cassandraFields[name]; found {
 			if column.Value != nil {
-				err := f.unmarshalValue(*column.Value, v)
+				err := f.unmarshalValue(column.Value, v)
 				if err != nil {
 					return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
 				}
@@ -425,7 +425,7 @@ func (m *compactMapping) Map(source interface{}) (*Row, error) {
 		if err != nil {
 			return nil, err
 		}
-		row.Columns = append(row.Columns, &Column{Name: composite, Value: &columnValue})
+		row.Columns = append(row.Columns, &Column{Name: composite, Value: columnValue})
 	} else {
 		row.Columns = append(row.Columns, &Column{Name: composite, Value: nil})
 	}
@@ -458,7 +458,7 @@ func (m *compactMapping) Unmap(destination interface{}, provider RowProvider) er
 	}
 	if f, found := si.goFields[m.value]; found {
 		if column.Value != nil {
-			err := f.unmarshalValue(*column.Value, v)
+			err := f.unmarshalValue(column.Value, v)
 			if err != nil {
 				return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
 			}

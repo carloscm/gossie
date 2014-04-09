@@ -101,7 +101,7 @@ func (w *writer) DeltaCounters(cf string, row *Row) Writer {
 		tm := w.addWriter(cf, row.Key)
 		c := cassandra.NewCounterColumn()
 		c.Name = col.Name
-		Unmarshal(*col.Value, LongType, &c.Value)
+		Unmarshal(col.Value, LongType, &c.Value)
 		cs := cassandra.NewColumnOrSuperColumn()
 		cs.CounterColumn = c
 		tm.ColumnOrSupercolumn = cs
@@ -123,7 +123,7 @@ func (w *writer) DeleteColumns(cf string, key []byte, columns [][]byte) Writer {
 	d := cassandra.NewDeletion()
 	d.Timestamp = thrift.Int64Ptr(now())
 	sp := cassandra.NewSlicePredicate()
-	sp.ColumnNames = &columns
+	sp.ColumnNames = columns
 	d.Predicate = sp
 	tm.Deletion = d
 	return w

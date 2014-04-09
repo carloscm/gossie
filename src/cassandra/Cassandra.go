@@ -4,6 +4,7 @@
 package cassandra
 
 import (
+	"bytes"
 	"fmt"
 	"git.apache.org/thrift.git/lib/go/thrift"
 )
@@ -11,6 +12,7 @@ import (
 // (needed to ensure safety because of naive import list construction.)
 var _ = thrift.ZERO
 var _ = fmt.Printf
+var _ = bytes.Equal
 
 type Cassandra interface {
 	// Parameters:
@@ -5862,6 +5864,13 @@ func NewLoginArgs() *LoginArgs {
 	return &LoginArgs{}
 }
 
+func (p *LoginArgs) GetAuthRequest() *AuthenticationRequest {
+	return p.AuthRequest
+}
+func (p *LoginArgs) IsSetAuthRequest() bool {
+	return true
+}
+
 func (p *LoginArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -5947,6 +5956,21 @@ type LoginResult struct {
 
 func NewLoginResult() *LoginResult {
 	return &LoginResult{}
+}
+
+func (p *LoginResult) GetAuthnx() *AuthenticationException {
+	return p.Authnx
+}
+
+func (p *LoginResult) GetAuthzx() *AuthorizationException {
+	return p.Authzx
+}
+func (p *LoginResult) IsSetAuthnx() bool {
+	return true
+}
+
+func (p *LoginResult) IsSetAuthzx() bool {
+	return true
 }
 
 func (p *LoginResult) Read(iprot thrift.TProtocol) error {
@@ -6069,6 +6093,13 @@ func NewSetKeyspaceArgs() *SetKeyspaceArgs {
 	return &SetKeyspaceArgs{}
 }
 
+func (p *SetKeyspaceArgs) GetKeyspace() string {
+	return p.Keyspace
+}
+func (p *SetKeyspaceArgs) IsSetKeyspace() bool {
+	return true
+}
+
 func (p *SetKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -6152,6 +6183,13 @@ type SetKeyspaceResult struct {
 
 func NewSetKeyspaceResult() *SetKeyspaceResult {
 	return &SetKeyspaceResult{}
+}
+
+func (p *SetKeyspaceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *SetKeyspaceResult) IsSetIre() bool {
+	return true
 }
 
 func (p *SetKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -6245,6 +6283,29 @@ func NewGetArgs() *GetArgs {
 	return &GetArgs{
 		ConsistencyLevel: 1,
 	}
+}
+
+func (p *GetArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *GetArgs) GetColumnPath() *ColumnPath {
+	return p.ColumnPath
+}
+
+func (p *GetArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *GetArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *GetArgs) IsSetColumnPath() bool {
+	return true
+}
+
+func (p *GetArgs) IsSetConsistencyLevel() bool {
+	return true
 }
 
 func (p *GetArgs) Read(iprot thrift.TProtocol) error {
@@ -6396,6 +6457,45 @@ type GetResult struct {
 
 func NewGetResult() *GetResult {
 	return &GetResult{}
+}
+
+func (p *GetResult) GetSuccess() *ColumnOrSuperColumn {
+	return p.Success
+}
+
+func (p *GetResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *GetResult) GetNfe() *NotFoundException {
+	return p.Nfe
+}
+
+func (p *GetResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *GetResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *GetResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *GetResult) IsSetIre() bool {
+	return true
+}
+
+func (p *GetResult) IsSetNfe() bool {
+	return true
+}
+
+func (p *GetResult) IsSetUe() bool {
+	return true
+}
+
+func (p *GetResult) IsSetTe() bool {
+	return true
 }
 
 func (p *GetResult) Read(iprot thrift.TProtocol) error {
@@ -6616,6 +6716,37 @@ func NewGetSliceArgs() *GetSliceArgs {
 	}
 }
 
+func (p *GetSliceArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *GetSliceArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *GetSliceArgs) GetPredicate() *SlicePredicate {
+	return p.Predicate
+}
+
+func (p *GetSliceArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *GetSliceArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *GetSliceArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *GetSliceArgs) IsSetPredicate() bool {
+	return true
+}
+
+func (p *GetSliceArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *GetSliceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -6794,6 +6925,37 @@ type GetSliceResult struct {
 
 func NewGetSliceResult() *GetSliceResult {
 	return &GetSliceResult{}
+}
+
+func (p *GetSliceResult) GetSuccess() []*ColumnOrSuperColumn {
+	return p.Success
+}
+
+func (p *GetSliceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *GetSliceResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *GetSliceResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *GetSliceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *GetSliceResult) IsSetIre() bool {
+	return true
+}
+
+func (p *GetSliceResult) IsSetUe() bool {
+	return true
+}
+
+func (p *GetSliceResult) IsSetTe() bool {
+	return true
 }
 
 func (p *GetSliceResult) Read(iprot thrift.TProtocol) error {
@@ -7003,6 +7165,37 @@ func NewGetCountArgs() *GetCountArgs {
 	}
 }
 
+func (p *GetCountArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *GetCountArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *GetCountArgs) GetPredicate() *SlicePredicate {
+	return p.Predicate
+}
+
+func (p *GetCountArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *GetCountArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *GetCountArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *GetCountArgs) IsSetPredicate() bool {
+	return true
+}
+
+func (p *GetCountArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *GetCountArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -7181,6 +7374,37 @@ type GetCountResult struct {
 
 func NewGetCountResult() *GetCountResult {
 	return &GetCountResult{}
+}
+
+func (p *GetCountResult) GetSuccess() int32 {
+	return p.Success
+}
+
+func (p *GetCountResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *GetCountResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *GetCountResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *GetCountResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *GetCountResult) IsSetIre() bool {
+	return true
+}
+
+func (p *GetCountResult) IsSetUe() bool {
+	return true
+}
+
+func (p *GetCountResult) IsSetTe() bool {
+	return true
 }
 
 func (p *GetCountResult) Read(iprot thrift.TProtocol) error {
@@ -7367,6 +7591,37 @@ func NewMultigetSliceArgs() *MultigetSliceArgs {
 	return &MultigetSliceArgs{
 		ConsistencyLevel: 1,
 	}
+}
+
+func (p *MultigetSliceArgs) GetKeys() [][]byte {
+	return p.Keys
+}
+
+func (p *MultigetSliceArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *MultigetSliceArgs) GetPredicate() *SlicePredicate {
+	return p.Predicate
+}
+
+func (p *MultigetSliceArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *MultigetSliceArgs) IsSetKeys() bool {
+	return true
+}
+
+func (p *MultigetSliceArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *MultigetSliceArgs) IsSetPredicate() bool {
+	return true
+}
+
+func (p *MultigetSliceArgs) IsSetConsistencyLevel() bool {
+	return true
 }
 
 func (p *MultigetSliceArgs) Read(iprot thrift.TProtocol) error {
@@ -7568,6 +7823,37 @@ type MultigetSliceResult struct {
 
 func NewMultigetSliceResult() *MultigetSliceResult {
 	return &MultigetSliceResult{}
+}
+
+func (p *MultigetSliceResult) GetSuccess() map[string][]*ColumnOrSuperColumn {
+	return p.Success
+}
+
+func (p *MultigetSliceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *MultigetSliceResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *MultigetSliceResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *MultigetSliceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *MultigetSliceResult) IsSetIre() bool {
+	return true
+}
+
+func (p *MultigetSliceResult) IsSetUe() bool {
+	return true
+}
+
+func (p *MultigetSliceResult) IsSetTe() bool {
+	return true
 }
 
 func (p *MultigetSliceResult) Read(iprot thrift.TProtocol) error {
@@ -7806,6 +8092,37 @@ func NewMultigetCountArgs() *MultigetCountArgs {
 	}
 }
 
+func (p *MultigetCountArgs) GetKeys() [][]byte {
+	return p.Keys
+}
+
+func (p *MultigetCountArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *MultigetCountArgs) GetPredicate() *SlicePredicate {
+	return p.Predicate
+}
+
+func (p *MultigetCountArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *MultigetCountArgs) IsSetKeys() bool {
+	return true
+}
+
+func (p *MultigetCountArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *MultigetCountArgs) IsSetPredicate() bool {
+	return true
+}
+
+func (p *MultigetCountArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *MultigetCountArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -8005,6 +8322,37 @@ type MultigetCountResult struct {
 
 func NewMultigetCountResult() *MultigetCountResult {
 	return &MultigetCountResult{}
+}
+
+func (p *MultigetCountResult) GetSuccess() map[string]int32 {
+	return p.Success
+}
+
+func (p *MultigetCountResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *MultigetCountResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *MultigetCountResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *MultigetCountResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *MultigetCountResult) IsSetIre() bool {
+	return true
+}
+
+func (p *MultigetCountResult) IsSetUe() bool {
+	return true
+}
+
+func (p *MultigetCountResult) IsSetTe() bool {
+	return true
 }
 
 func (p *MultigetCountResult) Read(iprot thrift.TProtocol) error {
@@ -8225,6 +8573,37 @@ func NewGetRangeSlicesArgs() *GetRangeSlicesArgs {
 	}
 }
 
+func (p *GetRangeSlicesArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *GetRangeSlicesArgs) GetPredicate() *SlicePredicate {
+	return p.Predicate
+}
+
+func (p *GetRangeSlicesArgs) GetRangeA1() *KeyRange {
+	return p.RangeA1
+}
+
+func (p *GetRangeSlicesArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *GetRangeSlicesArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *GetRangeSlicesArgs) IsSetPredicate() bool {
+	return true
+}
+
+func (p *GetRangeSlicesArgs) IsSetRangeA1() bool {
+	return true
+}
+
+func (p *GetRangeSlicesArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *GetRangeSlicesArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -8402,6 +8781,37 @@ type GetRangeSlicesResult struct {
 
 func NewGetRangeSlicesResult() *GetRangeSlicesResult {
 	return &GetRangeSlicesResult{}
+}
+
+func (p *GetRangeSlicesResult) GetSuccess() []*KeySlice {
+	return p.Success
+}
+
+func (p *GetRangeSlicesResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *GetRangeSlicesResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *GetRangeSlicesResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *GetRangeSlicesResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *GetRangeSlicesResult) IsSetIre() bool {
+	return true
+}
+
+func (p *GetRangeSlicesResult) IsSetUe() bool {
+	return true
+}
+
+func (p *GetRangeSlicesResult) IsSetTe() bool {
+	return true
 }
 
 func (p *GetRangeSlicesResult) Read(iprot thrift.TProtocol) error {
@@ -8611,6 +9021,37 @@ func NewGetPagedSliceArgs() *GetPagedSliceArgs {
 	}
 }
 
+func (p *GetPagedSliceArgs) GetColumnFamily() string {
+	return p.ColumnFamily
+}
+
+func (p *GetPagedSliceArgs) GetRangeA1() *KeyRange {
+	return p.RangeA1
+}
+
+func (p *GetPagedSliceArgs) GetStartColumn() []byte {
+	return p.StartColumn
+}
+
+func (p *GetPagedSliceArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *GetPagedSliceArgs) IsSetColumnFamily() bool {
+	return true
+}
+
+func (p *GetPagedSliceArgs) IsSetRangeA1() bool {
+	return true
+}
+
+func (p *GetPagedSliceArgs) IsSetStartColumn() bool {
+	return true
+}
+
+func (p *GetPagedSliceArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *GetPagedSliceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -8788,6 +9229,37 @@ type GetPagedSliceResult struct {
 
 func NewGetPagedSliceResult() *GetPagedSliceResult {
 	return &GetPagedSliceResult{}
+}
+
+func (p *GetPagedSliceResult) GetSuccess() []*KeySlice {
+	return p.Success
+}
+
+func (p *GetPagedSliceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *GetPagedSliceResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *GetPagedSliceResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *GetPagedSliceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *GetPagedSliceResult) IsSetIre() bool {
+	return true
+}
+
+func (p *GetPagedSliceResult) IsSetUe() bool {
+	return true
+}
+
+func (p *GetPagedSliceResult) IsSetTe() bool {
+	return true
 }
 
 func (p *GetPagedSliceResult) Read(iprot thrift.TProtocol) error {
@@ -8997,6 +9469,37 @@ func NewGetIndexedSlicesArgs() *GetIndexedSlicesArgs {
 	}
 }
 
+func (p *GetIndexedSlicesArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *GetIndexedSlicesArgs) GetIndexClause() *IndexClause {
+	return p.IndexClause
+}
+
+func (p *GetIndexedSlicesArgs) GetColumnPredicate() *SlicePredicate {
+	return p.ColumnPredicate
+}
+
+func (p *GetIndexedSlicesArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *GetIndexedSlicesArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *GetIndexedSlicesArgs) IsSetIndexClause() bool {
+	return true
+}
+
+func (p *GetIndexedSlicesArgs) IsSetColumnPredicate() bool {
+	return true
+}
+
+func (p *GetIndexedSlicesArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *GetIndexedSlicesArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -9174,6 +9677,37 @@ type GetIndexedSlicesResult struct {
 
 func NewGetIndexedSlicesResult() *GetIndexedSlicesResult {
 	return &GetIndexedSlicesResult{}
+}
+
+func (p *GetIndexedSlicesResult) GetSuccess() []*KeySlice {
+	return p.Success
+}
+
+func (p *GetIndexedSlicesResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *GetIndexedSlicesResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *GetIndexedSlicesResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *GetIndexedSlicesResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *GetIndexedSlicesResult) IsSetIre() bool {
+	return true
+}
+
+func (p *GetIndexedSlicesResult) IsSetUe() bool {
+	return true
+}
+
+func (p *GetIndexedSlicesResult) IsSetTe() bool {
+	return true
 }
 
 func (p *GetIndexedSlicesResult) Read(iprot thrift.TProtocol) error {
@@ -9383,6 +9917,37 @@ func NewInsertArgs() *InsertArgs {
 	}
 }
 
+func (p *InsertArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *InsertArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *InsertArgs) GetColumn() *Column {
+	return p.Column
+}
+
+func (p *InsertArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *InsertArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *InsertArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *InsertArgs) IsSetColumn() bool {
+	return true
+}
+
+func (p *InsertArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *InsertArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -9562,6 +10127,29 @@ func NewInsertResult() *InsertResult {
 	return &InsertResult{}
 }
 
+func (p *InsertResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *InsertResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *InsertResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *InsertResult) IsSetIre() bool {
+	return true
+}
+
+func (p *InsertResult) IsSetUe() bool {
+	return true
+}
+
+func (p *InsertResult) IsSetTe() bool {
+	return true
+}
+
 func (p *InsertResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -9716,6 +10304,37 @@ func NewAddArgs() *AddArgs {
 	return &AddArgs{
 		ConsistencyLevel: 1,
 	}
+}
+
+func (p *AddArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *AddArgs) GetColumnParent() *ColumnParent {
+	return p.ColumnParent
+}
+
+func (p *AddArgs) GetColumn() *CounterColumn {
+	return p.Column
+}
+
+func (p *AddArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *AddArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *AddArgs) IsSetColumnParent() bool {
+	return true
+}
+
+func (p *AddArgs) IsSetColumn() bool {
+	return true
+}
+
+func (p *AddArgs) IsSetConsistencyLevel() bool {
+	return true
 }
 
 func (p *AddArgs) Read(iprot thrift.TProtocol) error {
@@ -9897,6 +10516,29 @@ func NewAddResult() *AddResult {
 	return &AddResult{}
 }
 
+func (p *AddResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *AddResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *AddResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *AddResult) IsSetIre() bool {
+	return true
+}
+
+func (p *AddResult) IsSetUe() bool {
+	return true
+}
+
+func (p *AddResult) IsSetTe() bool {
+	return true
+}
+
 func (p *AddResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -10051,6 +10693,37 @@ func NewRemoveArgs() *RemoveArgs {
 	return &RemoveArgs{
 		ConsistencyLevel: 1,
 	}
+}
+
+func (p *RemoveArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *RemoveArgs) GetColumnPath() *ColumnPath {
+	return p.ColumnPath
+}
+
+func (p *RemoveArgs) GetTimestamp() int64 {
+	return p.Timestamp
+}
+
+func (p *RemoveArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *RemoveArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *RemoveArgs) IsSetColumnPath() bool {
+	return true
+}
+
+func (p *RemoveArgs) IsSetTimestamp() bool {
+	return true
+}
+
+func (p *RemoveArgs) IsSetConsistencyLevel() bool {
+	return true
 }
 
 func (p *RemoveArgs) Read(iprot thrift.TProtocol) error {
@@ -10231,6 +10904,29 @@ func NewRemoveResult() *RemoveResult {
 	return &RemoveResult{}
 }
 
+func (p *RemoveResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *RemoveResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *RemoveResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *RemoveResult) IsSetIre() bool {
+	return true
+}
+
+func (p *RemoveResult) IsSetUe() bool {
+	return true
+}
+
+func (p *RemoveResult) IsSetTe() bool {
+	return true
+}
+
 func (p *RemoveResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -10386,6 +11082,29 @@ func NewRemoveCounterArgs() *RemoveCounterArgs {
 	}
 }
 
+func (p *RemoveCounterArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *RemoveCounterArgs) GetPath() *ColumnPath {
+	return p.Path
+}
+
+func (p *RemoveCounterArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *RemoveCounterArgs) IsSetKey() bool {
+	return true
+}
+
+func (p *RemoveCounterArgs) IsSetPath() bool {
+	return true
+}
+
+func (p *RemoveCounterArgs) IsSetConsistencyLevel() bool {
+	return true
+}
+
 func (p *RemoveCounterArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -10533,6 +11252,29 @@ type RemoveCounterResult struct {
 
 func NewRemoveCounterResult() *RemoveCounterResult {
 	return &RemoveCounterResult{}
+}
+
+func (p *RemoveCounterResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *RemoveCounterResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *RemoveCounterResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *RemoveCounterResult) IsSetIre() bool {
+	return true
+}
+
+func (p *RemoveCounterResult) IsSetUe() bool {
+	return true
+}
+
+func (p *RemoveCounterResult) IsSetTe() bool {
+	return true
 }
 
 func (p *RemoveCounterResult) Read(iprot thrift.TProtocol) error {
@@ -10687,6 +11429,21 @@ func NewBatchMutateArgs() *BatchMutateArgs {
 	return &BatchMutateArgs{
 		ConsistencyLevel: 1,
 	}
+}
+
+func (p *BatchMutateArgs) GetMutationMap() map[string]map[string][]*Mutation {
+	return p.MutationMap
+}
+
+func (p *BatchMutateArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *BatchMutateArgs) IsSetMutationMap() bool {
+	return true
+}
+
+func (p *BatchMutateArgs) IsSetConsistencyLevel() bool {
+	return true
 }
 
 func (p *BatchMutateArgs) Read(iprot thrift.TProtocol) error {
@@ -10885,6 +11642,29 @@ func NewBatchMutateResult() *BatchMutateResult {
 	return &BatchMutateResult{}
 }
 
+func (p *BatchMutateResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *BatchMutateResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *BatchMutateResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *BatchMutateResult) IsSetIre() bool {
+	return true
+}
+
+func (p *BatchMutateResult) IsSetUe() bool {
+	return true
+}
+
+func (p *BatchMutateResult) IsSetTe() bool {
+	return true
+}
+
 func (p *BatchMutateResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -11037,6 +11817,21 @@ func NewAtomicBatchMutateArgs() *AtomicBatchMutateArgs {
 	return &AtomicBatchMutateArgs{
 		ConsistencyLevel: 1,
 	}
+}
+
+func (p *AtomicBatchMutateArgs) GetMutationMap() map[string]map[string][]*Mutation {
+	return p.MutationMap
+}
+
+func (p *AtomicBatchMutateArgs) GetConsistencyLevel() ConsistencyLevel {
+	return p.ConsistencyLevel
+}
+func (p *AtomicBatchMutateArgs) IsSetMutationMap() bool {
+	return true
+}
+
+func (p *AtomicBatchMutateArgs) IsSetConsistencyLevel() bool {
+	return true
 }
 
 func (p *AtomicBatchMutateArgs) Read(iprot thrift.TProtocol) error {
@@ -11235,6 +12030,29 @@ func NewAtomicBatchMutateResult() *AtomicBatchMutateResult {
 	return &AtomicBatchMutateResult{}
 }
 
+func (p *AtomicBatchMutateResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *AtomicBatchMutateResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *AtomicBatchMutateResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *AtomicBatchMutateResult) IsSetIre() bool {
+	return true
+}
+
+func (p *AtomicBatchMutateResult) IsSetUe() bool {
+	return true
+}
+
+func (p *AtomicBatchMutateResult) IsSetTe() bool {
+	return true
+}
+
 func (p *AtomicBatchMutateResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -11386,6 +12204,13 @@ func NewTruncateArgs() *TruncateArgs {
 	return &TruncateArgs{}
 }
 
+func (p *TruncateArgs) GetCfname() string {
+	return p.Cfname
+}
+func (p *TruncateArgs) IsSetCfname() bool {
+	return true
+}
+
 func (p *TruncateArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -11471,6 +12296,29 @@ type TruncateResult struct {
 
 func NewTruncateResult() *TruncateResult {
 	return &TruncateResult{}
+}
+
+func (p *TruncateResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *TruncateResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *TruncateResult) GetTe() *TimedOutException {
+	return p.Te
+}
+func (p *TruncateResult) IsSetIre() bool {
+	return true
+}
+
+func (p *TruncateResult) IsSetUe() bool {
+	return true
+}
+
+func (p *TruncateResult) IsSetTe() bool {
+	return true
 }
 
 func (p *TruncateResult) Read(iprot thrift.TProtocol) error {
@@ -11675,6 +12523,21 @@ type DescribeSchemaVersionsResult struct {
 
 func NewDescribeSchemaVersionsResult() *DescribeSchemaVersionsResult {
 	return &DescribeSchemaVersionsResult{}
+}
+
+func (p *DescribeSchemaVersionsResult) GetSuccess() map[string][]string {
+	return p.Success
+}
+
+func (p *DescribeSchemaVersionsResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeSchemaVersionsResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeSchemaVersionsResult) IsSetIre() bool {
+	return true
 }
 
 func (p *DescribeSchemaVersionsResult) Read(iprot thrift.TProtocol) error {
@@ -11901,6 +12764,21 @@ func NewDescribeKeyspacesResult() *DescribeKeyspacesResult {
 	return &DescribeKeyspacesResult{}
 }
 
+func (p *DescribeKeyspacesResult) GetSuccess() []*KsDef {
+	return p.Success
+}
+
+func (p *DescribeKeyspacesResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeKeyspacesResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeKeyspacesResult) IsSetIre() bool {
+	return true
+}
+
 func (p *DescribeKeyspacesResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -12093,6 +12971,13 @@ func NewDescribeClusterNameResult() *DescribeClusterNameResult {
 	return &DescribeClusterNameResult{}
 }
 
+func (p *DescribeClusterNameResult) GetSuccess() string {
+	return p.Success
+}
+func (p *DescribeClusterNameResult) IsSetSuccess() bool {
+	return true
+}
+
 func (p *DescribeClusterNameResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -12233,6 +13118,13 @@ func NewDescribeVersionResult() *DescribeVersionResult {
 	return &DescribeVersionResult{}
 }
 
+func (p *DescribeVersionResult) GetSuccess() string {
+	return p.Success
+}
+func (p *DescribeVersionResult) IsSetSuccess() bool {
+	return true
+}
+
 func (p *DescribeVersionResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -12321,6 +13213,13 @@ func NewDescribeRingArgs() *DescribeRingArgs {
 	return &DescribeRingArgs{}
 }
 
+func (p *DescribeRingArgs) GetKeyspace() string {
+	return p.Keyspace
+}
+func (p *DescribeRingArgs) IsSetKeyspace() bool {
+	return true
+}
+
 func (p *DescribeRingArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -12405,6 +13304,21 @@ type DescribeRingResult struct {
 
 func NewDescribeRingResult() *DescribeRingResult {
 	return &DescribeRingResult{}
+}
+
+func (p *DescribeRingResult) GetSuccess() []*TokenRange {
+	return p.Success
+}
+
+func (p *DescribeRingResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeRingResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeRingResult) IsSetIre() bool {
+	return true
 }
 
 func (p *DescribeRingResult) Read(iprot thrift.TProtocol) error {
@@ -12598,6 +13512,21 @@ type DescribeTokenMapResult struct {
 
 func NewDescribeTokenMapResult() *DescribeTokenMapResult {
 	return &DescribeTokenMapResult{}
+}
+
+func (p *DescribeTokenMapResult) GetSuccess() map[string]string {
+	return p.Success
+}
+
+func (p *DescribeTokenMapResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeTokenMapResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeTokenMapResult) IsSetIre() bool {
+	return true
 }
 
 func (p *DescribeTokenMapResult) Read(iprot thrift.TProtocol) error {
@@ -12803,6 +13732,13 @@ func NewDescribePartitionerResult() *DescribePartitionerResult {
 	return &DescribePartitionerResult{}
 }
 
+func (p *DescribePartitionerResult) GetSuccess() string {
+	return p.Success
+}
+func (p *DescribePartitionerResult) IsSetSuccess() bool {
+	return true
+}
+
 func (p *DescribePartitionerResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -12943,6 +13879,13 @@ func NewDescribeSnitchResult() *DescribeSnitchResult {
 	return &DescribeSnitchResult{}
 }
 
+func (p *DescribeSnitchResult) GetSuccess() string {
+	return p.Success
+}
+func (p *DescribeSnitchResult) IsSetSuccess() bool {
+	return true
+}
+
 func (p *DescribeSnitchResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -13031,6 +13974,13 @@ func NewDescribeKeyspaceArgs() *DescribeKeyspaceArgs {
 	return &DescribeKeyspaceArgs{}
 }
 
+func (p *DescribeKeyspaceArgs) GetKeyspace() string {
+	return p.Keyspace
+}
+func (p *DescribeKeyspaceArgs) IsSetKeyspace() bool {
+	return true
+}
+
 func (p *DescribeKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -13116,6 +14066,29 @@ type DescribeKeyspaceResult struct {
 
 func NewDescribeKeyspaceResult() *DescribeKeyspaceResult {
 	return &DescribeKeyspaceResult{}
+}
+
+func (p *DescribeKeyspaceResult) GetSuccess() *KsDef {
+	return p.Success
+}
+
+func (p *DescribeKeyspaceResult) GetNfe() *NotFoundException {
+	return p.Nfe
+}
+
+func (p *DescribeKeyspaceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeKeyspaceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeKeyspaceResult) IsSetNfe() bool {
+	return true
+}
+
+func (p *DescribeKeyspaceResult) IsSetIre() bool {
+	return true
 }
 
 func (p *DescribeKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -13270,6 +14243,37 @@ type DescribeSplitsArgs struct {
 
 func NewDescribeSplitsArgs() *DescribeSplitsArgs {
 	return &DescribeSplitsArgs{}
+}
+
+func (p *DescribeSplitsArgs) GetCfName() string {
+	return p.CfName
+}
+
+func (p *DescribeSplitsArgs) GetStartToken() string {
+	return p.StartToken
+}
+
+func (p *DescribeSplitsArgs) GetEndToken() string {
+	return p.EndToken
+}
+
+func (p *DescribeSplitsArgs) GetKeysPerSplit() int32 {
+	return p.KeysPerSplit
+}
+func (p *DescribeSplitsArgs) IsSetCfName() bool {
+	return true
+}
+
+func (p *DescribeSplitsArgs) IsSetStartToken() bool {
+	return true
+}
+
+func (p *DescribeSplitsArgs) IsSetEndToken() bool {
+	return true
+}
+
+func (p *DescribeSplitsArgs) IsSetKeysPerSplit() bool {
+	return true
 }
 
 func (p *DescribeSplitsArgs) Read(iprot thrift.TProtocol) error {
@@ -13443,6 +14447,21 @@ type DescribeSplitsResult struct {
 
 func NewDescribeSplitsResult() *DescribeSplitsResult {
 	return &DescribeSplitsResult{}
+}
+
+func (p *DescribeSplitsResult) GetSuccess() []string {
+	return p.Success
+}
+
+func (p *DescribeSplitsResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeSplitsResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeSplitsResult) IsSetIre() bool {
+	return true
 }
 
 func (p *DescribeSplitsResult) Read(iprot thrift.TProtocol) error {
@@ -13639,6 +14658,13 @@ func NewTraceNextQueryResult() *TraceNextQueryResult {
 	return &TraceNextQueryResult{}
 }
 
+func (p *TraceNextQueryResult) GetSuccess() []byte {
+	return p.Success
+}
+func (p *TraceNextQueryResult) IsSetSuccess() bool {
+	return true
+}
+
 func (p *TraceNextQueryResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -13730,6 +14756,37 @@ type DescribeSplitsExArgs struct {
 
 func NewDescribeSplitsExArgs() *DescribeSplitsExArgs {
 	return &DescribeSplitsExArgs{}
+}
+
+func (p *DescribeSplitsExArgs) GetCfName() string {
+	return p.CfName
+}
+
+func (p *DescribeSplitsExArgs) GetStartToken() string {
+	return p.StartToken
+}
+
+func (p *DescribeSplitsExArgs) GetEndToken() string {
+	return p.EndToken
+}
+
+func (p *DescribeSplitsExArgs) GetKeysPerSplit() int32 {
+	return p.KeysPerSplit
+}
+func (p *DescribeSplitsExArgs) IsSetCfName() bool {
+	return true
+}
+
+func (p *DescribeSplitsExArgs) IsSetStartToken() bool {
+	return true
+}
+
+func (p *DescribeSplitsExArgs) IsSetEndToken() bool {
+	return true
+}
+
+func (p *DescribeSplitsExArgs) IsSetKeysPerSplit() bool {
+	return true
 }
 
 func (p *DescribeSplitsExArgs) Read(iprot thrift.TProtocol) error {
@@ -13905,6 +14962,21 @@ func NewDescribeSplitsExResult() *DescribeSplitsExResult {
 	return &DescribeSplitsExResult{}
 }
 
+func (p *DescribeSplitsExResult) GetSuccess() []*CfSplit {
+	return p.Success
+}
+
+func (p *DescribeSplitsExResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *DescribeSplitsExResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *DescribeSplitsExResult) IsSetIre() bool {
+	return true
+}
+
 func (p *DescribeSplitsExResult) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14045,6 +15117,13 @@ func NewSystemAddColumnFamilyArgs() *SystemAddColumnFamilyArgs {
 	return &SystemAddColumnFamilyArgs{}
 }
 
+func (p *SystemAddColumnFamilyArgs) GetCfDef() *CfDef {
+	return p.CfDef
+}
+func (p *SystemAddColumnFamilyArgs) IsSetCfDef() bool {
+	return true
+}
+
 func (p *SystemAddColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14131,6 +15210,29 @@ type SystemAddColumnFamilyResult struct {
 
 func NewSystemAddColumnFamilyResult() *SystemAddColumnFamilyResult {
 	return &SystemAddColumnFamilyResult{}
+}
+
+func (p *SystemAddColumnFamilyResult) GetSuccess() string {
+	return p.Success
+}
+
+func (p *SystemAddColumnFamilyResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *SystemAddColumnFamilyResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *SystemAddColumnFamilyResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *SystemAddColumnFamilyResult) IsSetIre() bool {
+	return true
+}
+
+func (p *SystemAddColumnFamilyResult) IsSetSde() bool {
+	return true
 }
 
 func (p *SystemAddColumnFamilyResult) Read(iprot thrift.TProtocol) error {
@@ -14283,6 +15385,13 @@ func NewSystemDropColumnFamilyArgs() *SystemDropColumnFamilyArgs {
 	return &SystemDropColumnFamilyArgs{}
 }
 
+func (p *SystemDropColumnFamilyArgs) GetColumnFamily() string {
+	return p.ColumnFamily
+}
+func (p *SystemDropColumnFamilyArgs) IsSetColumnFamily() bool {
+	return true
+}
+
 func (p *SystemDropColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14368,6 +15477,29 @@ type SystemDropColumnFamilyResult struct {
 
 func NewSystemDropColumnFamilyResult() *SystemDropColumnFamilyResult {
 	return &SystemDropColumnFamilyResult{}
+}
+
+func (p *SystemDropColumnFamilyResult) GetSuccess() string {
+	return p.Success
+}
+
+func (p *SystemDropColumnFamilyResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *SystemDropColumnFamilyResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *SystemDropColumnFamilyResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *SystemDropColumnFamilyResult) IsSetIre() bool {
+	return true
+}
+
+func (p *SystemDropColumnFamilyResult) IsSetSde() bool {
+	return true
 }
 
 func (p *SystemDropColumnFamilyResult) Read(iprot thrift.TProtocol) error {
@@ -14520,6 +15652,13 @@ func NewSystemAddKeyspaceArgs() *SystemAddKeyspaceArgs {
 	return &SystemAddKeyspaceArgs{}
 }
 
+func (p *SystemAddKeyspaceArgs) GetKsDef() *KsDef {
+	return p.KsDef
+}
+func (p *SystemAddKeyspaceArgs) IsSetKsDef() bool {
+	return true
+}
+
 func (p *SystemAddKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14606,6 +15745,29 @@ type SystemAddKeyspaceResult struct {
 
 func NewSystemAddKeyspaceResult() *SystemAddKeyspaceResult {
 	return &SystemAddKeyspaceResult{}
+}
+
+func (p *SystemAddKeyspaceResult) GetSuccess() string {
+	return p.Success
+}
+
+func (p *SystemAddKeyspaceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *SystemAddKeyspaceResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *SystemAddKeyspaceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *SystemAddKeyspaceResult) IsSetIre() bool {
+	return true
+}
+
+func (p *SystemAddKeyspaceResult) IsSetSde() bool {
+	return true
 }
 
 func (p *SystemAddKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -14758,6 +15920,13 @@ func NewSystemDropKeyspaceArgs() *SystemDropKeyspaceArgs {
 	return &SystemDropKeyspaceArgs{}
 }
 
+func (p *SystemDropKeyspaceArgs) GetKeyspace() string {
+	return p.Keyspace
+}
+func (p *SystemDropKeyspaceArgs) IsSetKeyspace() bool {
+	return true
+}
+
 func (p *SystemDropKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14843,6 +16012,29 @@ type SystemDropKeyspaceResult struct {
 
 func NewSystemDropKeyspaceResult() *SystemDropKeyspaceResult {
 	return &SystemDropKeyspaceResult{}
+}
+
+func (p *SystemDropKeyspaceResult) GetSuccess() string {
+	return p.Success
+}
+
+func (p *SystemDropKeyspaceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *SystemDropKeyspaceResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *SystemDropKeyspaceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *SystemDropKeyspaceResult) IsSetIre() bool {
+	return true
+}
+
+func (p *SystemDropKeyspaceResult) IsSetSde() bool {
+	return true
 }
 
 func (p *SystemDropKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -14995,6 +16187,13 @@ func NewSystemUpdateKeyspaceArgs() *SystemUpdateKeyspaceArgs {
 	return &SystemUpdateKeyspaceArgs{}
 }
 
+func (p *SystemUpdateKeyspaceArgs) GetKsDef() *KsDef {
+	return p.KsDef
+}
+func (p *SystemUpdateKeyspaceArgs) IsSetKsDef() bool {
+	return true
+}
+
 func (p *SystemUpdateKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -15081,6 +16280,29 @@ type SystemUpdateKeyspaceResult struct {
 
 func NewSystemUpdateKeyspaceResult() *SystemUpdateKeyspaceResult {
 	return &SystemUpdateKeyspaceResult{}
+}
+
+func (p *SystemUpdateKeyspaceResult) GetSuccess() string {
+	return p.Success
+}
+
+func (p *SystemUpdateKeyspaceResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *SystemUpdateKeyspaceResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *SystemUpdateKeyspaceResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *SystemUpdateKeyspaceResult) IsSetIre() bool {
+	return true
+}
+
+func (p *SystemUpdateKeyspaceResult) IsSetSde() bool {
+	return true
 }
 
 func (p *SystemUpdateKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -15233,6 +16455,13 @@ func NewSystemUpdateColumnFamilyArgs() *SystemUpdateColumnFamilyArgs {
 	return &SystemUpdateColumnFamilyArgs{}
 }
 
+func (p *SystemUpdateColumnFamilyArgs) GetCfDef() *CfDef {
+	return p.CfDef
+}
+func (p *SystemUpdateColumnFamilyArgs) IsSetCfDef() bool {
+	return true
+}
+
 func (p *SystemUpdateColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -15319,6 +16548,29 @@ type SystemUpdateColumnFamilyResult struct {
 
 func NewSystemUpdateColumnFamilyResult() *SystemUpdateColumnFamilyResult {
 	return &SystemUpdateColumnFamilyResult{}
+}
+
+func (p *SystemUpdateColumnFamilyResult) GetSuccess() string {
+	return p.Success
+}
+
+func (p *SystemUpdateColumnFamilyResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *SystemUpdateColumnFamilyResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *SystemUpdateColumnFamilyResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *SystemUpdateColumnFamilyResult) IsSetIre() bool {
+	return true
+}
+
+func (p *SystemUpdateColumnFamilyResult) IsSetSde() bool {
+	return true
 }
 
 func (p *SystemUpdateColumnFamilyResult) Read(iprot thrift.TProtocol) error {
@@ -15472,6 +16724,21 @@ func NewExecuteCqlQueryArgs() *ExecuteCqlQueryArgs {
 	return &ExecuteCqlQueryArgs{}
 }
 
+func (p *ExecuteCqlQueryArgs) GetQuery() []byte {
+	return p.Query
+}
+
+func (p *ExecuteCqlQueryArgs) GetCompression() Compression {
+	return p.Compression
+}
+func (p *ExecuteCqlQueryArgs) IsSetQuery() bool {
+	return true
+}
+
+func (p *ExecuteCqlQueryArgs) IsSetCompression() bool {
+	return true
+}
+
 func (p *ExecuteCqlQueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -15591,6 +16858,45 @@ type ExecuteCqlQueryResult struct {
 
 func NewExecuteCqlQueryResult() *ExecuteCqlQueryResult {
 	return &ExecuteCqlQueryResult{}
+}
+
+func (p *ExecuteCqlQueryResult) GetSuccess() *CqlResult_ {
+	return p.Success
+}
+
+func (p *ExecuteCqlQueryResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *ExecuteCqlQueryResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *ExecuteCqlQueryResult) GetTe() *TimedOutException {
+	return p.Te
+}
+
+func (p *ExecuteCqlQueryResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *ExecuteCqlQueryResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *ExecuteCqlQueryResult) IsSetIre() bool {
+	return true
+}
+
+func (p *ExecuteCqlQueryResult) IsSetUe() bool {
+	return true
+}
+
+func (p *ExecuteCqlQueryResult) IsSetTe() bool {
+	return true
+}
+
+func (p *ExecuteCqlQueryResult) IsSetSde() bool {
+	return true
 }
 
 func (p *ExecuteCqlQueryResult) Read(iprot thrift.TProtocol) error {
@@ -15808,6 +17114,29 @@ func NewExecuteCql3QueryArgs() *ExecuteCql3QueryArgs {
 	return &ExecuteCql3QueryArgs{}
 }
 
+func (p *ExecuteCql3QueryArgs) GetQuery() []byte {
+	return p.Query
+}
+
+func (p *ExecuteCql3QueryArgs) GetCompression() Compression {
+	return p.Compression
+}
+
+func (p *ExecuteCql3QueryArgs) GetConsistency() ConsistencyLevel {
+	return p.Consistency
+}
+func (p *ExecuteCql3QueryArgs) IsSetQuery() bool {
+	return true
+}
+
+func (p *ExecuteCql3QueryArgs) IsSetCompression() bool {
+	return true
+}
+
+func (p *ExecuteCql3QueryArgs) IsSetConsistency() bool {
+	return true
+}
+
 func (p *ExecuteCql3QueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -15957,6 +17286,45 @@ type ExecuteCql3QueryResult struct {
 
 func NewExecuteCql3QueryResult() *ExecuteCql3QueryResult {
 	return &ExecuteCql3QueryResult{}
+}
+
+func (p *ExecuteCql3QueryResult) GetSuccess() *CqlResult_ {
+	return p.Success
+}
+
+func (p *ExecuteCql3QueryResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *ExecuteCql3QueryResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *ExecuteCql3QueryResult) GetTe() *TimedOutException {
+	return p.Te
+}
+
+func (p *ExecuteCql3QueryResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *ExecuteCql3QueryResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *ExecuteCql3QueryResult) IsSetIre() bool {
+	return true
+}
+
+func (p *ExecuteCql3QueryResult) IsSetUe() bool {
+	return true
+}
+
+func (p *ExecuteCql3QueryResult) IsSetTe() bool {
+	return true
+}
+
+func (p *ExecuteCql3QueryResult) IsSetSde() bool {
+	return true
 }
 
 func (p *ExecuteCql3QueryResult) Read(iprot thrift.TProtocol) error {
@@ -16173,6 +17541,21 @@ func NewPrepareCqlQueryArgs() *PrepareCqlQueryArgs {
 	return &PrepareCqlQueryArgs{}
 }
 
+func (p *PrepareCqlQueryArgs) GetQuery() []byte {
+	return p.Query
+}
+
+func (p *PrepareCqlQueryArgs) GetCompression() Compression {
+	return p.Compression
+}
+func (p *PrepareCqlQueryArgs) IsSetQuery() bool {
+	return true
+}
+
+func (p *PrepareCqlQueryArgs) IsSetCompression() bool {
+	return true
+}
+
 func (p *PrepareCqlQueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -16289,6 +17672,21 @@ type PrepareCqlQueryResult struct {
 
 func NewPrepareCqlQueryResult() *PrepareCqlQueryResult {
 	return &PrepareCqlQueryResult{}
+}
+
+func (p *PrepareCqlQueryResult) GetSuccess() *CqlPreparedResult_ {
+	return p.Success
+}
+
+func (p *PrepareCqlQueryResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *PrepareCqlQueryResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *PrepareCqlQueryResult) IsSetIre() bool {
+	return true
 }
 
 func (p *PrepareCqlQueryResult) Read(iprot thrift.TProtocol) error {
@@ -16412,6 +17810,21 @@ func NewPrepareCql3QueryArgs() *PrepareCql3QueryArgs {
 	return &PrepareCql3QueryArgs{}
 }
 
+func (p *PrepareCql3QueryArgs) GetQuery() []byte {
+	return p.Query
+}
+
+func (p *PrepareCql3QueryArgs) GetCompression() Compression {
+	return p.Compression
+}
+func (p *PrepareCql3QueryArgs) IsSetQuery() bool {
+	return true
+}
+
+func (p *PrepareCql3QueryArgs) IsSetCompression() bool {
+	return true
+}
+
 func (p *PrepareCql3QueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -16528,6 +17941,21 @@ type PrepareCql3QueryResult struct {
 
 func NewPrepareCql3QueryResult() *PrepareCql3QueryResult {
 	return &PrepareCql3QueryResult{}
+}
+
+func (p *PrepareCql3QueryResult) GetSuccess() *CqlPreparedResult_ {
+	return p.Success
+}
+
+func (p *PrepareCql3QueryResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *PrepareCql3QueryResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *PrepareCql3QueryResult) IsSetIre() bool {
+	return true
 }
 
 func (p *PrepareCql3QueryResult) Read(iprot thrift.TProtocol) error {
@@ -16649,6 +18077,21 @@ type ExecutePreparedCqlQueryArgs struct {
 
 func NewExecutePreparedCqlQueryArgs() *ExecutePreparedCqlQueryArgs {
 	return &ExecutePreparedCqlQueryArgs{}
+}
+
+func (p *ExecutePreparedCqlQueryArgs) GetItemId() int32 {
+	return p.ItemId
+}
+
+func (p *ExecutePreparedCqlQueryArgs) GetValues() [][]byte {
+	return p.Values
+}
+func (p *ExecutePreparedCqlQueryArgs) IsSetItemId() bool {
+	return true
+}
+
+func (p *ExecutePreparedCqlQueryArgs) IsSetValues() bool {
+	return true
 }
 
 func (p *ExecutePreparedCqlQueryArgs) Read(iprot thrift.TProtocol) error {
@@ -16790,6 +18233,45 @@ type ExecutePreparedCqlQueryResult struct {
 
 func NewExecutePreparedCqlQueryResult() *ExecutePreparedCqlQueryResult {
 	return &ExecutePreparedCqlQueryResult{}
+}
+
+func (p *ExecutePreparedCqlQueryResult) GetSuccess() *CqlResult_ {
+	return p.Success
+}
+
+func (p *ExecutePreparedCqlQueryResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *ExecutePreparedCqlQueryResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *ExecutePreparedCqlQueryResult) GetTe() *TimedOutException {
+	return p.Te
+}
+
+func (p *ExecutePreparedCqlQueryResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *ExecutePreparedCqlQueryResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *ExecutePreparedCqlQueryResult) IsSetIre() bool {
+	return true
+}
+
+func (p *ExecutePreparedCqlQueryResult) IsSetUe() bool {
+	return true
+}
+
+func (p *ExecutePreparedCqlQueryResult) IsSetTe() bool {
+	return true
+}
+
+func (p *ExecutePreparedCqlQueryResult) IsSetSde() bool {
+	return true
 }
 
 func (p *ExecutePreparedCqlQueryResult) Read(iprot thrift.TProtocol) error {
@@ -17007,6 +18489,29 @@ func NewExecutePreparedCql3QueryArgs() *ExecutePreparedCql3QueryArgs {
 	return &ExecutePreparedCql3QueryArgs{}
 }
 
+func (p *ExecutePreparedCql3QueryArgs) GetItemId() int32 {
+	return p.ItemId
+}
+
+func (p *ExecutePreparedCql3QueryArgs) GetValues() [][]byte {
+	return p.Values
+}
+
+func (p *ExecutePreparedCql3QueryArgs) GetConsistency() ConsistencyLevel {
+	return p.Consistency
+}
+func (p *ExecutePreparedCql3QueryArgs) IsSetItemId() bool {
+	return true
+}
+
+func (p *ExecutePreparedCql3QueryArgs) IsSetValues() bool {
+	return true
+}
+
+func (p *ExecutePreparedCql3QueryArgs) IsSetConsistency() bool {
+	return true
+}
+
 func (p *ExecutePreparedCql3QueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -17176,6 +18681,45 @@ type ExecutePreparedCql3QueryResult struct {
 
 func NewExecutePreparedCql3QueryResult() *ExecutePreparedCql3QueryResult {
 	return &ExecutePreparedCql3QueryResult{}
+}
+
+func (p *ExecutePreparedCql3QueryResult) GetSuccess() *CqlResult_ {
+	return p.Success
+}
+
+func (p *ExecutePreparedCql3QueryResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+
+func (p *ExecutePreparedCql3QueryResult) GetUe() *UnavailableException {
+	return p.Ue
+}
+
+func (p *ExecutePreparedCql3QueryResult) GetTe() *TimedOutException {
+	return p.Te
+}
+
+func (p *ExecutePreparedCql3QueryResult) GetSde() *SchemaDisagreementException {
+	return p.Sde
+}
+func (p *ExecutePreparedCql3QueryResult) IsSetSuccess() bool {
+	return true
+}
+
+func (p *ExecutePreparedCql3QueryResult) IsSetIre() bool {
+	return true
+}
+
+func (p *ExecutePreparedCql3QueryResult) IsSetUe() bool {
+	return true
+}
+
+func (p *ExecutePreparedCql3QueryResult) IsSetTe() bool {
+	return true
+}
+
+func (p *ExecutePreparedCql3QueryResult) IsSetSde() bool {
+	return true
 }
 
 func (p *ExecutePreparedCql3QueryResult) Read(iprot thrift.TProtocol) error {
@@ -17391,6 +18935,13 @@ func NewSetCqlVersionArgs() *SetCqlVersionArgs {
 	return &SetCqlVersionArgs{}
 }
 
+func (p *SetCqlVersionArgs) GetVersion() string {
+	return p.Version
+}
+func (p *SetCqlVersionArgs) IsSetVersion() bool {
+	return true
+}
+
 func (p *SetCqlVersionArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -17474,6 +19025,13 @@ type SetCqlVersionResult struct {
 
 func NewSetCqlVersionResult() *SetCqlVersionResult {
 	return &SetCqlVersionResult{}
+}
+
+func (p *SetCqlVersionResult) GetIre() *InvalidRequestException {
+	return p.Ire
+}
+func (p *SetCqlVersionResult) IsSetIre() bool {
+	return true
 }
 
 func (p *SetCqlVersionResult) Read(iprot thrift.TProtocol) error {
