@@ -1,6 +1,7 @@
 package gossie
 
 import (
+	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/apesternikov/gossie/src/cassandra"
 )
 
@@ -81,14 +82,12 @@ func (w *writer) InsertTtl(cf string, row *Row, ttl int) Writer {
 		c.Name = col.Name
 		c.Value = col.Value
 		if ttl > 0 {
-			c.Ttl = int32(ttl)
-		} else {
-			c.Ttl = c.Ttl
+			c.Ttl = thrift.Int32Ptr(int32(ttl))
 		}
-		if col.Timestamp > 0 {
+		if col.Timestamp != nil {
 			c.Timestamp = col.Timestamp
 		} else {
-			c.Timestamp = t
+			c.Timestamp = &t
 		}
 		cs := cassandra.NewColumnOrSuperColumn()
 		cs.Column = c
@@ -102,7 +101,7 @@ func (w *writer) DeltaCounters(cf string, row *Row) Writer {
 		tm := w.addWriter(cf, row.Key)
 		c := cassandra.NewCounterColumn()
 		c.Name = col.Name
-		Unmarshal(col.Value, LongType, &c.Value)
+		Unmarshal(*col.Value, LongType, &c.Value)
 		cs := cassandra.NewColumnOrSuperColumn()
 		cs.CounterColumn = c
 		tm.ColumnOrSupercolumn = cs
@@ -114,7 +113,7 @@ func (w *writer) DeltaCounters(cf string, row *Row) Writer {
 func (w *writer) Delete(cf string, key []byte) Writer {
 	tm := w.addWriter(cf, key)
 	d := cassandra.NewDeletion()
-	d.Timestamp = now()
+	d.Timestamp = thrift.Int64Ptr(now())
 	tm.Deletion = d
 	return w
 }
@@ -122,9 +121,9 @@ func (w *writer) Delete(cf string, key []byte) Writer {
 func (w *writer) DeleteColumns(cf string, key []byte, columns [][]byte) Writer {
 	tm := w.addWriter(cf, key)
 	d := cassandra.NewDeletion()
-	d.Timestamp = now()
+	d.Timestamp = thrift.Int64Ptr(now())
 	sp := cassandra.NewSlicePredicate()
-	sp.ColumnNames = columns
+	sp.ColumnNames = &columns
 	d.Predicate = sp
 	tm.Deletion = d
 	return w
@@ -144,13 +143,8 @@ func (w *writer) DeleteSlice(cf string, key []byte, slice *Slice) Writer {
 */
 
 func (w *writer) Run() error {
-	toRun := func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
-		var ire *cassandra.InvalidRequestException
-		var ue *cassandra.UnavailableException
-		var te *cassandra.TimedOutException
-		var err error
-		ire, ue, te, err = c.client.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
-		return ire, ue, te, err
+	toRun := func(c *connection) error {
+		return c.client.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
 	}
 	if w.usedCounters {
 		return w.pool.runWithRetries(toRun, 1)

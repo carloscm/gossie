@@ -20,6 +20,8 @@ func (s *stubTransactionRunner) runWithRetries(t transaction, retries int) error
 	return nil
 }
 
+func NewBytes(in []byte) *[]byte { return &in }
+
 func TestWriterInsert(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -37,8 +39,8 @@ func TestWriterInsert(t *testing.T) {
 	row := &Row{
 		Key: []byte("rowkey"),
 		Columns: []*Column{
-			&Column{Name: []byte("name1"), Value: []byte("value1")},
-			&Column{Name: []byte("name2"), Value: []byte("value2")},
+			&Column{Name: []byte("name1"), Value: NewBytes([]byte("value1"))},
+			&Column{Name: []byte("name2"), Value: NewBytes([]byte("value2"))},
 		},
 	}
 	w.Insert("cf", row)

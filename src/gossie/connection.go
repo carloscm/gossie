@@ -156,15 +156,10 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	}
 
 	var ksDef *cassandra.KsDef
-	err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
-		var ire *cassandra.InvalidRequestException
-		var nfe *cassandra.NotFoundException
+	err := cp.run(func(c *connection) error {
 		var err error
-		ksDef, nfe, ire, err = c.client.DescribeKeyspace(cp.keyspace)
-		if nfe != nil {
-			ksDef = nil
-		}
-		return ire, nil, nil, err
+		ksDef, err = c.client.DescribeKeyspace(cp.keyspace)
+		return err
 	})
 
 	if err != nil {
@@ -200,7 +195,7 @@ func (cp *connectionPool) bleeder(d time.Duration) {
 	}
 }
 
-type transaction func(*connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error)
+type transaction func(*connection) error
 
 func (cp *connectionPool) run(t transaction) error {
 	return cp.runWithRetries(t, cp.options.Retries)
@@ -222,39 +217,36 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			}
 		}
 
-		ire, ue, te, err := t(c)
+		err := t(c)
 
-		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if ire != nil {
-			glog.Errorf("Node %s Invalid request: %s", c.node.node, ire.Why)
-			cp.release(c)
-			return ire
-		}
-
-		// nonrecoverable error, drop the connection (but do not blacklist) and retry
 		if err != nil {
-			glog.Errorf("Node %s error %s", c.node.node, err)
-			c.close()
-			c = nil
-			continue
-		}
-
-		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
-		if te != nil {
-			glog.Infof("Node %s %s, blacklisted", c.node.node, te)
-			c.node.blacklist()
-			c.close()
-			c = nil
-			continue
-		}
-
-		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
-		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
-		if ue != nil {
-			glog.Info("Node %s %s", c.node.node, ue)
-			cp.release(c)
-			c = nil
-			continue
+			switch err.(type) {
+			case *cassandra.InvalidRequestException:
+				// nonrecoverable error, but not related to availability, do not retry and pass it to the user
+				glog.Errorf("Node %s Invalid request: %s", c.node.node, err.(*cassandra.InvalidRequestException).Why)
+				cp.release(c)
+				return err
+			case *cassandra.TimedOutException:
+				// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
+				glog.Infof("Node %s %s, blacklisted", c.node.node, err)
+				c.node.blacklist()
+				c.close()
+				c = nil
+				continue
+			case *cassandra.UnavailableException:
+				// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
+				// recoverable in a partitioned cluster by hoping to another connection/node and trying again
+				glog.Info("Node %s %s", c.node.node, err)
+				cp.release(c)
+				c = nil
+				continue
+			default:
+				// nonrecoverable error, drop the connection (but do not blacklist) and retry
+				glog.Errorf("Node %s error %s", c.node.node, err)
+				c.close()
+				c = nil
+				continue
+			}
 		}
 
 		// no errors, release connection and return
@@ -387,26 +379,28 @@ func newConnection(n *node, keyspace string, timeout time.Duration, authenticati
 	if len(authentication) > 0 {
 		ar := cassandra.NewAuthenticationRequest()
 		ar.Credentials = authentication
-		autE, auzE, err := c.client.Login(ar)
-		if autE != nil {
-			return nil, errors.New("Login error: cannot authenticate with the given credentials")
-		}
-		if auzE != nil {
-			return nil, errors.New("Login error: the given credentials are not authorized to access the server")
-		}
+		err := c.client.Login(ar)
 		if err != nil {
-			return nil, err
+			c.close()
+			switch err.(type) {
+			case *cassandra.AuthenticationException:
+				return nil, errors.New("Login error: cannot authenticate with the given credentials")
+			case *cassandra.AuthorizationException:
+				return nil, errors.New("Login error: the given credentials are not authorized to access the server")
+			default:
+				return nil, err
+			}
 		}
 	}
 
-	ire, err := c.client.SetKeyspace(keyspace)
+	err = c.client.SetKeyspace(keyspace)
 	if err != nil {
 		c.close()
+		switch err.(type) {
+		case *cassandra.InvalidRequestException:
+			err = errors.New("Cannot set the keyspace " + keyspace)
+		}
 		return nil, err
-	}
-	if ire != nil {
-		c.close()
-		return nil, errors.New("Cannot set the keyspace")
 	}
 
 	return c, nil
