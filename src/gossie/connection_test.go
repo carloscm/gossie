@@ -166,20 +166,25 @@ func TestRun(t *testing.T) {
 	var gotConnection bool
 
 	check := func(_ire, _ue, _te, _err, expectedError bool) {
-		err := cp.run(func(c *connection) error {
+		err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
 			gotConnection = c.client != nil
+			var ire *cassandra.InvalidRequestException
+			var ue *cassandra.UnavailableException
+			var te *cassandra.TimedOutException
 			var err error
-			switch {
-			case _ire:
-				err = cassandra.NewInvalidRequestException()
-			case _ue:
-				err = cassandra.NewUnavailableException()
-			case _te:
-				err = cassandra.NewTimedOutException()
-			case _err:
+			if _ire {
+				ire = &cassandra.InvalidRequestException{}
+			}
+			if _ue {
+				ue = &cassandra.UnavailableException{}
+			}
+			if _te {
+				te = &cassandra.TimedOutException{}
+			}
+			if _err {
 				err = errors.New("uh")
 			}
-			return err
+			return ire, ue, te, err
 		})
 
 		if !gotConnection {

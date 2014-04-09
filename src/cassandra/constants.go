@@ -6,9 +6,11 @@ package cassandra
 import (
 	"fmt"
 	"git.apache.org/thrift.git/lib/go/thrift"
+	"math"
 )
 
 // (needed to ensure safety because of naive import list construction.)
+var _ = math.MinInt32
 var _ = thrift.ZERO
 var _ = fmt.Printf
 
