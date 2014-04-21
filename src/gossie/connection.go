@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"git.apache.org/thrift.git/lib/go/thrift"
+	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/golang/glog"
-	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"github.com/wadey/gossie/src/cassandra"
 )
 

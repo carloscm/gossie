@@ -5,8 +5,9 @@ package cassandra
 
 import (
 	"fmt"
-	"git.apache.org/thrift.git/lib/go/thrift"
 	"math"
+
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 // (needed to ensure safety because of naive import list construction.)

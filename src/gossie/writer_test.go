@@ -1,10 +1,11 @@
 package gossie
 
 import (
-	"code.google.com/p/gomock/gomock"
-	. "github.com/apesternikov/gossie/src/cassandra"
-	"github.com/apesternikov/gossie/src/gossie/mock_cassandra"
 	"testing"
+
+	"code.google.com/p/gomock/gomock"
+	. "github.com/wadey/gossie/src/cassandra"
+	"github.com/wadey/gossie/src/gossie/mock_cassandra"
 )
 
 type stubTransactionRunner struct {

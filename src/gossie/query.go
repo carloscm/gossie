@@ -2,7 +2,7 @@ package gossie
 
 import (
 	"errors"
-	. "github.com/apesternikov/gossie/src/cassandra"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 /*

@@ -1,10 +1,11 @@
 package gossie
 
 import (
-	. "github.com/apesternikov/gossie/src/cassandra"
-	"github.com/stretchrcom/testify/assert"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 /*

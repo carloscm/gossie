@@ -2,9 +2,9 @@ package gossie
 
 import (
 	"fmt"
-	. "github.com/apesternikov/gossie/src/cassandra"
 	"reflect"
 	"testing"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 type testColumn struct {

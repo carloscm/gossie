@@ -1,8 +1,9 @@
 package gossie
 
 import (
-	"github.com/stretchrcom/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestInitEmpty(t *testing.T) {

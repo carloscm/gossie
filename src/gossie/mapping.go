@@ -3,9 +3,9 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	. "github.com/apesternikov/gossie/src/cassandra"
 	"reflect"
 	"strings"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 /*
