@@ -197,7 +197,7 @@ func TestMap(t *testing.T) {
 				Columns: []*Column{
 					&Column{
 						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
-						Value: []byte{},
+						Value: nil,
 					},
 				},
 			},

@@ -398,9 +398,11 @@ func (m *sparseMapping) Unmap(destination interface{}, provider RowProvider) err
 			return errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for field name in struct ", v.Type().Name(), ", error: ", err))
 		}
 		if f, found := si.cassandraFields[name]; found {
-			err := f.unmarshalValue(column.Value, v)
-			if err != nil {
-				return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
+			if column.Value != nil {
+				err := f.unmarshalValue(column.Value, v)
+				if err != nil {
+					return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
+				}
 			}
 		}
 
@@ -438,7 +440,7 @@ func (m *compactMapping) Map(source interface{}) (*Row, error) {
 		}
 		row.Columns = append(row.Columns, &Column{Name: composite, Value: columnValue})
 	} else {
-		row.Columns = append(row.Columns, &Column{Name: composite, Value: []byte{}})
+		row.Columns = append(row.Columns, &Column{Name: composite, Value: nil})
 	}
 	return row, nil
 }
@@ -480,9 +482,11 @@ func (m *compactMapping) Unmap(destination interface{}, provider RowProvider) er
 		}
 	}
 	if f, found := si.goFields[m.value]; found {
-		err := f.unmarshalValue(column.Value, v)
-		if err != nil {
-			return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
+		if column.Value != nil {
+			err := f.unmarshalValue(column.Value, v)
+			if err != nil {
+				return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
+			}
 		}
 	}
 

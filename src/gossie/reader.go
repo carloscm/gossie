@@ -129,9 +129,9 @@ type Reader interface {
 	WideRowScan(key, startColumn []byte, batchSize int32, callback func(*Column) bool) error
 }
 
-const (
-	DEF_START_TOKEN = "-1"
+var (
 	DEF_END_TOKEN   = "170141183460469231731687303715884105728"
+	DEF_START_TOKEN = "-1"
 )
 
 type reader struct {
@@ -230,16 +230,15 @@ func (r *reader) buildPredicate() *SlicePredicate {
 func (q *reader) buildKeyRange(r *Range) *KeyRange {
 	kr := NewKeyRange()
 	kr.StartKey = r.Start
-	kr.EndKey = r.End
-	kr.Count = int32(r.Count)
-	// workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
-	//TODO: this is no-op, because zero slices are exactly that: empty slices
+	//nil start/end keys should be converted to empty slices
 	if kr.StartKey == nil {
-		kr.StartKey = make([]byte, 0)
+		kr.StartKey = []byte{}
 	}
+	kr.EndKey = r.End
 	if kr.EndKey == nil {
-		kr.EndKey = make([]byte, 0)
+		kr.EndKey = []byte{}
 	}
+	kr.Count = int32(r.Count)
 	kr.RowFilter = q.expressions
 	return kr
 }
@@ -264,13 +263,10 @@ func (r *reader) Get(key []byte) (*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret []*ColumnOrSuperColumn
-	err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-		var ire *InvalidRequestException
-		var ue *UnavailableException
-		var te *TimedOutException
+	err := r.pool.run(func(c *connection) error {
 		var err error
-		ret, ire, ue, te, err = c.client.GetSlice(key, &r.columnParent, sp, r.consistencyLevel)
-		return ire, ue, te, err
+		ret, err = c.client.GetSlice(key, &r.columnParent, sp, r.consistencyLevel)
+		return err
 	})
 
 	if err != nil {
@@ -288,13 +284,10 @@ func (r *reader) Count(key []byte) (int, error) {
 	sp := r.buildPredicate()
 
 	var ret int32
-	err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-		var ire *InvalidRequestException
-		var ue *UnavailableException
-		var te *TimedOutException
+	err := r.pool.run(func(c *connection) error {
 		var err error
-		ret, ire, ue, te, err = c.client.GetCount(key, &r.columnParent, sp, r.consistencyLevel)
-		return ire, ue, te, err
+		ret, err = c.client.GetCount(key, &r.columnParent, sp, r.consistencyLevel)
+		return err
 	})
 
 	if err != nil {
@@ -316,13 +309,10 @@ func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret map[string][]*ColumnOrSuperColumn
-	err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-		var ire *InvalidRequestException
-		var ue *UnavailableException
-		var te *TimedOutException
+	err := r.pool.run(func(c *connection) error {
 		var err error
-		ret, ire, ue, te, err = c.client.MultigetSlice(keys, &r.columnParent, sp, r.consistencyLevel)
-		return ire, ue, te, err
+		ret, err = c.client.MultigetSlice(keys, &r.columnParent, sp, r.consistencyLevel)
+		return err
 	})
 
 	if err != nil {
@@ -344,13 +334,10 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 	sp := r.buildPredicate()
 
 	var ret map[string]int32
-	err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-		var ire *InvalidRequestException
-		var ue *UnavailableException
-		var te *TimedOutException
+	err := r.pool.run(func(c *connection) error {
 		var err error
-		ret, ire, ue, te, err = c.client.MultigetCount(keys, &r.columnParent, sp, r.consistencyLevel)
-		return ire, ue, te, err
+		ret, err = c.client.MultigetCount(keys, &r.columnParent, sp, r.consistencyLevel)
+		return err
 	})
 
 	if err != nil {
@@ -360,7 +347,7 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 	return rowsColumnCountFromTMap(ret), nil
 }
 
-var defaultRange = &Range{Count: 100}
+var defaultRange = &Range{Start: []byte{}, End: []byte{}, Count: 100}
 
 func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	if r.columnParent.ColumnFamily == "" {
@@ -379,13 +366,10 @@ func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret []*KeySlice
-	err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-		var ire *InvalidRequestException
-		var ue *UnavailableException
-		var te *TimedOutException
+	err := r.pool.run(func(c *connection) error {
 		var err error
-		ret, ire, ue, te, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
-		return ire, ue, te, err
+		ret, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
+		return err
 	})
 
 	if err != nil {
@@ -412,13 +396,10 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret []*KeySlice
-	err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-		var ire *InvalidRequestException
-		var ue *UnavailableException
-		var te *TimedOutException
+	err := r.pool.run(func(c *connection) error {
 		var err error
-		ret, ire, ue, te, err = c.client.GetIndexedSlices(&r.columnParent, ic, sp, r.consistencyLevel)
-		return ire, ue, te, err
+		ret, err = c.client.GetIndexedSlices(&r.columnParent, ic, sp, r.consistencyLevel)
+		return err
 	})
 
 	if err != nil {
@@ -434,16 +415,18 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 	}
 	kr := NewKeyRange()
 	if len(r.startToken) != 0 {
-		kr.StartToken = r.startToken
+		kr.StartToken = &r.startToken
 	} else {
-		kr.StartToken = DEF_START_TOKEN
+		kr.StartToken = &DEF_START_TOKEN
 	}
 	if len(r.endToken) != 0 {
-		kr.EndToken = r.endToken
+		kr.EndToken = &r.endToken
 	} else {
-		kr.EndToken = DEF_END_TOKEN
+		kr.EndToken = &DEF_END_TOKEN
 	}
-	kr.RowFilter = r.expressions
+	if len(r.expressions) != 0 {
+		kr.RowFilter = r.expressions
+	}
 	sp := r.buildPredicate()
 
 	data := make(chan *Row)
@@ -455,13 +438,10 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 
 		for {
 			var ksv []*KeySlice
-			err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-				var ire *InvalidRequestException
-				var ue *UnavailableException
-				var te *TimedOutException
+			err := r.pool.run(func(c *connection) error {
 				var err error
-				ksv, ire, ue, te, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
-				return ire, ue, te, err
+				ksv, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
+				return err
 			})
 
 			if err != nil {
@@ -474,7 +454,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				//phew. done
 				return
 			}
-			if bytes.Equal(ksv[0].Key, kr.StartKey) {
+			if kr.StartKey != nil && bytes.Equal(ksv[0].Key, kr.StartKey) {
 				//AP: I'm sending a diarrhea beam your way, dear designer of cassandra iteration
 				ksv = ksv[1:]
 			}
@@ -482,8 +462,8 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				//phew. done
 				return
 			}
-			kr.StartToken = ""
-			kr.StartKey = ksv[len(ksv)-1].Key
+			kr.StartToken = nil
+			kr.StartKey = ksv[len(ksv)-1].Key //just in case it is mutable
 			glog.V(2).Infof("Next batch starts with %q", kr.StartKey)
 			for _, ks := range ksv {
 				glog.V(2).Infof("Raw row key %s columns %v", string(ks.Key), ks.Columns)
@@ -506,13 +486,10 @@ func (r *reader) WideRowScan(key, startColumn []byte, batchSize int32, callback 
 
 	var ret []*KeySlice
 	for {
-		err := r.pool.run(func(c *connection) (*InvalidRequestException, *UnavailableException, *TimedOutException, error) {
-			var ire *InvalidRequestException
-			var ue *UnavailableException
-			var te *TimedOutException
+		err := r.pool.run(func(c *connection) error {
 			var err error
-			ret, ire, ue, te, err = c.client.GetPagedSlice(r.columnParent.ColumnFamily, keyRange, startColumn, r.consistencyLevel)
-			return ire, ue, te, err
+			ret, err = c.client.GetPagedSlice(r.columnParent.ColumnFamily, keyRange, startColumn, r.consistencyLevel)
+			return err
 		})
 
 		if err != nil {

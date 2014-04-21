@@ -29,6 +29,8 @@ type Batch interface {
 	// family is using composites.
 	DeleteAll(mapping Mapping, data interface{}) Batch
 
+	//Return underlying writer
+	GetWriter() Writer
 	// Run this batch
 	Run() error
 }
@@ -96,6 +98,10 @@ func (b *batch) DeleteAll(mapping Mapping, data interface{}) Batch {
 		}
 	}
 	return b
+}
+
+func (b *batch) GetWriter() Writer {
+	return b.writer
 }
 
 func (b *batch) Run() error {

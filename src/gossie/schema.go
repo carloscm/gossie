@@ -37,8 +37,8 @@ func newSchema(ksDef *cassandra.KsDef) *Schema {
 		cf := &ColumnFamily{}
 
 		cf.DefaultComparator = parseTypeClass(cfDef.ComparatorType)
-		cf.DefaultValidator = parseTypeClass(cfDef.DefaultValidationClass)
-		cf.KeyValidator = parseTypeClass(cfDef.KeyValidationClass)
+		cf.DefaultValidator = parseTypeClass(*cfDef.DefaultValidationClass)
+		cf.KeyValidator = parseTypeClass(*cfDef.KeyValidationClass)
 
 		cf.NamedColumns = make(map[string]TypeClass)
 

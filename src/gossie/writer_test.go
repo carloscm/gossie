@@ -21,6 +21,8 @@ func (s *stubTransactionRunner) runWithRetries(t transaction, retries int) error
 	return nil
 }
 
+func NewBytes(in []byte) *[]byte { return &in }
+
 func TestWriterInsert(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

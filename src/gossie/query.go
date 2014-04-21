@@ -202,8 +202,7 @@ func (q *query) RangeGet(r *Range) (Result, error) {
 }
 
 func (q *query) buildSlice(reader Reader) error {
-	start := make([]byte, 0)
-	end := make([]byte, 0)
+	var start, end []byte
 
 	components := q.components
 	if q.betweenStart != nil {
