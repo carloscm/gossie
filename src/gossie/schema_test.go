@@ -6,7 +6,8 @@ import (
 
 func TestSchema(t *testing.T) {
 
-	c, err := newConnection(localEndpoint, keyspace, standardTimeout, map[string]string{})
+	n := &node{node: localEndpoint}
+	c, err := newConnection(n, keyspace, standardTimeout, map[string]string{})
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}

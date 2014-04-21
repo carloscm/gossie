@@ -14,13 +14,10 @@ Gossie is a Go library for Apache Cassandra. It includes a wrapper for the Cassa
 
 # Requirements
 
-The official Apache Thrift libraries for Go are outdated and buggy. For now the active development happens in thrift4go:
-https://github.com/pomack/thrift4go
-
-Install thrift4go:
+Install thrift:
 
 ```
-go get "github.com/pomack/thrift4go/lib/go/src/thrift"
+go get git.apache.org/thrift.git/lib/go/thrift
 ```
 
 
@@ -31,8 +28,8 @@ There is no need to generate a Cassandra Thrift binding, I am providing one with
 For application usage issue two `go get` commands, one for the bindings and another for Gossie
 
 ```
-go get "github.com/carloscm/gossie/src/cassandra"
-go get "github.com/carloscm/gossie/src/gossie"
+go get "github.com/apesternikov/gossie/src/cassandra"
+go get "github.com/apesternikov/gossie/src/gossie"
 ```
 
 If you want to fork and do development on Gossie itself the main command you need to run is something like (from the root of the Gossie folder):
@@ -55,7 +52,7 @@ Gossie follows the Go 1.0 packaging conventions. Import Gossie into your code li
 
 ```Go
 import (
-	"github.com/carloscm/gossie/src/gossie"
+	"github.com/apesternikov/gossie/src/gossie"
 )
 ````
 
@@ -64,7 +61,7 @@ import (
 To create a connection use the method NewConnectionPool, passing a list of nodes, the desired keyspace, and a PoolOptions with the various connection options you can tune.
 
 ```Go
-pool, err := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: 3000})
+pool, err := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: time.Second * 3})
 if err != nil {
 	// do something
 }

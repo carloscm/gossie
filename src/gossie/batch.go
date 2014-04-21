@@ -1,5 +1,9 @@
 package gossie
 
+import (
+	"github.com/apesternikov/gossie/src/cassandra"
+)
+
 // Batch is a high level interface for Cassandra writes. Simultaneous
 // insertions for different column families and keys are possible.
 type Batch interface {
@@ -7,7 +11,7 @@ type Batch interface {
 	// ConsistencyLevel sets the consistency level for this particular call.
 	// It is optional, if left uncalled it will default to your connection
 	// pool options value.
-	ConsistencyLevel(int) Batch
+	ConsistencyLevel(cassandra.ConsistencyLevel) Batch
 
 	// Ttl sets a time to live for the columns inserted by Insert(). It is 0
 	// by default which means no TTL.
@@ -32,7 +36,7 @@ type Batch interface {
 type batch struct {
 	pool             *connectionPool
 	writer           Writer
-	consistencyLevel int
+	consistencyLevel cassandra.ConsistencyLevel
 	ttl              int
 	mappingError     error
 }
@@ -44,7 +48,7 @@ func newBatch(cp *connectionPool) *batch {
 	}
 }
 
-func (b *batch) ConsistencyLevel(c int) Batch {
+func (b *batch) ConsistencyLevel(c cassandra.ConsistencyLevel) Batch {
 	b.writer.ConsistencyLevel(c)
 	return b
 }

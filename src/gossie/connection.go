@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"git.apache.org/thrift.git/lib/go/thrift"
+	"github.com/golang/glog"
 	"github.com/pomack/thrift4go/lib/go/src/thrift"
 	"github.com/wadey/gossie/src/cassandra"
 )
@@ -37,7 +39,7 @@ type ConnectionPool interface {
 	Writer() Writer
 
 	// Query returns a high level interface for read operations over structs
-	Query(Mapping) Query
+	Query(mapping Mapping) Query
 
 	// Batch returns a high level interface for write operations over structs
 	Batch() Batch
@@ -46,42 +48,45 @@ type ConnectionPool interface {
 	Close() error
 }
 
+//package-private methods
+type connectionRunner interface {
+	run(t transaction) error
+	runWithRetries(t transaction, retries int) error
+}
+
 // PoolOptions stores the options for the creation of a ConnectionPool
 type PoolOptions struct {
-	Size             int               // keep up to Size connections open and ready
-	ReadConsistency  int               // default read consistency
-	WriteConsistency int               // default write consistency
-	Timeout          int               // socket timeout in ms
-	CloseTimeout     int               // close timeout in ms
-	Recycle          int               // close connections after Recycle seconds
-	RecycleJitter    int               // max jitter to add to Recycle so not all connections close at the same time
-	Grace            int               // if a node is blacklisted try to contact it again after Grace seconds
-	Retries          int               // retry queries for Retries times before raising an error
-	Authentication   map[string]string // if one or more keys are present, login() is called with the values from Authentication
+	Size             int                        // keep up to Size connections PER NODE open and ready
+	ReadConsistency  cassandra.ConsistencyLevel // default read consistency
+	WriteConsistency cassandra.ConsistencyLevel // default write consistency
+	Timeout          time.Duration              // socket timeout
+	BleederInterval  time.Duration              // <del>kill a kitten</del> Close a least used connection every BleederInterval.
+	Grace            int                        // if a node is blacklisted try to contact it again after Grace seconds
+	Retries          int                        // retry queries for Retries times before raising an error
+	Authentication   map[string]string          // if one or more keys are present, login() is called with the values from Authentication
+}
+
+var DefaultPoolOptions = PoolOptions{
+	Size:             10,
+	ReadConsistency:  CONSISTENCY_QUORUM,
+	WriteConsistency: CONSISTENCY_QUORUM,
+	Timeout:          time.Second * 1,
+	BleederInterval:  time.Second * 2,
+	Grace:            5,
+	Retries:          5,
+	// Authentication   is empty
 }
 
 const (
-	CONSISTENCY_DEFAULT      = 0
-	CONSISTENCY_ONE          = 1
-	CONSISTENCY_QUORUM       = 2
-	CONSISTENCY_LOCAL_QUORUM = 3
-	CONSISTENCY_EACH_QUORUM  = 4
-	CONSISTENCY_ALL          = 5
-	CONSISTENCY_ANY          = 6
-	CONSISTENCY_TWO          = 7
-	CONSISTENCY_THREE        = 8
-)
-
-const (
-	DEFAULT_SIZE              = 10
-	DEFAULT_READ_CONSISTENCY  = CONSISTENCY_QUORUM
-	DEFAULT_WRITE_CONSISTENCY = CONSISTENCY_QUORUM
-	DEFAULT_TIMEOUT           = 1000
-	DEFAULT_CLOSE_TIMEOUT     = 1000
-	DEFAULT_RECYCLE           = 60
-	DEFAULT_RECYCLE_JITTER    = 10
-	DEFAULT_GRACE             = 5
-	DEFAULT_RETRIES           = 5
+	CONSISTENCY_DEFAULT      cassandra.ConsistencyLevel = 0
+	CONSISTENCY_ONE                                     = cassandra.ConsistencyLevel_ONE
+	CONSISTENCY_QUORUM                                  = cassandra.ConsistencyLevel_QUORUM
+	CONSISTENCY_LOCAL_QUORUM                            = cassandra.ConsistencyLevel_LOCAL_QUORUM
+	CONSISTENCY_EACH_QUORUM                             = cassandra.ConsistencyLevel_EACH_QUORUM
+	CONSISTENCY_ALL                                     = cassandra.ConsistencyLevel_ALL
+	CONSISTENCY_ANY                                     = cassandra.ConsistencyLevel_ANY
+	CONSISTENCY_TWO                                     = cassandra.ConsistencyLevel_TWO
+	CONSISTENCY_THREE                                   = cassandra.ConsistencyLevel_THREE
 )
 
 const (
@@ -103,53 +108,47 @@ var (
 	ErrorCloseTimedOut        = errors.New("Connection pool close timed out")
 )
 
-func (o *PoolOptions) defaults() {
-	if o.Size == 0 {
-		o.Size = DEFAULT_SIZE
+func (o *PoolOptions) mergeFrom(r *PoolOptions) {
+	if r.Size != 0 {
+		o.Size = r.Size
 	}
-	if o.ReadConsistency == 0 {
-		o.ReadConsistency = DEFAULT_READ_CONSISTENCY
+	if r.ReadConsistency != 0 {
+		o.ReadConsistency = r.ReadConsistency
 	}
-	if o.WriteConsistency == 0 {
-		o.WriteConsistency = DEFAULT_WRITE_CONSISTENCY
+	if r.WriteConsistency != 0 {
+		o.WriteConsistency = r.WriteConsistency
 	}
-	if o.Timeout == 0 {
-		o.Timeout = DEFAULT_TIMEOUT
+	if r.Timeout != 0 {
+		o.Timeout = r.Timeout
 	}
-	if o.CloseTimeout == 0 {
-		o.CloseTimeout = DEFAULT_CLOSE_TIMEOUT
+	if r.BleederInterval != 0 {
+		o.BleederInterval = r.BleederInterval
 	}
-	if o.Recycle == 0 {
-		o.Recycle = DEFAULT_RECYCLE
+	if r.Grace != 0 {
+		o.Grace = r.Grace
 	}
-	if o.RecycleJitter == 0 {
-		o.RecycleJitter = DEFAULT_RECYCLE_JITTER
+	if r.Retries != 0 {
+		o.Retries = r.Retries
 	}
-	if o.Grace == 0 {
-		o.Grace = DEFAULT_GRACE
-	}
-	if o.Retries == 0 {
-		o.Retries = DEFAULT_RETRIES
+	if r.Authentication != nil {
+		o.Authentication = r.Authentication
 	}
 }
 
-type nodeInfo struct {
+type node struct {
 	lastFailure int
 	node        string
-}
-
-type slot struct {
-	conn      *connection
-	lastUsage int
+	available   lifo
 }
 
 type connectionPool struct {
-	keyspace  string
-	options   PoolOptions
-	schema    *Schema
-	nodes     []*nodeInfo
-	available chan *slot
+	keyspace string
+	options  PoolOptions
+	schema   *Schema
+	nodes    []*node
 }
+
+var nowfunc func() time.Time = time.Now
 
 // NewConnectionPool creates a new connection pool for the given nodes and keyspace.
 // nodes is in the format of "host:port" strings.
@@ -158,21 +157,15 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 		return nil, ErrorEmptyNodeList
 	}
 
-	options.defaults()
-
 	cp := &connectionPool{
-		keyspace:  keyspace,
-		options:   options,
-		nodes:     make([]*nodeInfo, len(nodes)),
-		available: make(chan *slot, options.Size),
+		keyspace: keyspace,
+		options:  DefaultPoolOptions,
+		nodes:    make([]*node, len(nodes)),
 	}
+	cp.options.mergeFrom(&options)
 
 	for i, n := range nodes {
-		cp.nodes[i] = &nodeInfo{node: n}
-	}
-
-	for i := 0; i < options.Size; i++ {
-		cp.available <- &slot{}
+		cp.nodes[i] = &node{node: n}
 	}
 
 	var ksDef *cassandra.KsDef
@@ -199,31 +192,28 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	if cp.schema == nil {
 		return nil, ErrorSchemaNotParseable
 	}
+	go cp.bleeder(options.BleederInterval)
 
 	return cp, nil
 }
 
-type transactionError struct {
-	ire *cassandra.InvalidRequestException
-	ue  *cassandra.UnavailableException
-	te  *cassandra.TimedOutException
-	err error
+func (cp *connectionPool) bleeder(d time.Duration) {
+	l := len(cp.nodes)
+	c := time.Tick(d)
+	nodeidx := -1
+	for _ = range c {
+		for i := 0; i < l; i++ {
+			nodeidx++
+			if c, ok := cp.nodes[nodeidx%l].available.PopBottom(cp.options.Size); ok {
+				glog.V(1).Info("Closing connection to ", cp.nodes[nodeidx%l].node)
+				c.close()
+				break
+			}
+		}
+	}
 }
 
-func (e transactionError) Error() string {
-	if e.ire != nil {
-		return e.ire.Why
-	}
-	if e.ue != nil {
-		return "Consistency level couldn't be reached"
-	}
-	if e.te != nil {
-		return "Thrift RPC timeout was exceeded"
-	}
-	return e.err.Error()
-}
-
-type transaction func(*connection) *transactionError
+type transaction func(*connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error)
 
 func (cp *connectionPool) run(t transaction) error {
 	return cp.runWithRetries(t, cp.options.Retries)
@@ -239,6 +229,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			c, err = cp.acquire()
 			// nothing to do, cannot acquire a connection
 			if err != nil {
+				glog.Error("Unable to acquire cassandra connection: ", err)
 				return err
 			}
 		}
@@ -256,14 +247,24 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 		}
 
 		// nonrecoverable error, but not related to availability, do not retry and pass it to the user
-		if terr.ire != nil || terr.err != nil {
+		if ire != nil {
+			glog.Errorf("Node %s Invalid request: %s", c.node.node, ire.Why)
 			cp.release(c)
-			return terr
+			return ire
+		}
+
+		// nonrecoverable error, drop the connection (but do not blacklist) and retry
+		if err != nil {
+			glog.Errorf("Node %s error %s", c.node.node, err)
+			c.close()
+			c = nil
+			continue
 		}
 
 		// the node is timing out. This Is Bad. move it to the blacklist and try again with another connection
-		if terr.te != nil {
-			cp.blacklist(c.node)
+		if te != nil {
+			glog.Infof("Node %s %s, blacklisted", c.node.node, te)
+			c.node.blacklist()
 			c.close()
 			c = nil
 			continue
@@ -271,7 +272,8 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 
 		// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 		// recoverable in a partitioned cluster by hoping to another connection/node and trying again
-		if terr.ue != nil {
+		if ue != nil {
+			glog.Info("Node %s %s", c.node.node, ue)
 			cp.release(c)
 			c = nil
 			continue
@@ -287,77 +289,51 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 	return ErrorMaxRetriesReached
 }
 
-func (cp *connectionPool) randomNode(now int) (string, error) {
+func (cp *connectionPool) randomNode(now int) (*node, error) {
 	n := len(cp.nodes)
 	i := rand.Int() % n
-	var node string
 
 	for tries := 0; tries < n; tries++ {
 		nodei := cp.nodes[i]
 		if nodei.lastFailure+cp.options.Grace < now {
-			return nodei.node, nil
+			return nodei, nil
 		}
 		i = (i + 1) % n
 	}
 
-	return node, ErrorPoolExhausted
+	//TODO: try to acquire one anyway
+	return nil, errors.New("All nodes are marked down, cannot acquire new connection")
 }
 
 func (cp *connectionPool) acquire() (*connection, error) {
-	var c *connection
 
-	s := <-cp.available
-
-	now := int(time.Now().Unix())
-	if s.lastUsage+cp.options.Recycle+(rand.Int()%cp.options.RecycleJitter) < now {
-		if s.conn != nil {
-			if err := s.conn.close(); err != nil {
-				return nil, err
-			}
-		}
-		s.conn = nil
+	now := int(nowfunc().Unix())
+	n, err := cp.randomNode(now)
+	if err != nil {
+		return nil, err
 	}
-
-	if s.conn == nil {
-		node, err := cp.randomNode(now)
-		if err != nil {
-			cp.releaseEmpty()
-			return nil, err
-		}
-		c, err = newConnection(node, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
-		if err == ErrorConnectionTimeout {
-			cp.blacklist(node)
-			return nil, err
-		}
-		if err != nil {
-			cp.releaseEmpty()
-			return nil, err
-		}
-	} else {
-		c = s.conn
+	c, ok := n.available.Pop()
+	if ok {
+		return c, nil
 	}
-
-	return c, nil
+	c, err = newConnection(n, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
+	if err == ErrorConnectionTimeout {
+		n.blacklist()
+	}
+	return c, err
 }
 
 func (cp *connectionPool) release(c *connection) {
-	cp.available <- &slot{conn: c, lastUsage: int(time.Now().Unix())}
+	c.node.available.Push(c)
 }
 
-func (cp *connectionPool) releaseEmpty() {
-	cp.available <- &slot{}
-}
-
-func (cp *connectionPool) blacklist(badNode string) {
-	n := len(cp.nodes)
-	for i := 0; i < n; i++ {
-		node := cp.nodes[i]
-		if node.node == badNode {
-			node.lastFailure = int(time.Now().Unix())
-			break
-		}
+func (n *node) blacklist() {
+	n.lastFailure = int(nowfunc().Unix())
+	//close all connections
+	glog.V(1).Info("closing %d connections to blacklisted node %s", len(n.available.l), n.node)
+	for c, ok := n.available.Pop(); ok; c, ok = n.available.Pop() {
+		c.close()
 	}
-	cp.releaseEmpty()
 }
 
 func (cp *connectionPool) close() (err error) {
@@ -410,51 +386,28 @@ func (cp *connectionPool) Close() error {
 }
 
 type connection struct {
-	socket    *thrift.TNonblockingSocket
+	socket    *thrift.TSocket
 	transport *thrift.TFramedTransport
-	client    *cassandra.CassandraClient
-	node      string
-	keyspace  string
+	client    cassandra.Cassandra
+	node      *node
 }
 
-func newConnection(node, keyspace string, timeout int, authentication map[string]string) (*connection, error) {
+func newConnection(n *node, keyspace string, timeout time.Duration, authentication map[string]string) (*connection, error) {
 
-	addr, err := net.ResolveTCPAddr("tcp", node)
+	addr, err := net.ResolveTCPAddr("tcp", n.node)
 	if err != nil {
 		return nil, err
 	}
 
-	c := &connection{node: node}
+	c := &connection{node: n}
 
-	c.socket, err = thrift.NewTNonblockingSocketAddr(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	// socket not open yet, so no error expected. it expects nanos, we have milis, so it's 1e6
-	c.socket.SetTimeout(int64(timeout) * 1e6)
+	c.socket = thrift.NewTSocketFromAddrTimeout(addr, timeout)
 
 	c.transport = thrift.NewTFramedTransport(c.socket)
-	protocolFactory := thrift.NewTBinaryProtocolFactoryDefault()
-	c.client = cassandra.NewCassandraClientFactory(c.transport, protocolFactory)
+	protocol := thrift.NewTBinaryProtocolTransport(c.transport)
+	c.client = cassandra.NewCassandraClientProtocol(c.transport, protocol, protocol)
 
-	// simulate timeout support for the underlying Dial() in .Open(). needless to say this sucks
-	// restore sanity to this for Go v1 with the new DialTimeout() func
-	ch := make(chan bool, 1)
-	go func() {
-		err = c.transport.Open()
-		ch <- true
-	}()
-	timedOut := false
-	select {
-	case <-time.After(time.Duration(timeout) * time.Millisecond):
-		timedOut = true
-	case <-ch:
-	}
-	if timedOut {
-		return nil, ErrorConnectionTimeout
-	}
-	if err != nil {
+	if err = c.transport.Open(); err != nil {
 		return nil, err
 	}
 
@@ -477,10 +430,7 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 
 	if len(authentication) > 0 {
 		ar := cassandra.NewAuthenticationRequest()
-		ar.Credentials = thrift.NewTMap(thrift.STRING, thrift.STRING, 1)
-		for k, v := range authentication {
-			ar.Credentials.Set(k, v)
-		}
+		ar.Credentials = authentication
 		autE, auzE, err := c.client.Login(ar)
 		if autE != nil {
 			return nil, ErrorAuthenticationFailed
@@ -502,8 +452,6 @@ func newConnection(node, keyspace string, timeout int, authentication map[string
 		c.close()
 		return nil, ErrorSetKeyspace
 	}
-
-	c.keyspace = keyspace
 
 	return c, nil
 }

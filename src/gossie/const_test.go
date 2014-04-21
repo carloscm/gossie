@@ -1,5 +1,9 @@
 package gossie
 
+import (
+	"time"
+)
+
 var (
 	invalidEndpoint    = "localhost:9999"
 	localEndpoint      = "localhost:9160"
@@ -8,8 +12,8 @@ var (
 
 	keyspace = "TestGossie"
 
-	standardTimeout = 3000
-	shortTimeout    = 1000
+	standardTimeout = time.Second * 3
+	shortTimeout    = time.Second * 1
 
 	poolOptions = PoolOptions{Size: 50, Timeout: standardTimeout}
 )
