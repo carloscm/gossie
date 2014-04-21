@@ -2,6 +2,8 @@ package mockgossie
 
 import (
 	"bytes"
+
+	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
 
@@ -12,7 +14,9 @@ type MockReader struct {
 	cf          string
 }
 
-func (m *MockReader) ConsistencyLevel(int) Reader                           { panic("not implemented") }
+var _ Reader = &MockReader{}
+
+func (m *MockReader) ConsistencyLevel(ConsistencyLevel) Reader              { panic("not implemented") }
 func (m *MockReader) Slice(*Slice) Reader                                   { panic("not implemented") }
 func (m *MockReader) Columns([][]byte) Reader                               { panic("not implemented") }
 func (m *MockReader) Where(column []byte, op Operator, value []byte) Reader { panic("not implemented") }
@@ -21,6 +25,11 @@ func (m *MockReader) Count(key []byte) (int, error)                         { pa
 func (m *MockReader) MultiCount(keys [][]byte) ([]*RowColumnCount, error)   { panic("not implemented") }
 func (m *MockReader) RangeGet(*Range) ([]*Row, error)                       { panic("not implemented") }
 func (m *MockReader) IndexedGet(*IndexedRange) ([]*Row, error)              { panic("not implemented") }
+func (m *MockReader) SetTokenRange(startToken, endToken string) Reader      { panic("not implemented") }
+func (m *MockReader) RangeScan() (data <-chan *Row, err <-chan error)       { panic("not implemented") }
+func (m *MockReader) WideRowScan(key, startColumn []byte, batchSize int32, callback func(*Column) bool) error {
+	panic("not implemented")
+}
 
 func newReader(m *MockConnectionPool) *MockReader {
 	return &MockReader{

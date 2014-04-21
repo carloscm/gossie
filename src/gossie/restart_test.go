@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/wadey/gossie/src/cassandra"
 )
 
@@ -38,7 +39,7 @@ func TestCassandraRestart(t *testing.T) {
 			&cassandra.Column{
 				Name:      []byte("test"),
 				Value:     []byte("test"),
-				Timestamp: time.Now().UnixNano(),
+				Timestamp: thrift.Int64Ptr(time.Now().UnixNano()),
 			},
 		},
 	}

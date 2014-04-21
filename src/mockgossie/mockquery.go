@@ -2,6 +2,7 @@ package mockgossie
 
 import (
 	"bytes"
+	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
 
@@ -13,12 +14,19 @@ type MockQuery struct {
 	rowLimit    int
 }
 
-func (*MockQuery) ConsistencyLevel(int) Query                 { panic("ConsistencyLevel not implemented") }
+var _ Query = &MockQuery{}
+
+func (*MockQuery) ConsistencyLevel(ConsistencyLevel) Query    { panic("ConsistencyLevel not implemented") }
 func (m *MockQuery) Limit(c, r int) Query                     { m.columnLimit = c; m.rowLimit = r; return m }
 func (*MockQuery) Reversed(bool) Query                        { panic("Reversed not implemented") }
 func (m *MockQuery) Components(c ...interface{}) Query        { m.components = c; return m }
 func (*MockQuery) Between(start, end interface{}) Query       { panic("Between not implemented") }
 func (*MockQuery) MultiGet(key []interface{}) (Result, error) { panic("Get not implemented") }
+func (*MockQuery) RangeGet(*Range) (Result, error)            { panic("RangeGet not implemented") }
+func (*MockQuery) RangeOne(destination interface{}) error     { panic("RangeOne not implemented") }
+func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
+	panic("Where not implemented")
+}
 
 func (m *MockQuery) Get(key interface{}) (Result, error) {
 	rows := m.pool.Rows(m.mapping.Cf())

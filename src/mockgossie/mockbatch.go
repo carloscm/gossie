@@ -1,6 +1,7 @@
 package mockgossie
 
 import (
+	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
 
@@ -12,6 +13,8 @@ type MockBatch struct {
 	mappingError     error
 }
 
+var _ Batch = &MockBatch{}
+
 func newBatch(cp *MockConnectionPool) *MockBatch {
 	return &MockBatch{
 		pool:   cp,
@@ -19,7 +22,7 @@ func newBatch(cp *MockConnectionPool) *MockBatch {
 	}
 }
 
-func (b *MockBatch) ConsistencyLevel(c int) Batch {
+func (b *MockBatch) ConsistencyLevel(c ConsistencyLevel) Batch {
 	b.writer.ConsistencyLevel(c)
 	return b
 }
@@ -67,6 +70,10 @@ func (b *MockBatch) DeleteAll(mapping Mapping, data interface{}) Batch {
 		}
 	}
 	return b
+}
+
+func (b *MockBatch) GetWriter() Writer {
+	return b.writer
 }
 
 func (b *MockBatch) Run() error {

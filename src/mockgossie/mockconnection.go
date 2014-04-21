@@ -13,12 +13,17 @@ package mockgossie
 
 import (
 	"bytes"
+
+	"github.com/apache/thrift/lib/go/thrift"
+	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
 
 type MockConnectionPool struct {
 	Data map[string]Rows
 }
+
+var _ ConnectionPool = &MockConnectionPool{}
 
 func NewMockConnectionPool() *MockConnectionPool {
 	return &MockConnectionPool{
@@ -31,7 +36,7 @@ func (*MockConnectionPool) Schema() *Schema  { panic("Schema Not Implemented") }
 func (m *MockConnectionPool) Reader() Reader { return newReader(m) }
 func (m *MockConnectionPool) Writer() Writer { return newWriter(m) }
 func (m *MockConnectionPool) Batch() Batch   { return newBatch(m) }
-func (*MockConnectionPool) Close() error     { return nil }
+func (*MockConnectionPool) Close()           {}
 
 func (m *MockConnectionPool) Query(mapping Mapping) Query {
 	return &MockQuery{
@@ -110,13 +115,15 @@ func (m *MockConnectionPool) Load(dump Dump) {
 // Utility method for loading data in for tests
 func (m *MockConnectionPool) LoadCF(cf string, dump CFDump) {
 	rows := []*Row{}
+	t := thrift.Int64Ptr(now())
 	for key, columns := range dump {
 		cols := []*Column{}
 
 		for name, value := range columns {
 			cols = append(cols, &Column{
-				Name:  []byte(name),
-				Value: value,
+				Name:      []byte(name),
+				Value:     value,
+				Timestamp: t,
 			})
 		}
 		rows = append(rows, &Row{

@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"sort"
 	"time"
+
+	"github.com/apache/thrift/lib/go/thrift"
+	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
 
 type MockWriter struct {
 	pool *MockConnectionPool
 }
+
+var _ Writer = &MockWriter{}
 
 func newWriter(cp *MockConnectionPool) *MockWriter {
 	return &MockWriter{
@@ -21,7 +26,7 @@ func now() int64 {
 	return time.Now().UnixNano() / 1000
 }
 
-func (w *MockWriter) ConsistencyLevel(l int) Writer {
+func (w *MockWriter) ConsistencyLevel(c ConsistencyLevel) Writer {
 	return w
 }
 
@@ -32,16 +37,18 @@ func (w *MockWriter) Insert(cf string, row *Row) Writer {
 func (w *MockWriter) InsertTtl(cf string, row *Row, ttl int) Writer {
 	rows := w.pool.Rows(cf)
 
-	t := now()
+	t := thrift.Int64Ptr(now())
 	for _, c := range row.Columns {
-		if c.Timestamp == 0 {
+		if c.Timestamp == nil {
 			c.Timestamp = t
 		}
 		if ttl > 0 {
-			c.Ttl = int32(ttl)
+			c.Ttl = thrift.Int32Ptr(int32(ttl))
 		}
-		// reset to the actual time to expire
-		c.Ttl = int32(now()/1e6) + c.Ttl
+		if c.Ttl != nil {
+			// reset to the actual time to expire
+			c.Ttl = thrift.Int32Ptr(int32(now()/1e6) + *c.Ttl)
+		}
 	}
 
 	i := sort.Search(len(rows), func(i int) bool { return bytes.Compare(rows[i].Key, row.Key) >= 0 })
@@ -55,7 +62,11 @@ func (w *MockWriter) InsertTtl(cf string, row *Row, ttl int) Writer {
 			if j < len(cols) && bytes.Equal(cols[j].Name, c.Name) {
 				// Column already exists, pick the one with the greater timestamp
 				ec := cols[j]
-				if c.Timestamp >= ec.Timestamp {
+				et := *t
+				if ec != nil {
+					et = *ec.Timestamp
+				}
+				if *c.Timestamp >= et {
 					ec.Value = c.Value
 					ec.Ttl = c.Ttl
 					ec.Timestamp = c.Timestamp
@@ -95,8 +106,8 @@ func checkExpired(r *Row) {
 }
 
 func isExpired(c *Column) bool {
-	if c.Ttl > 0 {
-		return int32(now()/1e6) > c.Ttl
+	if c.Ttl != nil {
+		return int32(now()/1e6) > *c.Ttl
 	}
 	return false
 }
@@ -122,7 +133,7 @@ func (w *MockWriter) DeleteColumns(cf string, key []byte, columns [][]byte) Writ
 		for _, c := range columns {
 			j := sort.Search(len(cols), func(j int) bool { return bytes.Compare(cols[j].Name, c) >= 0 })
 			if j < len(cols) && bytes.Equal(cols[j].Name, c) {
-				if t >= cols[j].Timestamp {
+				if t >= *cols[j].Timestamp {
 					// TODO store tombstone?
 					copy(cols[j:], cols[j+1:])
 					cols[len(cols)-1] = nil
