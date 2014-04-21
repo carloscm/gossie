@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/wadey/gossie/src/cassandra"
 )
 
 var cassandraRestart = flag.Bool("cassandra-restart", false, "run tests to ensure ConnectionPool tolerates Cassandra restarting")
@@ -32,8 +34,8 @@ func TestCassandraRestart(t *testing.T) {
 	}
 	row := &Row{
 		Key: []byte("test"),
-		Columns: []*Column{
-			&Column{
+		Columns: []*cassandra.Column{
+			&cassandra.Column{
 				Name:      []byte("test"),
 				Value:     []byte("test"),
 				Timestamp: time.Now().UnixNano(),

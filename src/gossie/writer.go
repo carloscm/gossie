@@ -144,10 +144,13 @@ func (w *writer) DeleteSlice(cf string, key []byte, slice *Slice) Writer {
 */
 
 func (w *writer) Run() error {
-	toRun := func(c *connection) *transactionError {
-		ire, ue, te, err := c.client.BatchMutate(
-			w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
-		return &transactionError{ire, ue, te, err}
+	toRun := func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
+		var ire *cassandra.InvalidRequestException
+		var ue *cassandra.UnavailableException
+		var te *cassandra.TimedOutException
+		var err error
+		ire, ue, te, err = c.client.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
+		return ire, ue, te, err
 	}
 	if w.usedCounters {
 		return w.pool.runWithRetries(toRun, 1)

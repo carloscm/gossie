@@ -63,9 +63,7 @@ func TestNewConnectionPool(t *testing.T) {
 		t.Fatal("Invalid keyspace")
 	}
 
-	if err = cp.Close(); err != nil {
-		t.Fatal("Error closing connection pool:", err)
-	}
+	cp.Close()
 }
 
 // possible test for users of SimpleAuthenticator
@@ -169,23 +167,25 @@ func TestRun(t *testing.T) {
 	var gotConnection bool
 
 	check := func(_ire, _ue, _te, _err, expectedError bool) {
-		err := cp.run(func(c *connection) *transactionError {
+		err := cp.run(func(c *connection) (*cassandra.InvalidRequestException, *cassandra.UnavailableException, *cassandra.TimedOutException, error) {
 			gotConnection = c.client != nil
-			terr := &transactionError{}
-
+			var ire *cassandra.InvalidRequestException
+			var ue *cassandra.UnavailableException
+			var te *cassandra.TimedOutException
+			var err error
 			if _ire {
-				terr.ire = &cassandra.InvalidRequestException{}
+				ire = &cassandra.InvalidRequestException{}
 			}
 			if _ue {
-				terr.ue = &cassandra.UnavailableException{}
+				ue = &cassandra.UnavailableException{}
 			}
 			if _te {
-				terr.te = &cassandra.TimedOutException{}
+				te = &cassandra.TimedOutException{}
 			}
 			if _err {
-				terr.err = errors.New("uh")
+				err = errors.New("uh")
 			}
-			return terr
+			return ire, ue, te, err
 		})
 
 		if !gotConnection {
