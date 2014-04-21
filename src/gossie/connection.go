@@ -109,6 +109,10 @@ func (o *PoolOptions) mergeFrom(r *PoolOptions) {
 	}
 	if r.Timeout != 0 {
 		o.Timeout = r.Timeout
+		// TODO temporary backwards compatibility fix
+		if o.Timeout < 1*time.Millisecond {
+			o.Timeout = o.Timeout * time.Millisecond
+		}
 	}
 	if r.BleederInterval != 0 {
 		o.BleederInterval = r.BleederInterval
