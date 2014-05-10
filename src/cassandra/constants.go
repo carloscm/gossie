@@ -14,7 +14,7 @@ var _ = thrift.ZERO
 var _ = fmt.Printf
 var _ = bytes.Equal
 
-const VERSION = "19.36.0"
+const VERSION = "19.38.0"
 
 func init() {
 }

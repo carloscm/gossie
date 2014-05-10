@@ -104,6 +104,29 @@ type Cassandra interface {
 	//  - Column
 	//  - ConsistencyLevel
 	Add(key []byte, column_parent *ColumnParent, column *CounterColumn, consistency_level ConsistencyLevel) (err error)
+	// Atomic compare and set.
+	//
+	// If the cas is successfull, the success boolean in CASResult will be true and there will be no current_values.
+	// Otherwise, success will be false and current_values will contain the current values for the columns in
+	// expected (that, by definition of compare-and-set, will differ from the values in expected).
+	//
+	// A cas operation takes 2 consistency level. The first one, serial_consistency_level, simply indicates the
+	// level of serialization required. This can be either ConsistencyLevel.SERIAL or ConsistencyLevel.LOCAL_SERIAL.
+	// The second one, commit_consistency_level, defines the consistency level for the commit phase of the cas. This
+	// is a more traditional consistency level (the same CL than for traditional writes are accepted) that impact
+	// the visibility for reads of the operation. For instance, if commit_consistency_level is QUORUM, then it is
+	// guaranteed that a followup QUORUM read will see the cas write (if that one was successful obviously). If
+	// commit_consistency_level is ANY, you will need to use a SERIAL/LOCAL_SERIAL read to be guaranteed to see
+	// the write.
+	//
+	// Parameters:
+	//  - Key
+	//  - ColumnFamily
+	//  - Expected
+	//  - Updates
+	//  - SerialConsistencyLevel
+	//  - CommitConsistencyLevel
+	Cas(key []byte, column_family string, expected []*Column, updates []*Column, serial_consistency_level ConsistencyLevel, commit_consistency_level ConsistencyLevel) (r *CASResult_, err error)
 	// Remove data from the row specified by key at the granularity specified by column_path, and the given timestamp. Note
 	// that all the values in column_path besides column_path.column_family are truly optional: you can remove the entire
 	// row by just specifying the ColumnFamily, or you can remove a SuperColumn or a single Column by specifying those levels too.
@@ -173,6 +196,11 @@ type Cassandra interface {
 	// Parameters:
 	//  - Keyspace
 	DescribeRing(keyspace string) (r []*TokenRange, err error)
+	// same as describe_ring, but considers only nodes in the local DC
+	//
+	// Parameters:
+	//  - Keyspace
+	DescribeLocalRing(keyspace string) (r []*TokenRange, err error)
 	// get the mapping between token->node ip
 	// without taking replication into consideration
 	// https://issues.apache.org/jira/browse/CASSANDRA-4092
@@ -237,19 +265,27 @@ type Cassandra interface {
 	// Parameters:
 	//  - CfDef
 	SystemUpdateColumnFamily(cf_def *CfDef) (r string, err error)
-	// Executes a CQL (Cassandra Query Language) statement and returns a
-	// CqlResult containing the results.
+	// @deprecated Will become a no-op in 2.2. Please use the CQL3 version instead.
 	//
 	// Parameters:
 	//  - Query
 	//  - Compression
 	ExecuteCqlQuery(query []byte, compression Compression) (r *CqlResult_, err error)
+	// Executes a CQL3 (Cassandra Query Language) statement and returns a
+	// CqlResult containing the results.
+	//
 	// Parameters:
 	//  - Query
 	//  - Compression
 	//  - Consistency
 	ExecuteCql3Query(query []byte, compression Compression, consistency ConsistencyLevel) (r *CqlResult_, err error)
-	// Prepare a CQL (Cassandra Query Language) statement by compiling and returning
+	// @deprecated Will become a no-op in 2.2. Please use the CQL3 version instead.
+	//
+	// Parameters:
+	//  - Query
+	//  - Compression
+	PrepareCqlQuery(query []byte, compression Compression) (r *CqlPreparedResult_, err error)
+	// Prepare a CQL3 (Cassandra Query Language) statement by compiling and returning
 	// - the type of CQL statement
 	// - an id token of the compiled CQL stored on the server side.
 	// - a count of the discovered bound markers in the statement
@@ -257,18 +293,16 @@ type Cassandra interface {
 	// Parameters:
 	//  - Query
 	//  - Compression
-	PrepareCqlQuery(query []byte, compression Compression) (r *CqlPreparedResult_, err error)
-	// Parameters:
-	//  - Query
-	//  - Compression
 	PrepareCql3Query(query []byte, compression Compression) (r *CqlPreparedResult_, err error)
-	// Executes a prepared CQL (Cassandra Query Language) statement by passing an id token and  a list of variables
-	// to bind and returns a CqlResult containing the results.
+	// @deprecated Will become a no-op in 2.2. Please use the CQL3 version instead.
 	//
 	// Parameters:
 	//  - ItemId
 	//  - Values
 	ExecutePreparedCqlQuery(itemId int32, values [][]byte) (r *CqlResult_, err error)
+	// Executes a prepared CQL3 (Cassandra Query Language) statement by passing an id token, a list of variables
+	// to bind, and the consistency level, and returns a CqlResult containing the results.
+	//
 	// Parameters:
 	//  - ItemId
 	//  - Values
@@ -326,9 +360,10 @@ func (p *CassandraClient) sendLogin(auth_request *AuthenticationRequest) (err er
 	if err = oprot.WriteMessageBegin("login", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args29 := NewLoginArgs()
-	args29.AuthRequest = auth_request
-	if err = args29.Write(oprot); err != nil {
+	args := LoginArgs{
+		AuthRequest: auth_request,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -348,34 +383,34 @@ func (p *CassandraClient) recvLogin() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error31 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error32 error
-		error32, err = error31.Read(iprot)
+		error33 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error34 error
+		error34, err = error33.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error32
+		err = error34
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "login failed: out of sequence response")
 		return
 	}
-	result30 := NewLoginResult()
-	if err = result30.Read(iprot); err != nil {
+	result := LoginResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result30.Authnx != nil {
-		err = result30.Authnx
+	if result.Authnx != nil {
+		err = result.Authnx
 		return
-	} else if result30.Authzx != nil {
-		err = result30.Authzx
+	} else if result.Authzx != nil {
+		err = result.Authzx
 		return
 	}
 	return
@@ -400,9 +435,10 @@ func (p *CassandraClient) sendSetKeyspace(keyspace string) (err error) {
 	if err = oprot.WriteMessageBegin("set_keyspace", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args33 := NewSetKeyspaceArgs()
-	args33.Keyspace = keyspace
-	if err = args33.Write(oprot); err != nil {
+	args := SetKeyspaceArgs{
+		Keyspace: keyspace,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -438,15 +474,15 @@ func (p *CassandraClient) recvSetKeyspace() (err error) {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "set_keyspace failed: out of sequence response")
 		return
 	}
-	result34 := NewSetKeyspaceResult()
-	if err = result34.Read(iprot); err != nil {
+	result := SetKeyspaceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result34.Ire != nil {
-		err = result34.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
 	return
@@ -476,11 +512,12 @@ func (p *CassandraClient) sendGet(key []byte, column_path *ColumnPath, consisten
 	if err = oprot.WriteMessageBegin("get", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args37 := NewGetArgs()
-	args37.Key = key
-	args37.ColumnPath = column_path
-	args37.ConsistencyLevel = consistency_level
-	if err = args37.Write(oprot); err != nil {
+	args := GetArgs{
+		Key:              key,
+		ColumnPath:       column_path,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -500,43 +537,43 @@ func (p *CassandraClient) recvGet() (value *ColumnOrSuperColumn, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error39 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error40 error
-		error40, err = error39.Read(iprot)
+		error37 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error38 error
+		error38, err = error37.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error40
+		err = error38
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "get failed: out of sequence response")
 		return
 	}
-	result38 := NewGetResult()
-	if err = result38.Read(iprot); err != nil {
+	result := GetResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result38.Ire != nil {
-		err = result38.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result38.Nfe != nil {
-		err = result38.Nfe
+	} else if result.Nfe != nil {
+		err = result.Nfe
 		return
-	} else if result38.Ue != nil {
-		err = result38.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result38.Te != nil {
-		err = result38.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result38.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -565,12 +602,13 @@ func (p *CassandraClient) sendGetSlice(key []byte, column_parent *ColumnParent, 
 	if err = oprot.WriteMessageBegin("get_slice", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args41 := NewGetSliceArgs()
-	args41.Key = key
-	args41.ColumnParent = column_parent
-	args41.Predicate = predicate
-	args41.ConsistencyLevel = consistency_level
-	if err = args41.Write(oprot); err != nil {
+	args := GetSliceArgs{
+		Key:              key,
+		ColumnParent:     column_parent,
+		Predicate:        predicate,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -590,40 +628,40 @@ func (p *CassandraClient) recvGetSlice() (value []*ColumnOrSuperColumn, err erro
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error43 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error44 error
-		error44, err = error43.Read(iprot)
+		error39 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error40 error
+		error40, err = error39.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error44
+		err = error40
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "get_slice failed: out of sequence response")
 		return
 	}
-	result42 := NewGetSliceResult()
-	if err = result42.Read(iprot); err != nil {
+	result := GetSliceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result42.Ire != nil {
-		err = result42.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result42.Ue != nil {
-		err = result42.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result42.Te != nil {
-		err = result42.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result42.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -652,12 +690,13 @@ func (p *CassandraClient) sendGetCount(key []byte, column_parent *ColumnParent, 
 	if err = oprot.WriteMessageBegin("get_count", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args45 := NewGetCountArgs()
-	args45.Key = key
-	args45.ColumnParent = column_parent
-	args45.Predicate = predicate
-	args45.ConsistencyLevel = consistency_level
-	if err = args45.Write(oprot); err != nil {
+	args := GetCountArgs{
+		Key:              key,
+		ColumnParent:     column_parent,
+		Predicate:        predicate,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -677,40 +716,40 @@ func (p *CassandraClient) recvGetCount() (value int32, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error47 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error48 error
-		error48, err = error47.Read(iprot)
+		error41 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error42 error
+		error42, err = error41.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error48
+		err = error42
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "get_count failed: out of sequence response")
 		return
 	}
-	result46 := NewGetCountResult()
-	if err = result46.Read(iprot); err != nil {
+	result := GetCountResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result46.Ire != nil {
-		err = result46.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result46.Ue != nil {
-		err = result46.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result46.Te != nil {
-		err = result46.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result46.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -738,12 +777,13 @@ func (p *CassandraClient) sendMultigetSlice(keys [][]byte, column_parent *Column
 	if err = oprot.WriteMessageBegin("multiget_slice", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args49 := NewMultigetSliceArgs()
-	args49.Keys = keys
-	args49.ColumnParent = column_parent
-	args49.Predicate = predicate
-	args49.ConsistencyLevel = consistency_level
-	if err = args49.Write(oprot); err != nil {
+	args := MultigetSliceArgs{
+		Keys:             keys,
+		ColumnParent:     column_parent,
+		Predicate:        predicate,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -763,40 +803,40 @@ func (p *CassandraClient) recvMultigetSlice() (value map[string][]*ColumnOrSuper
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error51 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error52 error
-		error52, err = error51.Read(iprot)
+		error43 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error44 error
+		error44, err = error43.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error52
+		err = error44
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "multiget_slice failed: out of sequence response")
 		return
 	}
-	result50 := NewMultigetSliceResult()
-	if err = result50.Read(iprot); err != nil {
+	result := MultigetSliceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result50.Ire != nil {
-		err = result50.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result50.Ue != nil {
-		err = result50.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result50.Te != nil {
-		err = result50.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result50.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -824,12 +864,13 @@ func (p *CassandraClient) sendMultigetCount(keys [][]byte, column_parent *Column
 	if err = oprot.WriteMessageBegin("multiget_count", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args53 := NewMultigetCountArgs()
-	args53.Keys = keys
-	args53.ColumnParent = column_parent
-	args53.Predicate = predicate
-	args53.ConsistencyLevel = consistency_level
-	if err = args53.Write(oprot); err != nil {
+	args := MultigetCountArgs{
+		Keys:             keys,
+		ColumnParent:     column_parent,
+		Predicate:        predicate,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -849,40 +890,40 @@ func (p *CassandraClient) recvMultigetCount() (value map[string]int32, err error
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error55 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error56 error
-		error56, err = error55.Read(iprot)
+		error45 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error46 error
+		error46, err = error45.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error56
+		err = error46
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "multiget_count failed: out of sequence response")
 		return
 	}
-	result54 := NewMultigetCountResult()
-	if err = result54.Read(iprot); err != nil {
+	result := MultigetCountResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result54.Ire != nil {
-		err = result54.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result54.Ue != nil {
-		err = result54.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result54.Te != nil {
-		err = result54.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result54.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -910,12 +951,13 @@ func (p *CassandraClient) sendGetRangeSlices(column_parent *ColumnParent, predic
 	if err = oprot.WriteMessageBegin("get_range_slices", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args57 := NewGetRangeSlicesArgs()
-	args57.ColumnParent = column_parent
-	args57.Predicate = predicate
-	args57.RangeA1 = range_a1
-	args57.ConsistencyLevel = consistency_level
-	if err = args57.Write(oprot); err != nil {
+	args := GetRangeSlicesArgs{
+		ColumnParent:     column_parent,
+		Predicate:        predicate,
+		RangeA1:          range_a1,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -935,40 +977,40 @@ func (p *CassandraClient) recvGetRangeSlices() (value []*KeySlice, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error59 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error60 error
-		error60, err = error59.Read(iprot)
+		error47 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error48 error
+		error48, err = error47.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error60
+		err = error48
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "get_range_slices failed: out of sequence response")
 		return
 	}
-	result58 := NewGetRangeSlicesResult()
-	if err = result58.Read(iprot); err != nil {
+	result := GetRangeSlicesResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result58.Ire != nil {
-		err = result58.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result58.Ue != nil {
-		err = result58.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result58.Te != nil {
-		err = result58.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result58.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -996,12 +1038,13 @@ func (p *CassandraClient) sendGetPagedSlice(column_family string, range_a1 *KeyR
 	if err = oprot.WriteMessageBegin("get_paged_slice", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args61 := NewGetPagedSliceArgs()
-	args61.ColumnFamily = column_family
-	args61.RangeA1 = range_a1
-	args61.StartColumn = start_column
-	args61.ConsistencyLevel = consistency_level
-	if err = args61.Write(oprot); err != nil {
+	args := GetPagedSliceArgs{
+		ColumnFamily:     column_family,
+		RangeA1:          range_a1,
+		StartColumn:      start_column,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1021,40 +1064,40 @@ func (p *CassandraClient) recvGetPagedSlice() (value []*KeySlice, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error63 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error64 error
-		error64, err = error63.Read(iprot)
+		error49 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error50 error
+		error50, err = error49.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error64
+		err = error50
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "get_paged_slice failed: out of sequence response")
 		return
 	}
-	result62 := NewGetPagedSliceResult()
-	if err = result62.Read(iprot); err != nil {
+	result := GetPagedSliceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result62.Ire != nil {
-		err = result62.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result62.Ue != nil {
-		err = result62.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result62.Te != nil {
-		err = result62.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result62.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -1083,12 +1126,13 @@ func (p *CassandraClient) sendGetIndexedSlices(column_parent *ColumnParent, inde
 	if err = oprot.WriteMessageBegin("get_indexed_slices", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args65 := NewGetIndexedSlicesArgs()
-	args65.ColumnParent = column_parent
-	args65.IndexClause = index_clause
-	args65.ColumnPredicate = column_predicate
-	args65.ConsistencyLevel = consistency_level
-	if err = args65.Write(oprot); err != nil {
+	args := GetIndexedSlicesArgs{
+		ColumnParent:     column_parent,
+		IndexClause:      index_clause,
+		ColumnPredicate:  column_predicate,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1108,40 +1152,40 @@ func (p *CassandraClient) recvGetIndexedSlices() (value []*KeySlice, err error) 
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error67 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error68 error
-		error68, err = error67.Read(iprot)
+		error51 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error52 error
+		error52, err = error51.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error68
+		err = error52
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "get_indexed_slices failed: out of sequence response")
 		return
 	}
-	result66 := NewGetIndexedSlicesResult()
-	if err = result66.Read(iprot); err != nil {
+	result := GetIndexedSlicesResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result66.Ire != nil {
-		err = result66.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result66.Ue != nil {
-		err = result66.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result66.Te != nil {
-		err = result66.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
-	value = result66.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -1169,12 +1213,13 @@ func (p *CassandraClient) sendInsert(key []byte, column_parent *ColumnParent, co
 	if err = oprot.WriteMessageBegin("insert", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args69 := NewInsertArgs()
-	args69.Key = key
-	args69.ColumnParent = column_parent
-	args69.Column = column
-	args69.ConsistencyLevel = consistency_level
-	if err = args69.Write(oprot); err != nil {
+	args := InsertArgs{
+		Key:              key,
+		ColumnParent:     column_parent,
+		Column:           column,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1194,37 +1239,37 @@ func (p *CassandraClient) recvInsert() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error71 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error72 error
-		error72, err = error71.Read(iprot)
+		error53 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error54 error
+		error54, err = error53.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error72
+		err = error54
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "insert failed: out of sequence response")
 		return
 	}
-	result70 := NewInsertResult()
-	if err = result70.Read(iprot); err != nil {
+	result := InsertResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result70.Ire != nil {
-		err = result70.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result70.Ue != nil {
-		err = result70.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result70.Te != nil {
-		err = result70.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
 	return
@@ -1254,12 +1299,13 @@ func (p *CassandraClient) sendAdd(key []byte, column_parent *ColumnParent, colum
 	if err = oprot.WriteMessageBegin("add", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args73 := NewAddArgs()
-	args73.Key = key
-	args73.ColumnParent = column_parent
-	args73.Column = column
-	args73.ConsistencyLevel = consistency_level
-	if err = args73.Write(oprot); err != nil {
+	args := AddArgs{
+		Key:              key,
+		ColumnParent:     column_parent,
+		Column:           column,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1279,39 +1325,143 @@ func (p *CassandraClient) recvAdd() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error75 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error76 error
-		error76, err = error75.Read(iprot)
+		error55 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error56 error
+		error56, err = error55.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error76
+		err = error56
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "add failed: out of sequence response")
 		return
 	}
-	result74 := NewAddResult()
-	if err = result74.Read(iprot); err != nil {
+	result := AddResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result74.Ire != nil {
-		err = result74.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result74.Ue != nil {
-		err = result74.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result74.Te != nil {
-		err = result74.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
+	return
+}
+
+// Atomic compare and set.
+//
+// If the cas is successfull, the success boolean in CASResult will be true and there will be no current_values.
+// Otherwise, success will be false and current_values will contain the current values for the columns in
+// expected (that, by definition of compare-and-set, will differ from the values in expected).
+//
+// A cas operation takes 2 consistency level. The first one, serial_consistency_level, simply indicates the
+// level of serialization required. This can be either ConsistencyLevel.SERIAL or ConsistencyLevel.LOCAL_SERIAL.
+// The second one, commit_consistency_level, defines the consistency level for the commit phase of the cas. This
+// is a more traditional consistency level (the same CL than for traditional writes are accepted) that impact
+// the visibility for reads of the operation. For instance, if commit_consistency_level is QUORUM, then it is
+// guaranteed that a followup QUORUM read will see the cas write (if that one was successful obviously). If
+// commit_consistency_level is ANY, you will need to use a SERIAL/LOCAL_SERIAL read to be guaranteed to see
+// the write.
+//
+// Parameters:
+//  - Key
+//  - ColumnFamily
+//  - Expected
+//  - Updates
+//  - SerialConsistencyLevel
+//  - CommitConsistencyLevel
+func (p *CassandraClient) Cas(key []byte, column_family string, expected []*Column, updates []*Column, serial_consistency_level ConsistencyLevel, commit_consistency_level ConsistencyLevel) (r *CASResult_, err error) {
+	if err = p.sendCas(key, column_family, expected, updates, serial_consistency_level, commit_consistency_level); err != nil {
+		return
+	}
+	return p.recvCas()
+}
+
+func (p *CassandraClient) sendCas(key []byte, column_family string, expected []*Column, updates []*Column, serial_consistency_level ConsistencyLevel, commit_consistency_level ConsistencyLevel) (err error) {
+	oprot := p.OutputProtocol
+	if oprot == nil {
+		oprot = p.ProtocolFactory.GetProtocol(p.Transport)
+		p.OutputProtocol = oprot
+	}
+	p.SeqId++
+	if err = oprot.WriteMessageBegin("cas", thrift.CALL, p.SeqId); err != nil {
+		return
+	}
+	args := CasArgs{
+		Key:                    key,
+		ColumnFamily:           column_family,
+		Expected:               expected,
+		Updates:                updates,
+		SerialConsistencyLevel: serial_consistency_level,
+		CommitConsistencyLevel: commit_consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
+		return
+	}
+	if err = oprot.WriteMessageEnd(); err != nil {
+		return
+	}
+	return oprot.Flush()
+}
+
+func (p *CassandraClient) recvCas() (value *CASResult_, err error) {
+	iprot := p.InputProtocol
+	if iprot == nil {
+		iprot = p.ProtocolFactory.GetProtocol(p.Transport)
+		p.InputProtocol = iprot
+	}
+	_, mTypeId, seqId, err := iprot.ReadMessageBegin()
+	if err != nil {
+		return
+	}
+	if mTypeId == thrift.EXCEPTION {
+		error57 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error58 error
+		error58, err = error57.Read(iprot)
+		if err != nil {
+			return
+		}
+		if err = iprot.ReadMessageEnd(); err != nil {
+			return
+		}
+		err = error58
+		return
+	}
+	if p.SeqId != seqId {
+		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "cas failed: out of sequence response")
+		return
+	}
+	result := CasResult{}
+	if err = result.Read(iprot); err != nil {
+		return
+	}
+	if err = iprot.ReadMessageEnd(); err != nil {
+		return
+	}
+	if result.Ire != nil {
+		err = result.Ire
+		return
+	} else if result.Ue != nil {
+		err = result.Ue
+		return
+	} else if result.Te != nil {
+		err = result.Te
+		return
+	}
+	value = result.GetSuccess()
 	return
 }
 
@@ -1341,12 +1491,13 @@ func (p *CassandraClient) sendRemove(key []byte, column_path *ColumnPath, timest
 	if err = oprot.WriteMessageBegin("remove", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args77 := NewRemoveArgs()
-	args77.Key = key
-	args77.ColumnPath = column_path
-	args77.Timestamp = timestamp
-	args77.ConsistencyLevel = consistency_level
-	if err = args77.Write(oprot); err != nil {
+	args := RemoveArgs{
+		Key:              key,
+		ColumnPath:       column_path,
+		Timestamp:        timestamp,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1366,37 +1517,37 @@ func (p *CassandraClient) recvRemove() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error79 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error80 error
-		error80, err = error79.Read(iprot)
+		error59 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error60 error
+		error60, err = error59.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error80
+		err = error60
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "remove failed: out of sequence response")
 		return
 	}
-	result78 := NewRemoveResult()
-	if err = result78.Read(iprot); err != nil {
+	result := RemoveResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result78.Ire != nil {
-		err = result78.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result78.Ue != nil {
-		err = result78.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result78.Te != nil {
-		err = result78.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
 	return
@@ -1427,11 +1578,12 @@ func (p *CassandraClient) sendRemoveCounter(key []byte, path *ColumnPath, consis
 	if err = oprot.WriteMessageBegin("remove_counter", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args81 := NewRemoveCounterArgs()
-	args81.Key = key
-	args81.Path = path
-	args81.ConsistencyLevel = consistency_level
-	if err = args81.Write(oprot); err != nil {
+	args := RemoveCounterArgs{
+		Key:              key,
+		Path:             path,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1451,37 +1603,37 @@ func (p *CassandraClient) recvRemoveCounter() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error83 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error84 error
-		error84, err = error83.Read(iprot)
+		error61 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error62 error
+		error62, err = error61.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error84
+		err = error62
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "remove_counter failed: out of sequence response")
 		return
 	}
-	result82 := NewRemoveCounterResult()
-	if err = result82.Read(iprot); err != nil {
+	result := RemoveCounterResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result82.Ire != nil {
-		err = result82.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result82.Ue != nil {
-		err = result82.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result82.Te != nil {
-		err = result82.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
 	return
@@ -1512,10 +1664,11 @@ func (p *CassandraClient) sendBatchMutate(mutation_map map[string]map[string][]*
 	if err = oprot.WriteMessageBegin("batch_mutate", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args85 := NewBatchMutateArgs()
-	args85.MutationMap = mutation_map
-	args85.ConsistencyLevel = consistency_level
-	if err = args85.Write(oprot); err != nil {
+	args := BatchMutateArgs{
+		MutationMap:      mutation_map,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1535,37 +1688,37 @@ func (p *CassandraClient) recvBatchMutate() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error87 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error88 error
-		error88, err = error87.Read(iprot)
+		error63 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error64 error
+		error64, err = error63.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error88
+		err = error64
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "batch_mutate failed: out of sequence response")
 		return
 	}
-	result86 := NewBatchMutateResult()
-	if err = result86.Read(iprot); err != nil {
+	result := BatchMutateResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result86.Ire != nil {
-		err = result86.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result86.Ue != nil {
-		err = result86.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result86.Te != nil {
-		err = result86.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
 	return
@@ -1596,10 +1749,11 @@ func (p *CassandraClient) sendAtomicBatchMutate(mutation_map map[string]map[stri
 	if err = oprot.WriteMessageBegin("atomic_batch_mutate", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args89 := NewAtomicBatchMutateArgs()
-	args89.MutationMap = mutation_map
-	args89.ConsistencyLevel = consistency_level
-	if err = args89.Write(oprot); err != nil {
+	args := AtomicBatchMutateArgs{
+		MutationMap:      mutation_map,
+		ConsistencyLevel: consistency_level,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1619,37 +1773,37 @@ func (p *CassandraClient) recvAtomicBatchMutate() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error91 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error92 error
-		error92, err = error91.Read(iprot)
+		error65 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error66 error
+		error66, err = error65.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error92
+		err = error66
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "atomic_batch_mutate failed: out of sequence response")
 		return
 	}
-	result90 := NewAtomicBatchMutateResult()
-	if err = result90.Read(iprot); err != nil {
+	result := AtomicBatchMutateResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result90.Ire != nil {
-		err = result90.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result90.Ue != nil {
-		err = result90.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result90.Te != nil {
-		err = result90.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
 	return
@@ -1681,9 +1835,10 @@ func (p *CassandraClient) sendTruncate(cfname string) (err error) {
 	if err = oprot.WriteMessageBegin("truncate", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args93 := NewTruncateArgs()
-	args93.Cfname = cfname
-	if err = args93.Write(oprot); err != nil {
+	args := TruncateArgs{
+		Cfname: cfname,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1703,37 +1858,37 @@ func (p *CassandraClient) recvTruncate() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error95 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error96 error
-		error96, err = error95.Read(iprot)
+		error67 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error68 error
+		error68, err = error67.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error96
+		err = error68
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "truncate failed: out of sequence response")
 		return
 	}
-	result94 := NewTruncateResult()
-	if err = result94.Read(iprot); err != nil {
+	result := TruncateResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result94.Ire != nil {
-		err = result94.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result94.Ue != nil {
-		err = result94.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result94.Te != nil {
-		err = result94.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
 	}
 	return
@@ -1759,8 +1914,8 @@ func (p *CassandraClient) sendDescribeSchemaVersions() (err error) {
 	if err = oprot.WriteMessageBegin("describe_schema_versions", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args97 := NewDescribeSchemaVersionsArgs()
-	if err = args97.Write(oprot); err != nil {
+	args := DescribeSchemaVersionsArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1780,34 +1935,34 @@ func (p *CassandraClient) recvDescribeSchemaVersions() (value map[string][]strin
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error99 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error100 error
-		error100, err = error99.Read(iprot)
+		error69 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error70 error
+		error70, err = error69.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error100
+		err = error70
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_schema_versions failed: out of sequence response")
 		return
 	}
-	result98 := NewDescribeSchemaVersionsResult()
-	if err = result98.Read(iprot); err != nil {
+	result := DescribeSchemaVersionsResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result98.Ire != nil {
-		err = result98.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result98.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -1829,8 +1984,8 @@ func (p *CassandraClient) sendDescribeKeyspaces() (err error) {
 	if err = oprot.WriteMessageBegin("describe_keyspaces", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args101 := NewDescribeKeyspacesArgs()
-	if err = args101.Write(oprot); err != nil {
+	args := DescribeKeyspacesArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1850,34 +2005,34 @@ func (p *CassandraClient) recvDescribeKeyspaces() (value []*KsDef, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error103 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error104 error
-		error104, err = error103.Read(iprot)
+		error71 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error72 error
+		error72, err = error71.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error104
+		err = error72
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_keyspaces failed: out of sequence response")
 		return
 	}
-	result102 := NewDescribeKeyspacesResult()
-	if err = result102.Read(iprot); err != nil {
+	result := DescribeKeyspacesResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result102.Ire != nil {
-		err = result102.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result102.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -1899,8 +2054,8 @@ func (p *CassandraClient) sendDescribeClusterName() (err error) {
 	if err = oprot.WriteMessageBegin("describe_cluster_name", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args105 := NewDescribeClusterNameArgs()
-	if err = args105.Write(oprot); err != nil {
+	args := DescribeClusterNameArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1920,30 +2075,30 @@ func (p *CassandraClient) recvDescribeClusterName() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error107 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error108 error
-		error108, err = error107.Read(iprot)
+		error73 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error74 error
+		error74, err = error73.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error108
+		err = error74
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_cluster_name failed: out of sequence response")
 		return
 	}
-	result106 := NewDescribeClusterNameResult()
-	if err = result106.Read(iprot); err != nil {
+	result := DescribeClusterNameResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	value = result106.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -1965,8 +2120,8 @@ func (p *CassandraClient) sendDescribeVersion() (err error) {
 	if err = oprot.WriteMessageBegin("describe_version", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args109 := NewDescribeVersionArgs()
-	if err = args109.Write(oprot); err != nil {
+	args := DescribeVersionArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -1986,30 +2141,30 @@ func (p *CassandraClient) recvDescribeVersion() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error111 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error112 error
-		error112, err = error111.Read(iprot)
+		error75 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error76 error
+		error76, err = error75.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error112
+		err = error76
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_version failed: out of sequence response")
 		return
 	}
-	result110 := NewDescribeVersionResult()
-	if err = result110.Read(iprot); err != nil {
+	result := DescribeVersionResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	value = result110.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2041,9 +2196,10 @@ func (p *CassandraClient) sendDescribeRing(keyspace string) (err error) {
 	if err = oprot.WriteMessageBegin("describe_ring", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args113 := NewDescribeRingArgs()
-	args113.Keyspace = keyspace
-	if err = args113.Write(oprot); err != nil {
+	args := DescribeRingArgs{
+		Keyspace: keyspace,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2063,34 +2219,109 @@ func (p *CassandraClient) recvDescribeRing() (value []*TokenRange, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error115 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error116 error
-		error116, err = error115.Read(iprot)
+		error77 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error78 error
+		error78, err = error77.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error116
+		err = error78
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_ring failed: out of sequence response")
 		return
 	}
-	result114 := NewDescribeRingResult()
-	if err = result114.Read(iprot); err != nil {
+	result := DescribeRingResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result114.Ire != nil {
-		err = result114.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result114.Success
+	value = result.GetSuccess()
+	return
+}
+
+// same as describe_ring, but considers only nodes in the local DC
+//
+// Parameters:
+//  - Keyspace
+func (p *CassandraClient) DescribeLocalRing(keyspace string) (r []*TokenRange, err error) {
+	if err = p.sendDescribeLocalRing(keyspace); err != nil {
+		return
+	}
+	return p.recvDescribeLocalRing()
+}
+
+func (p *CassandraClient) sendDescribeLocalRing(keyspace string) (err error) {
+	oprot := p.OutputProtocol
+	if oprot == nil {
+		oprot = p.ProtocolFactory.GetProtocol(p.Transport)
+		p.OutputProtocol = oprot
+	}
+	p.SeqId++
+	if err = oprot.WriteMessageBegin("describe_local_ring", thrift.CALL, p.SeqId); err != nil {
+		return
+	}
+	args := DescribeLocalRingArgs{
+		Keyspace: keyspace,
+	}
+	if err = args.Write(oprot); err != nil {
+		return
+	}
+	if err = oprot.WriteMessageEnd(); err != nil {
+		return
+	}
+	return oprot.Flush()
+}
+
+func (p *CassandraClient) recvDescribeLocalRing() (value []*TokenRange, err error) {
+	iprot := p.InputProtocol
+	if iprot == nil {
+		iprot = p.ProtocolFactory.GetProtocol(p.Transport)
+		p.InputProtocol = iprot
+	}
+	_, mTypeId, seqId, err := iprot.ReadMessageBegin()
+	if err != nil {
+		return
+	}
+	if mTypeId == thrift.EXCEPTION {
+		error79 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error80 error
+		error80, err = error79.Read(iprot)
+		if err != nil {
+			return
+		}
+		if err = iprot.ReadMessageEnd(); err != nil {
+			return
+		}
+		err = error80
+		return
+	}
+	if p.SeqId != seqId {
+		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_local_ring failed: out of sequence response")
+		return
+	}
+	result := DescribeLocalRingResult{}
+	if err = result.Read(iprot); err != nil {
+		return
+	}
+	if err = iprot.ReadMessageEnd(); err != nil {
+		return
+	}
+	if result.Ire != nil {
+		err = result.Ire
+		return
+	}
+	value = result.GetSuccess()
 	return
 }
 
@@ -2114,8 +2345,8 @@ func (p *CassandraClient) sendDescribeTokenMap() (err error) {
 	if err = oprot.WriteMessageBegin("describe_token_map", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args117 := NewDescribeTokenMapArgs()
-	if err = args117.Write(oprot); err != nil {
+	args := DescribeTokenMapArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2135,34 +2366,34 @@ func (p *CassandraClient) recvDescribeTokenMap() (value map[string]string, err e
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error119 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error120 error
-		error120, err = error119.Read(iprot)
+		error81 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error82 error
+		error82, err = error81.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error120
+		err = error82
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_token_map failed: out of sequence response")
 		return
 	}
-	result118 := NewDescribeTokenMapResult()
-	if err = result118.Read(iprot); err != nil {
+	result := DescribeTokenMapResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result118.Ire != nil {
-		err = result118.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result118.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2184,8 +2415,8 @@ func (p *CassandraClient) sendDescribePartitioner() (err error) {
 	if err = oprot.WriteMessageBegin("describe_partitioner", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args121 := NewDescribePartitionerArgs()
-	if err = args121.Write(oprot); err != nil {
+	args := DescribePartitionerArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2205,30 +2436,30 @@ func (p *CassandraClient) recvDescribePartitioner() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error123 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error124 error
-		error124, err = error123.Read(iprot)
+		error83 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error84 error
+		error84, err = error83.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error124
+		err = error84
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_partitioner failed: out of sequence response")
 		return
 	}
-	result122 := NewDescribePartitionerResult()
-	if err = result122.Read(iprot); err != nil {
+	result := DescribePartitionerResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	value = result122.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2250,8 +2481,8 @@ func (p *CassandraClient) sendDescribeSnitch() (err error) {
 	if err = oprot.WriteMessageBegin("describe_snitch", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args125 := NewDescribeSnitchArgs()
-	if err = args125.Write(oprot); err != nil {
+	args := DescribeSnitchArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2271,30 +2502,30 @@ func (p *CassandraClient) recvDescribeSnitch() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error127 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error128 error
-		error128, err = error127.Read(iprot)
+		error85 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error86 error
+		error86, err = error85.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error128
+		err = error86
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_snitch failed: out of sequence response")
 		return
 	}
-	result126 := NewDescribeSnitchResult()
-	if err = result126.Read(iprot); err != nil {
+	result := DescribeSnitchResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	value = result126.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2319,9 +2550,10 @@ func (p *CassandraClient) sendDescribeKeyspace(keyspace string) (err error) {
 	if err = oprot.WriteMessageBegin("describe_keyspace", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args129 := NewDescribeKeyspaceArgs()
-	args129.Keyspace = keyspace
-	if err = args129.Write(oprot); err != nil {
+	args := DescribeKeyspaceArgs{
+		Keyspace: keyspace,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2341,37 +2573,37 @@ func (p *CassandraClient) recvDescribeKeyspace() (value *KsDef, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error131 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error132 error
-		error132, err = error131.Read(iprot)
+		error87 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error88 error
+		error88, err = error87.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error132
+		err = error88
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_keyspace failed: out of sequence response")
 		return
 	}
-	result130 := NewDescribeKeyspaceResult()
-	if err = result130.Read(iprot); err != nil {
+	result := DescribeKeyspaceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result130.Nfe != nil {
-		err = result130.Nfe
+	if result.Nfe != nil {
+		err = result.Nfe
 		return
-	} else if result130.Ire != nil {
-		err = result130.Ire
+	} else if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result130.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2403,12 +2635,13 @@ func (p *CassandraClient) sendDescribeSplits(cfName string, start_token string, 
 	if err = oprot.WriteMessageBegin("describe_splits", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args133 := NewDescribeSplitsArgs()
-	args133.CfName = cfName
-	args133.StartToken = start_token
-	args133.EndToken = end_token
-	args133.KeysPerSplit = keys_per_split
-	if err = args133.Write(oprot); err != nil {
+	args := DescribeSplitsArgs{
+		CfName:       cfName,
+		StartToken:   start_token,
+		EndToken:     end_token,
+		KeysPerSplit: keys_per_split,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2428,34 +2661,34 @@ func (p *CassandraClient) recvDescribeSplits() (value []string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error135 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error136 error
-		error136, err = error135.Read(iprot)
+		error89 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error90 error
+		error90, err = error89.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error136
+		err = error90
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_splits failed: out of sequence response")
 		return
 	}
-	result134 := NewDescribeSplitsResult()
-	if err = result134.Read(iprot); err != nil {
+	result := DescribeSplitsResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result134.Ire != nil {
-		err = result134.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result134.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2478,8 +2711,8 @@ func (p *CassandraClient) sendTraceNextQuery() (err error) {
 	if err = oprot.WriteMessageBegin("trace_next_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args137 := NewTraceNextQueryArgs()
-	if err = args137.Write(oprot); err != nil {
+	args := TraceNextQueryArgs{}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2499,30 +2732,30 @@ func (p *CassandraClient) recvTraceNextQuery() (value []byte, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error139 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error140 error
-		error140, err = error139.Read(iprot)
+		error91 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error92 error
+		error92, err = error91.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error140
+		err = error92
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "trace_next_query failed: out of sequence response")
 		return
 	}
-	result138 := NewTraceNextQueryResult()
-	if err = result138.Read(iprot); err != nil {
+	result := TraceNextQueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	value = result138.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2548,12 +2781,13 @@ func (p *CassandraClient) sendDescribeSplitsEx(cfName string, start_token string
 	if err = oprot.WriteMessageBegin("describe_splits_ex", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args141 := NewDescribeSplitsExArgs()
-	args141.CfName = cfName
-	args141.StartToken = start_token
-	args141.EndToken = end_token
-	args141.KeysPerSplit = keys_per_split
-	if err = args141.Write(oprot); err != nil {
+	args := DescribeSplitsExArgs{
+		CfName:       cfName,
+		StartToken:   start_token,
+		EndToken:     end_token,
+		KeysPerSplit: keys_per_split,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2573,34 +2807,34 @@ func (p *CassandraClient) recvDescribeSplitsEx() (value []*CfSplit, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error143 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error144 error
-		error144, err = error143.Read(iprot)
+		error93 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error94 error
+		error94, err = error93.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error144
+		err = error94
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "describe_splits_ex failed: out of sequence response")
 		return
 	}
-	result142 := NewDescribeSplitsExResult()
-	if err = result142.Read(iprot); err != nil {
+	result := DescribeSplitsExResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result142.Ire != nil {
-		err = result142.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result142.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2625,9 +2859,10 @@ func (p *CassandraClient) sendSystemAddColumnFamily(cf_def *CfDef) (err error) {
 	if err = oprot.WriteMessageBegin("system_add_column_family", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args145 := NewSystemAddColumnFamilyArgs()
-	args145.CfDef = cf_def
-	if err = args145.Write(oprot); err != nil {
+	args := SystemAddColumnFamilyArgs{
+		CfDef: cf_def,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2647,37 +2882,37 @@ func (p *CassandraClient) recvSystemAddColumnFamily() (value string, err error) 
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error147 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error148 error
-		error148, err = error147.Read(iprot)
+		error95 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error96 error
+		error96, err = error95.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error148
+		err = error96
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "system_add_column_family failed: out of sequence response")
 		return
 	}
-	result146 := NewSystemAddColumnFamilyResult()
-	if err = result146.Read(iprot); err != nil {
+	result := SystemAddColumnFamilyResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result146.Ire != nil {
-		err = result146.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result146.Sde != nil {
-		err = result146.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result146.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2702,9 +2937,10 @@ func (p *CassandraClient) sendSystemDropColumnFamily(column_family string) (err 
 	if err = oprot.WriteMessageBegin("system_drop_column_family", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args149 := NewSystemDropColumnFamilyArgs()
-	args149.ColumnFamily = column_family
-	if err = args149.Write(oprot); err != nil {
+	args := SystemDropColumnFamilyArgs{
+		ColumnFamily: column_family,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2724,37 +2960,37 @@ func (p *CassandraClient) recvSystemDropColumnFamily() (value string, err error)
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error151 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error152 error
-		error152, err = error151.Read(iprot)
+		error97 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error98 error
+		error98, err = error97.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error152
+		err = error98
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "system_drop_column_family failed: out of sequence response")
 		return
 	}
-	result150 := NewSystemDropColumnFamilyResult()
-	if err = result150.Read(iprot); err != nil {
+	result := SystemDropColumnFamilyResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result150.Ire != nil {
-		err = result150.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result150.Sde != nil {
-		err = result150.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result150.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2779,9 +3015,10 @@ func (p *CassandraClient) sendSystemAddKeyspace(ks_def *KsDef) (err error) {
 	if err = oprot.WriteMessageBegin("system_add_keyspace", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args153 := NewSystemAddKeyspaceArgs()
-	args153.KsDef = ks_def
-	if err = args153.Write(oprot); err != nil {
+	args := SystemAddKeyspaceArgs{
+		KsDef: ks_def,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2801,37 +3038,37 @@ func (p *CassandraClient) recvSystemAddKeyspace() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error155 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error156 error
-		error156, err = error155.Read(iprot)
+		error99 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error100 error
+		error100, err = error99.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error156
+		err = error100
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "system_add_keyspace failed: out of sequence response")
 		return
 	}
-	result154 := NewSystemAddKeyspaceResult()
-	if err = result154.Read(iprot); err != nil {
+	result := SystemAddKeyspaceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result154.Ire != nil {
-		err = result154.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result154.Sde != nil {
-		err = result154.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result154.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2856,9 +3093,10 @@ func (p *CassandraClient) sendSystemDropKeyspace(keyspace string) (err error) {
 	if err = oprot.WriteMessageBegin("system_drop_keyspace", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args157 := NewSystemDropKeyspaceArgs()
-	args157.Keyspace = keyspace
-	if err = args157.Write(oprot); err != nil {
+	args := SystemDropKeyspaceArgs{
+		Keyspace: keyspace,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2878,37 +3116,37 @@ func (p *CassandraClient) recvSystemDropKeyspace() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error159 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error160 error
-		error160, err = error159.Read(iprot)
+		error101 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error102 error
+		error102, err = error101.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error160
+		err = error102
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "system_drop_keyspace failed: out of sequence response")
 		return
 	}
-	result158 := NewSystemDropKeyspaceResult()
-	if err = result158.Read(iprot); err != nil {
+	result := SystemDropKeyspaceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result158.Ire != nil {
-		err = result158.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result158.Sde != nil {
-		err = result158.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result158.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -2933,9 +3171,10 @@ func (p *CassandraClient) sendSystemUpdateKeyspace(ks_def *KsDef) (err error) {
 	if err = oprot.WriteMessageBegin("system_update_keyspace", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args161 := NewSystemUpdateKeyspaceArgs()
-	args161.KsDef = ks_def
-	if err = args161.Write(oprot); err != nil {
+	args := SystemUpdateKeyspaceArgs{
+		KsDef: ks_def,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -2955,37 +3194,37 @@ func (p *CassandraClient) recvSystemUpdateKeyspace() (value string, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error163 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error164 error
-		error164, err = error163.Read(iprot)
+		error103 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error104 error
+		error104, err = error103.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error164
+		err = error104
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "system_update_keyspace failed: out of sequence response")
 		return
 	}
-	result162 := NewSystemUpdateKeyspaceResult()
-	if err = result162.Read(iprot); err != nil {
+	result := SystemUpdateKeyspaceResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result162.Ire != nil {
-		err = result162.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result162.Sde != nil {
-		err = result162.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result162.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -3010,9 +3249,10 @@ func (p *CassandraClient) sendSystemUpdateColumnFamily(cf_def *CfDef) (err error
 	if err = oprot.WriteMessageBegin("system_update_column_family", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args165 := NewSystemUpdateColumnFamilyArgs()
-	args165.CfDef = cf_def
-	if err = args165.Write(oprot); err != nil {
+	args := SystemUpdateColumnFamilyArgs{
+		CfDef: cf_def,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3032,42 +3272,41 @@ func (p *CassandraClient) recvSystemUpdateColumnFamily() (value string, err erro
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error167 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error168 error
-		error168, err = error167.Read(iprot)
+		error105 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error106 error
+		error106, err = error105.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error168
+		err = error106
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "system_update_column_family failed: out of sequence response")
 		return
 	}
-	result166 := NewSystemUpdateColumnFamilyResult()
-	if err = result166.Read(iprot); err != nil {
+	result := SystemUpdateColumnFamilyResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result166.Ire != nil {
-		err = result166.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result166.Sde != nil {
-		err = result166.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result166.Success
+	value = result.GetSuccess()
 	return
 }
 
-// Executes a CQL (Cassandra Query Language) statement and returns a
-// CqlResult containing the results.
+// @deprecated Will become a no-op in 2.2. Please use the CQL3 version instead.
 //
 // Parameters:
 //  - Query
@@ -3089,10 +3328,11 @@ func (p *CassandraClient) sendExecuteCqlQuery(query []byte, compression Compress
 	if err = oprot.WriteMessageBegin("execute_cql_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args169 := NewExecuteCqlQueryArgs()
-	args169.Query = query
-	args169.Compression = compression
-	if err = args169.Write(oprot); err != nil {
+	args := ExecuteCqlQueryArgs{
+		Query:       query,
+		Compression: compression,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3112,46 +3352,49 @@ func (p *CassandraClient) recvExecuteCqlQuery() (value *CqlResult_, err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error171 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error172 error
-		error172, err = error171.Read(iprot)
+		error107 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error108 error
+		error108, err = error107.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error172
+		err = error108
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "execute_cql_query failed: out of sequence response")
 		return
 	}
-	result170 := NewExecuteCqlQueryResult()
-	if err = result170.Read(iprot); err != nil {
+	result := ExecuteCqlQueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result170.Ire != nil {
-		err = result170.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result170.Ue != nil {
-		err = result170.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result170.Te != nil {
-		err = result170.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
-	} else if result170.Sde != nil {
-		err = result170.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result170.Success
+	value = result.GetSuccess()
 	return
 }
 
+// Executes a CQL3 (Cassandra Query Language) statement and returns a
+// CqlResult containing the results.
+//
 // Parameters:
 //  - Query
 //  - Compression
@@ -3173,11 +3416,12 @@ func (p *CassandraClient) sendExecuteCql3Query(query []byte, compression Compres
 	if err = oprot.WriteMessageBegin("execute_cql3_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args173 := NewExecuteCql3QueryArgs()
-	args173.Query = query
-	args173.Compression = compression
-	args173.Consistency = consistency
-	if err = args173.Write(oprot); err != nil {
+	args := ExecuteCql3QueryArgs{
+		Query:       query,
+		Compression: compression,
+		Consistency: consistency,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3197,50 +3441,47 @@ func (p *CassandraClient) recvExecuteCql3Query() (value *CqlResult_, err error) 
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error175 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error176 error
-		error176, err = error175.Read(iprot)
+		error109 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error110 error
+		error110, err = error109.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error176
+		err = error110
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "execute_cql3_query failed: out of sequence response")
 		return
 	}
-	result174 := NewExecuteCql3QueryResult()
-	if err = result174.Read(iprot); err != nil {
+	result := ExecuteCql3QueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result174.Ire != nil {
-		err = result174.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result174.Ue != nil {
-		err = result174.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result174.Te != nil {
-		err = result174.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
-	} else if result174.Sde != nil {
-		err = result174.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result174.Success
+	value = result.GetSuccess()
 	return
 }
 
-// Prepare a CQL (Cassandra Query Language) statement by compiling and returning
-// - the type of CQL statement
-// - an id token of the compiled CQL stored on the server side.
-// - a count of the discovered bound markers in the statement
+// @deprecated Will become a no-op in 2.2. Please use the CQL3 version instead.
 //
 // Parameters:
 //  - Query
@@ -3262,10 +3503,11 @@ func (p *CassandraClient) sendPrepareCqlQuery(query []byte, compression Compress
 	if err = oprot.WriteMessageBegin("prepare_cql_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args177 := NewPrepareCqlQueryArgs()
-	args177.Query = query
-	args177.Compression = compression
-	if err = args177.Write(oprot); err != nil {
+	args := PrepareCqlQueryArgs{
+		Query:       query,
+		Compression: compression,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3285,37 +3527,42 @@ func (p *CassandraClient) recvPrepareCqlQuery() (value *CqlPreparedResult_, err 
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error179 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error180 error
-		error180, err = error179.Read(iprot)
+		error111 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error112 error
+		error112, err = error111.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error180
+		err = error112
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "prepare_cql_query failed: out of sequence response")
 		return
 	}
-	result178 := NewPrepareCqlQueryResult()
-	if err = result178.Read(iprot); err != nil {
+	result := PrepareCqlQueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result178.Ire != nil {
-		err = result178.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result178.Success
+	value = result.GetSuccess()
 	return
 }
 
+// Prepare a CQL3 (Cassandra Query Language) statement by compiling and returning
+// - the type of CQL statement
+// - an id token of the compiled CQL stored on the server side.
+// - a count of the discovered bound markers in the statement
+//
 // Parameters:
 //  - Query
 //  - Compression
@@ -3336,10 +3583,11 @@ func (p *CassandraClient) sendPrepareCql3Query(query []byte, compression Compres
 	if err = oprot.WriteMessageBegin("prepare_cql3_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args181 := NewPrepareCql3QueryArgs()
-	args181.Query = query
-	args181.Compression = compression
-	if err = args181.Write(oprot); err != nil {
+	args := PrepareCql3QueryArgs{
+		Query:       query,
+		Compression: compression,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3359,39 +3607,38 @@ func (p *CassandraClient) recvPrepareCql3Query() (value *CqlPreparedResult_, err
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error183 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error184 error
-		error184, err = error183.Read(iprot)
+		error113 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error114 error
+		error114, err = error113.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error184
+		err = error114
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "prepare_cql3_query failed: out of sequence response")
 		return
 	}
-	result182 := NewPrepareCql3QueryResult()
-	if err = result182.Read(iprot); err != nil {
+	result := PrepareCql3QueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result182.Ire != nil {
-		err = result182.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
-	value = result182.Success
+	value = result.GetSuccess()
 	return
 }
 
-// Executes a prepared CQL (Cassandra Query Language) statement by passing an id token and  a list of variables
-// to bind and returns a CqlResult containing the results.
+// @deprecated Will become a no-op in 2.2. Please use the CQL3 version instead.
 //
 // Parameters:
 //  - ItemId
@@ -3413,10 +3660,11 @@ func (p *CassandraClient) sendExecutePreparedCqlQuery(itemId int32, values [][]b
 	if err = oprot.WriteMessageBegin("execute_prepared_cql_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args185 := NewExecutePreparedCqlQueryArgs()
-	args185.ItemId = itemId
-	args185.Values = values
-	if err = args185.Write(oprot); err != nil {
+	args := ExecutePreparedCqlQueryArgs{
+		ItemId: itemId,
+		Values: values,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3436,46 +3684,49 @@ func (p *CassandraClient) recvExecutePreparedCqlQuery() (value *CqlResult_, err 
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error187 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error188 error
-		error188, err = error187.Read(iprot)
+		error115 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error116 error
+		error116, err = error115.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error188
+		err = error116
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "execute_prepared_cql_query failed: out of sequence response")
 		return
 	}
-	result186 := NewExecutePreparedCqlQueryResult()
-	if err = result186.Read(iprot); err != nil {
+	result := ExecutePreparedCqlQueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result186.Ire != nil {
-		err = result186.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result186.Ue != nil {
-		err = result186.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result186.Te != nil {
-		err = result186.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
-	} else if result186.Sde != nil {
-		err = result186.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result186.Success
+	value = result.GetSuccess()
 	return
 }
 
+// Executes a prepared CQL3 (Cassandra Query Language) statement by passing an id token, a list of variables
+// to bind, and the consistency level, and returns a CqlResult containing the results.
+//
 // Parameters:
 //  - ItemId
 //  - Values
@@ -3497,11 +3748,12 @@ func (p *CassandraClient) sendExecutePreparedCql3Query(itemId int32, values [][]
 	if err = oprot.WriteMessageBegin("execute_prepared_cql3_query", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args189 := NewExecutePreparedCql3QueryArgs()
-	args189.ItemId = itemId
-	args189.Values = values
-	args189.Consistency = consistency
-	if err = args189.Write(oprot); err != nil {
+	args := ExecutePreparedCql3QueryArgs{
+		ItemId:      itemId,
+		Values:      values,
+		Consistency: consistency,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3521,43 +3773,43 @@ func (p *CassandraClient) recvExecutePreparedCql3Query() (value *CqlResult_, err
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error191 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error192 error
-		error192, err = error191.Read(iprot)
+		error117 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error118 error
+		error118, err = error117.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error192
+		err = error118
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "execute_prepared_cql3_query failed: out of sequence response")
 		return
 	}
-	result190 := NewExecutePreparedCql3QueryResult()
-	if err = result190.Read(iprot); err != nil {
+	result := ExecutePreparedCql3QueryResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result190.Ire != nil {
-		err = result190.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
-	} else if result190.Ue != nil {
-		err = result190.Ue
+	} else if result.Ue != nil {
+		err = result.Ue
 		return
-	} else if result190.Te != nil {
-		err = result190.Te
+	} else if result.Te != nil {
+		err = result.Te
 		return
-	} else if result190.Sde != nil {
-		err = result190.Sde
+	} else if result.Sde != nil {
+		err = result.Sde
 		return
 	}
-	value = result190.Success
+	value = result.GetSuccess()
 	return
 }
 
@@ -3582,9 +3834,10 @@ func (p *CassandraClient) sendSetCqlVersion(version string) (err error) {
 	if err = oprot.WriteMessageBegin("set_cql_version", thrift.CALL, p.SeqId); err != nil {
 		return
 	}
-	args193 := NewSetCqlVersionArgs()
-	args193.Version = version
-	if err = args193.Write(oprot); err != nil {
+	args := SetCqlVersionArgs{
+		Version: version,
+	}
+	if err = args.Write(oprot); err != nil {
 		return
 	}
 	if err = oprot.WriteMessageEnd(); err != nil {
@@ -3604,31 +3857,31 @@ func (p *CassandraClient) recvSetCqlVersion() (err error) {
 		return
 	}
 	if mTypeId == thrift.EXCEPTION {
-		error195 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
-		var error196 error
-		error196, err = error195.Read(iprot)
+		error119 := thrift.NewTApplicationException(thrift.UNKNOWN_APPLICATION_EXCEPTION, "Unknown Exception")
+		var error120 error
+		error120, err = error119.Read(iprot)
 		if err != nil {
 			return
 		}
 		if err = iprot.ReadMessageEnd(); err != nil {
 			return
 		}
-		err = error196
+		err = error120
 		return
 	}
 	if p.SeqId != seqId {
 		err = thrift.NewTApplicationException(thrift.BAD_SEQUENCE_ID, "set_cql_version failed: out of sequence response")
 		return
 	}
-	result194 := NewSetCqlVersionResult()
-	if err = result194.Read(iprot); err != nil {
+	result := SetCqlVersionResult{}
+	if err = result.Read(iprot); err != nil {
 		return
 	}
 	if err = iprot.ReadMessageEnd(); err != nil {
 		return
 	}
-	if result194.Ire != nil {
-		err = result194.Ire
+	if result.Ire != nil {
+		err = result.Ire
 		return
 	}
 	return
@@ -3654,50 +3907,52 @@ func (p *CassandraProcessor) ProcessorMap() map[string]thrift.TProcessorFunction
 
 func NewCassandraProcessor(handler Cassandra) *CassandraProcessor {
 
-	self197 := &CassandraProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
-	self197.processorMap["login"] = &cassandraProcessorLogin{handler: handler}
-	self197.processorMap["set_keyspace"] = &cassandraProcessorSetKeyspace{handler: handler}
-	self197.processorMap["get"] = &cassandraProcessorGet{handler: handler}
-	self197.processorMap["get_slice"] = &cassandraProcessorGetSlice{handler: handler}
-	self197.processorMap["get_count"] = &cassandraProcessorGetCount{handler: handler}
-	self197.processorMap["multiget_slice"] = &cassandraProcessorMultigetSlice{handler: handler}
-	self197.processorMap["multiget_count"] = &cassandraProcessorMultigetCount{handler: handler}
-	self197.processorMap["get_range_slices"] = &cassandraProcessorGetRangeSlices{handler: handler}
-	self197.processorMap["get_paged_slice"] = &cassandraProcessorGetPagedSlice{handler: handler}
-	self197.processorMap["get_indexed_slices"] = &cassandraProcessorGetIndexedSlices{handler: handler}
-	self197.processorMap["insert"] = &cassandraProcessorInsert{handler: handler}
-	self197.processorMap["add"] = &cassandraProcessorAdd{handler: handler}
-	self197.processorMap["remove"] = &cassandraProcessorRemove{handler: handler}
-	self197.processorMap["remove_counter"] = &cassandraProcessorRemoveCounter{handler: handler}
-	self197.processorMap["batch_mutate"] = &cassandraProcessorBatchMutate{handler: handler}
-	self197.processorMap["atomic_batch_mutate"] = &cassandraProcessorAtomicBatchMutate{handler: handler}
-	self197.processorMap["truncate"] = &cassandraProcessorTruncate{handler: handler}
-	self197.processorMap["describe_schema_versions"] = &cassandraProcessorDescribeSchemaVersions{handler: handler}
-	self197.processorMap["describe_keyspaces"] = &cassandraProcessorDescribeKeyspaces{handler: handler}
-	self197.processorMap["describe_cluster_name"] = &cassandraProcessorDescribeClusterName{handler: handler}
-	self197.processorMap["describe_version"] = &cassandraProcessorDescribeVersion{handler: handler}
-	self197.processorMap["describe_ring"] = &cassandraProcessorDescribeRing{handler: handler}
-	self197.processorMap["describe_token_map"] = &cassandraProcessorDescribeTokenMap{handler: handler}
-	self197.processorMap["describe_partitioner"] = &cassandraProcessorDescribePartitioner{handler: handler}
-	self197.processorMap["describe_snitch"] = &cassandraProcessorDescribeSnitch{handler: handler}
-	self197.processorMap["describe_keyspace"] = &cassandraProcessorDescribeKeyspace{handler: handler}
-	self197.processorMap["describe_splits"] = &cassandraProcessorDescribeSplits{handler: handler}
-	self197.processorMap["trace_next_query"] = &cassandraProcessorTraceNextQuery{handler: handler}
-	self197.processorMap["describe_splits_ex"] = &cassandraProcessorDescribeSplitsEx{handler: handler}
-	self197.processorMap["system_add_column_family"] = &cassandraProcessorSystemAddColumnFamily{handler: handler}
-	self197.processorMap["system_drop_column_family"] = &cassandraProcessorSystemDropColumnFamily{handler: handler}
-	self197.processorMap["system_add_keyspace"] = &cassandraProcessorSystemAddKeyspace{handler: handler}
-	self197.processorMap["system_drop_keyspace"] = &cassandraProcessorSystemDropKeyspace{handler: handler}
-	self197.processorMap["system_update_keyspace"] = &cassandraProcessorSystemUpdateKeyspace{handler: handler}
-	self197.processorMap["system_update_column_family"] = &cassandraProcessorSystemUpdateColumnFamily{handler: handler}
-	self197.processorMap["execute_cql_query"] = &cassandraProcessorExecuteCqlQuery{handler: handler}
-	self197.processorMap["execute_cql3_query"] = &cassandraProcessorExecuteCql3Query{handler: handler}
-	self197.processorMap["prepare_cql_query"] = &cassandraProcessorPrepareCqlQuery{handler: handler}
-	self197.processorMap["prepare_cql3_query"] = &cassandraProcessorPrepareCql3Query{handler: handler}
-	self197.processorMap["execute_prepared_cql_query"] = &cassandraProcessorExecutePreparedCqlQuery{handler: handler}
-	self197.processorMap["execute_prepared_cql3_query"] = &cassandraProcessorExecutePreparedCql3Query{handler: handler}
-	self197.processorMap["set_cql_version"] = &cassandraProcessorSetCqlVersion{handler: handler}
-	return self197
+	self121 := &CassandraProcessor{handler: handler, processorMap: make(map[string]thrift.TProcessorFunction)}
+	self121.processorMap["login"] = &cassandraProcessorLogin{handler: handler}
+	self121.processorMap["set_keyspace"] = &cassandraProcessorSetKeyspace{handler: handler}
+	self121.processorMap["get"] = &cassandraProcessorGet{handler: handler}
+	self121.processorMap["get_slice"] = &cassandraProcessorGetSlice{handler: handler}
+	self121.processorMap["get_count"] = &cassandraProcessorGetCount{handler: handler}
+	self121.processorMap["multiget_slice"] = &cassandraProcessorMultigetSlice{handler: handler}
+	self121.processorMap["multiget_count"] = &cassandraProcessorMultigetCount{handler: handler}
+	self121.processorMap["get_range_slices"] = &cassandraProcessorGetRangeSlices{handler: handler}
+	self121.processorMap["get_paged_slice"] = &cassandraProcessorGetPagedSlice{handler: handler}
+	self121.processorMap["get_indexed_slices"] = &cassandraProcessorGetIndexedSlices{handler: handler}
+	self121.processorMap["insert"] = &cassandraProcessorInsert{handler: handler}
+	self121.processorMap["add"] = &cassandraProcessorAdd{handler: handler}
+	self121.processorMap["cas"] = &cassandraProcessorCas{handler: handler}
+	self121.processorMap["remove"] = &cassandraProcessorRemove{handler: handler}
+	self121.processorMap["remove_counter"] = &cassandraProcessorRemoveCounter{handler: handler}
+	self121.processorMap["batch_mutate"] = &cassandraProcessorBatchMutate{handler: handler}
+	self121.processorMap["atomic_batch_mutate"] = &cassandraProcessorAtomicBatchMutate{handler: handler}
+	self121.processorMap["truncate"] = &cassandraProcessorTruncate{handler: handler}
+	self121.processorMap["describe_schema_versions"] = &cassandraProcessorDescribeSchemaVersions{handler: handler}
+	self121.processorMap["describe_keyspaces"] = &cassandraProcessorDescribeKeyspaces{handler: handler}
+	self121.processorMap["describe_cluster_name"] = &cassandraProcessorDescribeClusterName{handler: handler}
+	self121.processorMap["describe_version"] = &cassandraProcessorDescribeVersion{handler: handler}
+	self121.processorMap["describe_ring"] = &cassandraProcessorDescribeRing{handler: handler}
+	self121.processorMap["describe_local_ring"] = &cassandraProcessorDescribeLocalRing{handler: handler}
+	self121.processorMap["describe_token_map"] = &cassandraProcessorDescribeTokenMap{handler: handler}
+	self121.processorMap["describe_partitioner"] = &cassandraProcessorDescribePartitioner{handler: handler}
+	self121.processorMap["describe_snitch"] = &cassandraProcessorDescribeSnitch{handler: handler}
+	self121.processorMap["describe_keyspace"] = &cassandraProcessorDescribeKeyspace{handler: handler}
+	self121.processorMap["describe_splits"] = &cassandraProcessorDescribeSplits{handler: handler}
+	self121.processorMap["trace_next_query"] = &cassandraProcessorTraceNextQuery{handler: handler}
+	self121.processorMap["describe_splits_ex"] = &cassandraProcessorDescribeSplitsEx{handler: handler}
+	self121.processorMap["system_add_column_family"] = &cassandraProcessorSystemAddColumnFamily{handler: handler}
+	self121.processorMap["system_drop_column_family"] = &cassandraProcessorSystemDropColumnFamily{handler: handler}
+	self121.processorMap["system_add_keyspace"] = &cassandraProcessorSystemAddKeyspace{handler: handler}
+	self121.processorMap["system_drop_keyspace"] = &cassandraProcessorSystemDropKeyspace{handler: handler}
+	self121.processorMap["system_update_keyspace"] = &cassandraProcessorSystemUpdateKeyspace{handler: handler}
+	self121.processorMap["system_update_column_family"] = &cassandraProcessorSystemUpdateColumnFamily{handler: handler}
+	self121.processorMap["execute_cql_query"] = &cassandraProcessorExecuteCqlQuery{handler: handler}
+	self121.processorMap["execute_cql3_query"] = &cassandraProcessorExecuteCql3Query{handler: handler}
+	self121.processorMap["prepare_cql_query"] = &cassandraProcessorPrepareCqlQuery{handler: handler}
+	self121.processorMap["prepare_cql3_query"] = &cassandraProcessorPrepareCql3Query{handler: handler}
+	self121.processorMap["execute_prepared_cql_query"] = &cassandraProcessorExecutePreparedCqlQuery{handler: handler}
+	self121.processorMap["execute_prepared_cql3_query"] = &cassandraProcessorExecutePreparedCql3Query{handler: handler}
+	self121.processorMap["set_cql_version"] = &cassandraProcessorSetCqlVersion{handler: handler}
+	return self121
 }
 
 func (p *CassandraProcessor) Process(iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
@@ -3710,12 +3965,12 @@ func (p *CassandraProcessor) Process(iprot, oprot thrift.TProtocol) (success boo
 	}
 	iprot.Skip(thrift.STRUCT)
 	iprot.ReadMessageEnd()
-	x198 := thrift.NewTApplicationException(thrift.UNKNOWN_METHOD, "Unknown function "+name)
+	x122 := thrift.NewTApplicationException(thrift.UNKNOWN_METHOD, "Unknown function "+name)
 	oprot.WriteMessageBegin(name, thrift.EXCEPTION, seqId)
-	x198.Write(oprot)
+	x122.Write(oprot)
 	oprot.WriteMessageEnd()
 	oprot.Flush()
-	return false, x198
+	return false, x122
 
 }
 
@@ -3724,7 +3979,7 @@ type cassandraProcessorLogin struct {
 }
 
 func (p *cassandraProcessorLogin) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewLoginArgs()
+	args := LoginArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -3732,10 +3987,11 @@ func (p *cassandraProcessorLogin) Process(seqId int32, iprot, oprot thrift.TProt
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewLoginResult()
+	result := LoginResult{}
 	var err2 error
 	if err2 = p.handler.Login(args.AuthRequest); err2 != nil {
 		switch v := err2.(type) {
@@ -3749,7 +4005,7 @@ func (p *cassandraProcessorLogin) Process(seqId int32, iprot, oprot thrift.TProt
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("login", thrift.REPLY, seqId); err2 != nil {
@@ -3775,7 +4031,7 @@ type cassandraProcessorSetKeyspace struct {
 }
 
 func (p *cassandraProcessorSetKeyspace) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSetKeyspaceArgs()
+	args := SetKeyspaceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -3783,10 +4039,11 @@ func (p *cassandraProcessorSetKeyspace) Process(seqId int32, iprot, oprot thrift
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSetKeyspaceResult()
+	result := SetKeyspaceResult{}
 	var err2 error
 	if err2 = p.handler.SetKeyspace(args.Keyspace); err2 != nil {
 		switch v := err2.(type) {
@@ -3798,7 +4055,7 @@ func (p *cassandraProcessorSetKeyspace) Process(seqId int32, iprot, oprot thrift
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("set_keyspace", thrift.REPLY, seqId); err2 != nil {
@@ -3824,7 +4081,7 @@ type cassandraProcessorGet struct {
 }
 
 func (p *cassandraProcessorGet) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewGetArgs()
+	args := GetArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -3832,10 +4089,11 @@ func (p *cassandraProcessorGet) Process(seqId int32, iprot, oprot thrift.TProtoc
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewGetResult()
+	result := GetResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.Get(args.Key, args.ColumnPath, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -3853,7 +4111,7 @@ func (p *cassandraProcessorGet) Process(seqId int32, iprot, oprot thrift.TProtoc
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("get", thrift.REPLY, seqId); err2 != nil {
@@ -3879,7 +4137,7 @@ type cassandraProcessorGetSlice struct {
 }
 
 func (p *cassandraProcessorGetSlice) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewGetSliceArgs()
+	args := GetSliceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -3887,10 +4145,11 @@ func (p *cassandraProcessorGetSlice) Process(seqId int32, iprot, oprot thrift.TP
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewGetSliceResult()
+	result := GetSliceResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.GetSlice(args.Key, args.ColumnParent, args.Predicate, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -3906,7 +4165,7 @@ func (p *cassandraProcessorGetSlice) Process(seqId int32, iprot, oprot thrift.TP
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("get_slice", thrift.REPLY, seqId); err2 != nil {
@@ -3932,7 +4191,7 @@ type cassandraProcessorGetCount struct {
 }
 
 func (p *cassandraProcessorGetCount) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewGetCountArgs()
+	args := GetCountArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -3940,12 +4199,14 @@ func (p *cassandraProcessorGetCount) Process(seqId int32, iprot, oprot thrift.TP
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewGetCountResult()
+	result := GetCountResult{}
+	var retval int32
 	var err2 error
-	if result.Success, err2 = p.handler.GetCount(args.Key, args.ColumnParent, args.Predicate, args.ConsistencyLevel); err2 != nil {
+	if retval, err2 = p.handler.GetCount(args.Key, args.ColumnParent, args.Predicate, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -3959,9 +4220,10 @@ func (p *cassandraProcessorGetCount) Process(seqId int32, iprot, oprot thrift.TP
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("get_count", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -3985,7 +4247,7 @@ type cassandraProcessorMultigetSlice struct {
 }
 
 func (p *cassandraProcessorMultigetSlice) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewMultigetSliceArgs()
+	args := MultigetSliceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -3993,10 +4255,11 @@ func (p *cassandraProcessorMultigetSlice) Process(seqId int32, iprot, oprot thri
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewMultigetSliceResult()
+	result := MultigetSliceResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.MultigetSlice(args.Keys, args.ColumnParent, args.Predicate, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4012,7 +4275,7 @@ func (p *cassandraProcessorMultigetSlice) Process(seqId int32, iprot, oprot thri
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("multiget_slice", thrift.REPLY, seqId); err2 != nil {
@@ -4038,7 +4301,7 @@ type cassandraProcessorMultigetCount struct {
 }
 
 func (p *cassandraProcessorMultigetCount) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewMultigetCountArgs()
+	args := MultigetCountArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4046,10 +4309,11 @@ func (p *cassandraProcessorMultigetCount) Process(seqId int32, iprot, oprot thri
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewMultigetCountResult()
+	result := MultigetCountResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.MultigetCount(args.Keys, args.ColumnParent, args.Predicate, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4065,7 +4329,7 @@ func (p *cassandraProcessorMultigetCount) Process(seqId int32, iprot, oprot thri
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("multiget_count", thrift.REPLY, seqId); err2 != nil {
@@ -4091,7 +4355,7 @@ type cassandraProcessorGetRangeSlices struct {
 }
 
 func (p *cassandraProcessorGetRangeSlices) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewGetRangeSlicesArgs()
+	args := GetRangeSlicesArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4099,10 +4363,11 @@ func (p *cassandraProcessorGetRangeSlices) Process(seqId int32, iprot, oprot thr
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewGetRangeSlicesResult()
+	result := GetRangeSlicesResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.GetRangeSlices(args.ColumnParent, args.Predicate, args.RangeA1, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4118,7 +4383,7 @@ func (p *cassandraProcessorGetRangeSlices) Process(seqId int32, iprot, oprot thr
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("get_range_slices", thrift.REPLY, seqId); err2 != nil {
@@ -4144,7 +4409,7 @@ type cassandraProcessorGetPagedSlice struct {
 }
 
 func (p *cassandraProcessorGetPagedSlice) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewGetPagedSliceArgs()
+	args := GetPagedSliceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4152,10 +4417,11 @@ func (p *cassandraProcessorGetPagedSlice) Process(seqId int32, iprot, oprot thri
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewGetPagedSliceResult()
+	result := GetPagedSliceResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.GetPagedSlice(args.ColumnFamily, args.RangeA1, args.StartColumn, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4171,7 +4437,7 @@ func (p *cassandraProcessorGetPagedSlice) Process(seqId int32, iprot, oprot thri
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("get_paged_slice", thrift.REPLY, seqId); err2 != nil {
@@ -4197,7 +4463,7 @@ type cassandraProcessorGetIndexedSlices struct {
 }
 
 func (p *cassandraProcessorGetIndexedSlices) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewGetIndexedSlicesArgs()
+	args := GetIndexedSlicesArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4205,10 +4471,11 @@ func (p *cassandraProcessorGetIndexedSlices) Process(seqId int32, iprot, oprot t
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewGetIndexedSlicesResult()
+	result := GetIndexedSlicesResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.GetIndexedSlices(args.ColumnParent, args.IndexClause, args.ColumnPredicate, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4224,7 +4491,7 @@ func (p *cassandraProcessorGetIndexedSlices) Process(seqId int32, iprot, oprot t
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("get_indexed_slices", thrift.REPLY, seqId); err2 != nil {
@@ -4250,7 +4517,7 @@ type cassandraProcessorInsert struct {
 }
 
 func (p *cassandraProcessorInsert) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewInsertArgs()
+	args := InsertArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4258,10 +4525,11 @@ func (p *cassandraProcessorInsert) Process(seqId int32, iprot, oprot thrift.TPro
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewInsertResult()
+	result := InsertResult{}
 	var err2 error
 	if err2 = p.handler.Insert(args.Key, args.ColumnParent, args.Column, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4277,7 +4545,7 @@ func (p *cassandraProcessorInsert) Process(seqId int32, iprot, oprot thrift.TPro
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("insert", thrift.REPLY, seqId); err2 != nil {
@@ -4303,7 +4571,7 @@ type cassandraProcessorAdd struct {
 }
 
 func (p *cassandraProcessorAdd) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewAddArgs()
+	args := AddArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4311,10 +4579,11 @@ func (p *cassandraProcessorAdd) Process(seqId int32, iprot, oprot thrift.TProtoc
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewAddResult()
+	result := AddResult{}
 	var err2 error
 	if err2 = p.handler.Add(args.Key, args.ColumnParent, args.Column, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4330,10 +4599,64 @@ func (p *cassandraProcessorAdd) Process(seqId int32, iprot, oprot thrift.TProtoc
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("add", thrift.REPLY, seqId); err2 != nil {
+		err = err2
+	}
+	if err2 = result.Write(oprot); err == nil && err2 != nil {
+		err = err2
+	}
+	if err2 = oprot.WriteMessageEnd(); err == nil && err2 != nil {
+		err = err2
+	}
+	if err2 = oprot.Flush(); err == nil && err2 != nil {
+		err = err2
+	}
+	if err != nil {
+		return
+	}
+	return true, err
+}
+
+type cassandraProcessorCas struct {
+	handler Cassandra
+}
+
+func (p *cassandraProcessorCas) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	args := CasArgs{}
+	if err = args.Read(iprot); err != nil {
+		iprot.ReadMessageEnd()
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
+		oprot.WriteMessageBegin("cas", thrift.EXCEPTION, seqId)
+		x.Write(oprot)
+		oprot.WriteMessageEnd()
+		oprot.Flush()
+		return false, err
+	}
+
+	iprot.ReadMessageEnd()
+	result := CasResult{}
+	var err2 error
+	if result.Success, err2 = p.handler.Cas(args.Key, args.ColumnFamily, args.Expected, args.Updates, args.SerialConsistencyLevel, args.CommitConsistencyLevel); err2 != nil {
+		switch v := err2.(type) {
+		case *InvalidRequestException:
+			result.Ire = v
+		case *UnavailableException:
+			result.Ue = v
+		case *TimedOutException:
+			result.Te = v
+		default:
+			x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing cas: "+err2.Error())
+			oprot.WriteMessageBegin("cas", thrift.EXCEPTION, seqId)
+			x.Write(oprot)
+			oprot.WriteMessageEnd()
+			oprot.Flush()
+			return true, err2
+		}
+	}
+	if err2 = oprot.WriteMessageBegin("cas", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
 	if err2 = result.Write(oprot); err == nil && err2 != nil {
@@ -4356,7 +4679,7 @@ type cassandraProcessorRemove struct {
 }
 
 func (p *cassandraProcessorRemove) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewRemoveArgs()
+	args := RemoveArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4364,10 +4687,11 @@ func (p *cassandraProcessorRemove) Process(seqId int32, iprot, oprot thrift.TPro
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewRemoveResult()
+	result := RemoveResult{}
 	var err2 error
 	if err2 = p.handler.Remove(args.Key, args.ColumnPath, args.Timestamp, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4383,7 +4707,7 @@ func (p *cassandraProcessorRemove) Process(seqId int32, iprot, oprot thrift.TPro
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("remove", thrift.REPLY, seqId); err2 != nil {
@@ -4409,7 +4733,7 @@ type cassandraProcessorRemoveCounter struct {
 }
 
 func (p *cassandraProcessorRemoveCounter) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewRemoveCounterArgs()
+	args := RemoveCounterArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4417,10 +4741,11 @@ func (p *cassandraProcessorRemoveCounter) Process(seqId int32, iprot, oprot thri
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewRemoveCounterResult()
+	result := RemoveCounterResult{}
 	var err2 error
 	if err2 = p.handler.RemoveCounter(args.Key, args.Path, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4436,7 +4761,7 @@ func (p *cassandraProcessorRemoveCounter) Process(seqId int32, iprot, oprot thri
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("remove_counter", thrift.REPLY, seqId); err2 != nil {
@@ -4462,7 +4787,7 @@ type cassandraProcessorBatchMutate struct {
 }
 
 func (p *cassandraProcessorBatchMutate) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewBatchMutateArgs()
+	args := BatchMutateArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4470,10 +4795,11 @@ func (p *cassandraProcessorBatchMutate) Process(seqId int32, iprot, oprot thrift
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewBatchMutateResult()
+	result := BatchMutateResult{}
 	var err2 error
 	if err2 = p.handler.BatchMutate(args.MutationMap, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4489,7 +4815,7 @@ func (p *cassandraProcessorBatchMutate) Process(seqId int32, iprot, oprot thrift
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("batch_mutate", thrift.REPLY, seqId); err2 != nil {
@@ -4515,7 +4841,7 @@ type cassandraProcessorAtomicBatchMutate struct {
 }
 
 func (p *cassandraProcessorAtomicBatchMutate) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewAtomicBatchMutateArgs()
+	args := AtomicBatchMutateArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4523,10 +4849,11 @@ func (p *cassandraProcessorAtomicBatchMutate) Process(seqId int32, iprot, oprot 
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewAtomicBatchMutateResult()
+	result := AtomicBatchMutateResult{}
 	var err2 error
 	if err2 = p.handler.AtomicBatchMutate(args.MutationMap, args.ConsistencyLevel); err2 != nil {
 		switch v := err2.(type) {
@@ -4542,7 +4869,7 @@ func (p *cassandraProcessorAtomicBatchMutate) Process(seqId int32, iprot, oprot 
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("atomic_batch_mutate", thrift.REPLY, seqId); err2 != nil {
@@ -4568,7 +4895,7 @@ type cassandraProcessorTruncate struct {
 }
 
 func (p *cassandraProcessorTruncate) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewTruncateArgs()
+	args := TruncateArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4576,10 +4903,11 @@ func (p *cassandraProcessorTruncate) Process(seqId int32, iprot, oprot thrift.TP
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewTruncateResult()
+	result := TruncateResult{}
 	var err2 error
 	if err2 = p.handler.Truncate(args.Cfname); err2 != nil {
 		switch v := err2.(type) {
@@ -4595,7 +4923,7 @@ func (p *cassandraProcessorTruncate) Process(seqId int32, iprot, oprot thrift.TP
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("truncate", thrift.REPLY, seqId); err2 != nil {
@@ -4621,7 +4949,7 @@ type cassandraProcessorDescribeSchemaVersions struct {
 }
 
 func (p *cassandraProcessorDescribeSchemaVersions) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeSchemaVersionsArgs()
+	args := DescribeSchemaVersionsArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4629,10 +4957,11 @@ func (p *cassandraProcessorDescribeSchemaVersions) Process(seqId int32, iprot, o
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeSchemaVersionsResult()
+	result := DescribeSchemaVersionsResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeSchemaVersions(); err2 != nil {
 		switch v := err2.(type) {
@@ -4644,7 +4973,7 @@ func (p *cassandraProcessorDescribeSchemaVersions) Process(seqId int32, iprot, o
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_schema_versions", thrift.REPLY, seqId); err2 != nil {
@@ -4670,7 +4999,7 @@ type cassandraProcessorDescribeKeyspaces struct {
 }
 
 func (p *cassandraProcessorDescribeKeyspaces) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeKeyspacesArgs()
+	args := DescribeKeyspacesArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4678,10 +5007,11 @@ func (p *cassandraProcessorDescribeKeyspaces) Process(seqId int32, iprot, oprot 
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeKeyspacesResult()
+	result := DescribeKeyspacesResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeKeyspaces(); err2 != nil {
 		switch v := err2.(type) {
@@ -4693,7 +5023,7 @@ func (p *cassandraProcessorDescribeKeyspaces) Process(seqId int32, iprot, oprot 
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_keyspaces", thrift.REPLY, seqId); err2 != nil {
@@ -4719,7 +5049,7 @@ type cassandraProcessorDescribeClusterName struct {
 }
 
 func (p *cassandraProcessorDescribeClusterName) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeClusterNameArgs()
+	args := DescribeClusterNameArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4727,19 +5057,22 @@ func (p *cassandraProcessorDescribeClusterName) Process(seqId int32, iprot, opro
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeClusterNameResult()
+	result := DescribeClusterNameResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.DescribeClusterName(); err2 != nil {
+	if retval, err2 = p.handler.DescribeClusterName(); err2 != nil {
 		x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing describe_cluster_name: "+err2.Error())
 		oprot.WriteMessageBegin("describe_cluster_name", thrift.EXCEPTION, seqId)
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return false, err2
+		return true, err2
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("describe_cluster_name", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -4763,7 +5096,7 @@ type cassandraProcessorDescribeVersion struct {
 }
 
 func (p *cassandraProcessorDescribeVersion) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeVersionArgs()
+	args := DescribeVersionArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4771,19 +5104,22 @@ func (p *cassandraProcessorDescribeVersion) Process(seqId int32, iprot, oprot th
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeVersionResult()
+	result := DescribeVersionResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.DescribeVersion(); err2 != nil {
+	if retval, err2 = p.handler.DescribeVersion(); err2 != nil {
 		x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing describe_version: "+err2.Error())
 		oprot.WriteMessageBegin("describe_version", thrift.EXCEPTION, seqId)
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return false, err2
+		return true, err2
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("describe_version", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -4807,7 +5143,7 @@ type cassandraProcessorDescribeRing struct {
 }
 
 func (p *cassandraProcessorDescribeRing) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeRingArgs()
+	args := DescribeRingArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4815,10 +5151,11 @@ func (p *cassandraProcessorDescribeRing) Process(seqId int32, iprot, oprot thrif
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeRingResult()
+	result := DescribeRingResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeRing(args.Keyspace); err2 != nil {
 		switch v := err2.(type) {
@@ -4830,10 +5167,60 @@ func (p *cassandraProcessorDescribeRing) Process(seqId int32, iprot, oprot thrif
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_ring", thrift.REPLY, seqId); err2 != nil {
+		err = err2
+	}
+	if err2 = result.Write(oprot); err == nil && err2 != nil {
+		err = err2
+	}
+	if err2 = oprot.WriteMessageEnd(); err == nil && err2 != nil {
+		err = err2
+	}
+	if err2 = oprot.Flush(); err == nil && err2 != nil {
+		err = err2
+	}
+	if err != nil {
+		return
+	}
+	return true, err
+}
+
+type cassandraProcessorDescribeLocalRing struct {
+	handler Cassandra
+}
+
+func (p *cassandraProcessorDescribeLocalRing) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
+	args := DescribeLocalRingArgs{}
+	if err = args.Read(iprot); err != nil {
+		iprot.ReadMessageEnd()
+		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
+		oprot.WriteMessageBegin("describe_local_ring", thrift.EXCEPTION, seqId)
+		x.Write(oprot)
+		oprot.WriteMessageEnd()
+		oprot.Flush()
+		return false, err
+	}
+
+	iprot.ReadMessageEnd()
+	result := DescribeLocalRingResult{}
+	var err2 error
+	if result.Success, err2 = p.handler.DescribeLocalRing(args.Keyspace); err2 != nil {
+		switch v := err2.(type) {
+		case *InvalidRequestException:
+			result.Ire = v
+		default:
+			x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing describe_local_ring: "+err2.Error())
+			oprot.WriteMessageBegin("describe_local_ring", thrift.EXCEPTION, seqId)
+			x.Write(oprot)
+			oprot.WriteMessageEnd()
+			oprot.Flush()
+			return true, err2
+		}
+	}
+	if err2 = oprot.WriteMessageBegin("describe_local_ring", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
 	if err2 = result.Write(oprot); err == nil && err2 != nil {
@@ -4856,7 +5243,7 @@ type cassandraProcessorDescribeTokenMap struct {
 }
 
 func (p *cassandraProcessorDescribeTokenMap) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeTokenMapArgs()
+	args := DescribeTokenMapArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4864,10 +5251,11 @@ func (p *cassandraProcessorDescribeTokenMap) Process(seqId int32, iprot, oprot t
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeTokenMapResult()
+	result := DescribeTokenMapResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeTokenMap(); err2 != nil {
 		switch v := err2.(type) {
@@ -4879,7 +5267,7 @@ func (p *cassandraProcessorDescribeTokenMap) Process(seqId int32, iprot, oprot t
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_token_map", thrift.REPLY, seqId); err2 != nil {
@@ -4905,7 +5293,7 @@ type cassandraProcessorDescribePartitioner struct {
 }
 
 func (p *cassandraProcessorDescribePartitioner) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribePartitionerArgs()
+	args := DescribePartitionerArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4913,19 +5301,22 @@ func (p *cassandraProcessorDescribePartitioner) Process(seqId int32, iprot, opro
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribePartitionerResult()
+	result := DescribePartitionerResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.DescribePartitioner(); err2 != nil {
+	if retval, err2 = p.handler.DescribePartitioner(); err2 != nil {
 		x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing describe_partitioner: "+err2.Error())
 		oprot.WriteMessageBegin("describe_partitioner", thrift.EXCEPTION, seqId)
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return false, err2
+		return true, err2
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("describe_partitioner", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -4949,7 +5340,7 @@ type cassandraProcessorDescribeSnitch struct {
 }
 
 func (p *cassandraProcessorDescribeSnitch) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeSnitchArgs()
+	args := DescribeSnitchArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -4957,19 +5348,22 @@ func (p *cassandraProcessorDescribeSnitch) Process(seqId int32, iprot, oprot thr
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeSnitchResult()
+	result := DescribeSnitchResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.DescribeSnitch(); err2 != nil {
+	if retval, err2 = p.handler.DescribeSnitch(); err2 != nil {
 		x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing describe_snitch: "+err2.Error())
 		oprot.WriteMessageBegin("describe_snitch", thrift.EXCEPTION, seqId)
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return false, err2
+		return true, err2
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("describe_snitch", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -4993,7 +5387,7 @@ type cassandraProcessorDescribeKeyspace struct {
 }
 
 func (p *cassandraProcessorDescribeKeyspace) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeKeyspaceArgs()
+	args := DescribeKeyspaceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5001,10 +5395,11 @@ func (p *cassandraProcessorDescribeKeyspace) Process(seqId int32, iprot, oprot t
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeKeyspaceResult()
+	result := DescribeKeyspaceResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeKeyspace(args.Keyspace); err2 != nil {
 		switch v := err2.(type) {
@@ -5018,7 +5413,7 @@ func (p *cassandraProcessorDescribeKeyspace) Process(seqId int32, iprot, oprot t
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_keyspace", thrift.REPLY, seqId); err2 != nil {
@@ -5044,7 +5439,7 @@ type cassandraProcessorDescribeSplits struct {
 }
 
 func (p *cassandraProcessorDescribeSplits) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeSplitsArgs()
+	args := DescribeSplitsArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5052,10 +5447,11 @@ func (p *cassandraProcessorDescribeSplits) Process(seqId int32, iprot, oprot thr
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeSplitsResult()
+	result := DescribeSplitsResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeSplits(args.CfName, args.StartToken, args.EndToken, args.KeysPerSplit); err2 != nil {
 		switch v := err2.(type) {
@@ -5067,7 +5463,7 @@ func (p *cassandraProcessorDescribeSplits) Process(seqId int32, iprot, oprot thr
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_splits", thrift.REPLY, seqId); err2 != nil {
@@ -5093,7 +5489,7 @@ type cassandraProcessorTraceNextQuery struct {
 }
 
 func (p *cassandraProcessorTraceNextQuery) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewTraceNextQueryArgs()
+	args := TraceNextQueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5101,10 +5497,11 @@ func (p *cassandraProcessorTraceNextQuery) Process(seqId int32, iprot, oprot thr
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewTraceNextQueryResult()
+	result := TraceNextQueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.TraceNextQuery(); err2 != nil {
 		x := thrift.NewTApplicationException(thrift.INTERNAL_ERROR, "Internal error processing trace_next_query: "+err2.Error())
@@ -5112,7 +5509,7 @@ func (p *cassandraProcessorTraceNextQuery) Process(seqId int32, iprot, oprot thr
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return false, err2
+		return true, err2
 	}
 	if err2 = oprot.WriteMessageBegin("trace_next_query", thrift.REPLY, seqId); err2 != nil {
 		err = err2
@@ -5137,7 +5534,7 @@ type cassandraProcessorDescribeSplitsEx struct {
 }
 
 func (p *cassandraProcessorDescribeSplitsEx) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewDescribeSplitsExArgs()
+	args := DescribeSplitsExArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5145,10 +5542,11 @@ func (p *cassandraProcessorDescribeSplitsEx) Process(seqId int32, iprot, oprot t
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewDescribeSplitsExResult()
+	result := DescribeSplitsExResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.DescribeSplitsEx(args.CfName, args.StartToken, args.EndToken, args.KeysPerSplit); err2 != nil {
 		switch v := err2.(type) {
@@ -5160,7 +5558,7 @@ func (p *cassandraProcessorDescribeSplitsEx) Process(seqId int32, iprot, oprot t
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("describe_splits_ex", thrift.REPLY, seqId); err2 != nil {
@@ -5186,7 +5584,7 @@ type cassandraProcessorSystemAddColumnFamily struct {
 }
 
 func (p *cassandraProcessorSystemAddColumnFamily) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSystemAddColumnFamilyArgs()
+	args := SystemAddColumnFamilyArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5194,12 +5592,14 @@ func (p *cassandraProcessorSystemAddColumnFamily) Process(seqId int32, iprot, op
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSystemAddColumnFamilyResult()
+	result := SystemAddColumnFamilyResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.SystemAddColumnFamily(args.CfDef); err2 != nil {
+	if retval, err2 = p.handler.SystemAddColumnFamily(args.CfDef); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -5211,9 +5611,10 @@ func (p *cassandraProcessorSystemAddColumnFamily) Process(seqId int32, iprot, op
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("system_add_column_family", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -5237,7 +5638,7 @@ type cassandraProcessorSystemDropColumnFamily struct {
 }
 
 func (p *cassandraProcessorSystemDropColumnFamily) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSystemDropColumnFamilyArgs()
+	args := SystemDropColumnFamilyArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5245,12 +5646,14 @@ func (p *cassandraProcessorSystemDropColumnFamily) Process(seqId int32, iprot, o
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSystemDropColumnFamilyResult()
+	result := SystemDropColumnFamilyResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.SystemDropColumnFamily(args.ColumnFamily); err2 != nil {
+	if retval, err2 = p.handler.SystemDropColumnFamily(args.ColumnFamily); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -5262,9 +5665,10 @@ func (p *cassandraProcessorSystemDropColumnFamily) Process(seqId int32, iprot, o
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("system_drop_column_family", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -5288,7 +5692,7 @@ type cassandraProcessorSystemAddKeyspace struct {
 }
 
 func (p *cassandraProcessorSystemAddKeyspace) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSystemAddKeyspaceArgs()
+	args := SystemAddKeyspaceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5296,12 +5700,14 @@ func (p *cassandraProcessorSystemAddKeyspace) Process(seqId int32, iprot, oprot 
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSystemAddKeyspaceResult()
+	result := SystemAddKeyspaceResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.SystemAddKeyspace(args.KsDef); err2 != nil {
+	if retval, err2 = p.handler.SystemAddKeyspace(args.KsDef); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -5313,9 +5719,10 @@ func (p *cassandraProcessorSystemAddKeyspace) Process(seqId int32, iprot, oprot 
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("system_add_keyspace", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -5339,7 +5746,7 @@ type cassandraProcessorSystemDropKeyspace struct {
 }
 
 func (p *cassandraProcessorSystemDropKeyspace) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSystemDropKeyspaceArgs()
+	args := SystemDropKeyspaceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5347,12 +5754,14 @@ func (p *cassandraProcessorSystemDropKeyspace) Process(seqId int32, iprot, oprot
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSystemDropKeyspaceResult()
+	result := SystemDropKeyspaceResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.SystemDropKeyspace(args.Keyspace); err2 != nil {
+	if retval, err2 = p.handler.SystemDropKeyspace(args.Keyspace); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -5364,9 +5773,10 @@ func (p *cassandraProcessorSystemDropKeyspace) Process(seqId int32, iprot, oprot
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("system_drop_keyspace", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -5390,7 +5800,7 @@ type cassandraProcessorSystemUpdateKeyspace struct {
 }
 
 func (p *cassandraProcessorSystemUpdateKeyspace) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSystemUpdateKeyspaceArgs()
+	args := SystemUpdateKeyspaceArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5398,12 +5808,14 @@ func (p *cassandraProcessorSystemUpdateKeyspace) Process(seqId int32, iprot, opr
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSystemUpdateKeyspaceResult()
+	result := SystemUpdateKeyspaceResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.SystemUpdateKeyspace(args.KsDef); err2 != nil {
+	if retval, err2 = p.handler.SystemUpdateKeyspace(args.KsDef); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -5415,9 +5827,10 @@ func (p *cassandraProcessorSystemUpdateKeyspace) Process(seqId int32, iprot, opr
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("system_update_keyspace", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -5441,7 +5854,7 @@ type cassandraProcessorSystemUpdateColumnFamily struct {
 }
 
 func (p *cassandraProcessorSystemUpdateColumnFamily) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSystemUpdateColumnFamilyArgs()
+	args := SystemUpdateColumnFamilyArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5449,12 +5862,14 @@ func (p *cassandraProcessorSystemUpdateColumnFamily) Process(seqId int32, iprot,
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSystemUpdateColumnFamilyResult()
+	result := SystemUpdateColumnFamilyResult{}
+	var retval string
 	var err2 error
-	if result.Success, err2 = p.handler.SystemUpdateColumnFamily(args.CfDef); err2 != nil {
+	if retval, err2 = p.handler.SystemUpdateColumnFamily(args.CfDef); err2 != nil {
 		switch v := err2.(type) {
 		case *InvalidRequestException:
 			result.Ire = v
@@ -5466,9 +5881,10 @@ func (p *cassandraProcessorSystemUpdateColumnFamily) Process(seqId int32, iprot,
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
+	result.Success = &retval
 	if err2 = oprot.WriteMessageBegin("system_update_column_family", thrift.REPLY, seqId); err2 != nil {
 		err = err2
 	}
@@ -5492,7 +5908,7 @@ type cassandraProcessorExecuteCqlQuery struct {
 }
 
 func (p *cassandraProcessorExecuteCqlQuery) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewExecuteCqlQueryArgs()
+	args := ExecuteCqlQueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5500,10 +5916,11 @@ func (p *cassandraProcessorExecuteCqlQuery) Process(seqId int32, iprot, oprot th
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewExecuteCqlQueryResult()
+	result := ExecuteCqlQueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.ExecuteCqlQuery(args.Query, args.Compression); err2 != nil {
 		switch v := err2.(type) {
@@ -5521,7 +5938,7 @@ func (p *cassandraProcessorExecuteCqlQuery) Process(seqId int32, iprot, oprot th
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("execute_cql_query", thrift.REPLY, seqId); err2 != nil {
@@ -5547,7 +5964,7 @@ type cassandraProcessorExecuteCql3Query struct {
 }
 
 func (p *cassandraProcessorExecuteCql3Query) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewExecuteCql3QueryArgs()
+	args := ExecuteCql3QueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5555,10 +5972,11 @@ func (p *cassandraProcessorExecuteCql3Query) Process(seqId int32, iprot, oprot t
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewExecuteCql3QueryResult()
+	result := ExecuteCql3QueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.ExecuteCql3Query(args.Query, args.Compression, args.Consistency); err2 != nil {
 		switch v := err2.(type) {
@@ -5576,7 +5994,7 @@ func (p *cassandraProcessorExecuteCql3Query) Process(seqId int32, iprot, oprot t
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("execute_cql3_query", thrift.REPLY, seqId); err2 != nil {
@@ -5602,7 +6020,7 @@ type cassandraProcessorPrepareCqlQuery struct {
 }
 
 func (p *cassandraProcessorPrepareCqlQuery) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewPrepareCqlQueryArgs()
+	args := PrepareCqlQueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5610,10 +6028,11 @@ func (p *cassandraProcessorPrepareCqlQuery) Process(seqId int32, iprot, oprot th
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewPrepareCqlQueryResult()
+	result := PrepareCqlQueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.PrepareCqlQuery(args.Query, args.Compression); err2 != nil {
 		switch v := err2.(type) {
@@ -5625,7 +6044,7 @@ func (p *cassandraProcessorPrepareCqlQuery) Process(seqId int32, iprot, oprot th
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("prepare_cql_query", thrift.REPLY, seqId); err2 != nil {
@@ -5651,7 +6070,7 @@ type cassandraProcessorPrepareCql3Query struct {
 }
 
 func (p *cassandraProcessorPrepareCql3Query) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewPrepareCql3QueryArgs()
+	args := PrepareCql3QueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5659,10 +6078,11 @@ func (p *cassandraProcessorPrepareCql3Query) Process(seqId int32, iprot, oprot t
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewPrepareCql3QueryResult()
+	result := PrepareCql3QueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.PrepareCql3Query(args.Query, args.Compression); err2 != nil {
 		switch v := err2.(type) {
@@ -5674,7 +6094,7 @@ func (p *cassandraProcessorPrepareCql3Query) Process(seqId int32, iprot, oprot t
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("prepare_cql3_query", thrift.REPLY, seqId); err2 != nil {
@@ -5700,7 +6120,7 @@ type cassandraProcessorExecutePreparedCqlQuery struct {
 }
 
 func (p *cassandraProcessorExecutePreparedCqlQuery) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewExecutePreparedCqlQueryArgs()
+	args := ExecutePreparedCqlQueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5708,10 +6128,11 @@ func (p *cassandraProcessorExecutePreparedCqlQuery) Process(seqId int32, iprot, 
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewExecutePreparedCqlQueryResult()
+	result := ExecutePreparedCqlQueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.ExecutePreparedCqlQuery(args.ItemId, args.Values); err2 != nil {
 		switch v := err2.(type) {
@@ -5729,7 +6150,7 @@ func (p *cassandraProcessorExecutePreparedCqlQuery) Process(seqId int32, iprot, 
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("execute_prepared_cql_query", thrift.REPLY, seqId); err2 != nil {
@@ -5755,7 +6176,7 @@ type cassandraProcessorExecutePreparedCql3Query struct {
 }
 
 func (p *cassandraProcessorExecutePreparedCql3Query) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewExecutePreparedCql3QueryArgs()
+	args := ExecutePreparedCql3QueryArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5763,10 +6184,11 @@ func (p *cassandraProcessorExecutePreparedCql3Query) Process(seqId int32, iprot,
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewExecutePreparedCql3QueryResult()
+	result := ExecutePreparedCql3QueryResult{}
 	var err2 error
 	if result.Success, err2 = p.handler.ExecutePreparedCql3Query(args.ItemId, args.Values, args.Consistency); err2 != nil {
 		switch v := err2.(type) {
@@ -5784,7 +6206,7 @@ func (p *cassandraProcessorExecutePreparedCql3Query) Process(seqId int32, iprot,
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("execute_prepared_cql3_query", thrift.REPLY, seqId); err2 != nil {
@@ -5810,7 +6232,7 @@ type cassandraProcessorSetCqlVersion struct {
 }
 
 func (p *cassandraProcessorSetCqlVersion) Process(seqId int32, iprot, oprot thrift.TProtocol) (success bool, err thrift.TException) {
-	args := NewSetCqlVersionArgs()
+	args := SetCqlVersionArgs{}
 	if err = args.Read(iprot); err != nil {
 		iprot.ReadMessageEnd()
 		x := thrift.NewTApplicationException(thrift.PROTOCOL_ERROR, err.Error())
@@ -5818,10 +6240,11 @@ func (p *cassandraProcessorSetCqlVersion) Process(seqId int32, iprot, oprot thri
 		x.Write(oprot)
 		oprot.WriteMessageEnd()
 		oprot.Flush()
-		return
+		return false, err
 	}
+
 	iprot.ReadMessageEnd()
-	result := NewSetCqlVersionResult()
+	result := SetCqlVersionResult{}
 	var err2 error
 	if err2 = p.handler.SetCqlVersion(args.Version); err2 != nil {
 		switch v := err2.(type) {
@@ -5833,7 +6256,7 @@ func (p *cassandraProcessorSetCqlVersion) Process(seqId int32, iprot, oprot thri
 			x.Write(oprot)
 			oprot.WriteMessageEnd()
 			oprot.Flush()
-			return false, err2
+			return true, err2
 		}
 	}
 	if err2 = oprot.WriteMessageBegin("set_cql_version", thrift.REPLY, seqId); err2 != nil {
@@ -5864,11 +6287,16 @@ func NewLoginArgs() *LoginArgs {
 	return &LoginArgs{}
 }
 
+var LoginArgs_AuthRequest_DEFAULT *AuthenticationRequest
+
 func (p *LoginArgs) GetAuthRequest() *AuthenticationRequest {
+	if !p.IsSetAuthRequest() {
+		return LoginArgs_AuthRequest_DEFAULT
+	}
 	return p.AuthRequest
 }
 func (p *LoginArgs) IsSetAuthRequest() bool {
-	return true
+	return p.AuthRequest != nil
 }
 
 func (p *LoginArgs) Read(iprot thrift.TProtocol) error {
@@ -5904,7 +6332,7 @@ func (p *LoginArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *LoginArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.AuthRequest = NewAuthenticationRequest()
+	p.AuthRequest = &AuthenticationRequest{}
 	if err := p.AuthRequest.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.AuthRequest, err)
 	}
@@ -5928,16 +6356,14 @@ func (p *LoginArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *LoginArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.AuthRequest != nil {
-		if err := oprot.WriteFieldBegin("auth_request", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:auth_request: %s", p, err)
-		}
-		if err := p.AuthRequest.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.AuthRequest, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:auth_request: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("auth_request", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:auth_request: %s", p, err)
+	}
+	if err := p.AuthRequest.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.AuthRequest, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:auth_request: %s", p, err)
 	}
 	return err
 }
@@ -5958,19 +6384,29 @@ func NewLoginResult() *LoginResult {
 	return &LoginResult{}
 }
 
+var LoginResult_Authnx_DEFAULT *AuthenticationException
+
 func (p *LoginResult) GetAuthnx() *AuthenticationException {
+	if !p.IsSetAuthnx() {
+		return LoginResult_Authnx_DEFAULT
+	}
 	return p.Authnx
 }
 
+var LoginResult_Authzx_DEFAULT *AuthorizationException
+
 func (p *LoginResult) GetAuthzx() *AuthorizationException {
+	if !p.IsSetAuthzx() {
+		return LoginResult_Authzx_DEFAULT
+	}
 	return p.Authzx
 }
 func (p *LoginResult) IsSetAuthnx() bool {
-	return true
+	return p.Authnx != nil
 }
 
 func (p *LoginResult) IsSetAuthzx() bool {
-	return true
+	return p.Authzx != nil
 }
 
 func (p *LoginResult) Read(iprot thrift.TProtocol) error {
@@ -6010,7 +6446,7 @@ func (p *LoginResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *LoginResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Authnx = NewAuthenticationException()
+	p.Authnx = &AuthenticationException{}
 	if err := p.Authnx.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Authnx, err)
 	}
@@ -6018,7 +6454,7 @@ func (p *LoginResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *LoginResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Authzx = NewAuthorizationException()
+	p.Authzx = &AuthorizationException{}
 	if err := p.Authzx.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Authzx, err)
 	}
@@ -6029,15 +6465,11 @@ func (p *LoginResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("login_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Authzx != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Authnx != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -6049,7 +6481,7 @@ func (p *LoginResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *LoginResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Authnx != nil {
+	if p.IsSetAuthnx() {
 		if err := oprot.WriteFieldBegin("authnx", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:authnx: %s", p, err)
 		}
@@ -6064,7 +6496,7 @@ func (p *LoginResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *LoginResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Authzx != nil {
+	if p.IsSetAuthzx() {
 		if err := oprot.WriteFieldBegin("authzx", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:authzx: %s", p, err)
 		}
@@ -6096,10 +6528,6 @@ func NewSetKeyspaceArgs() *SetKeyspaceArgs {
 func (p *SetKeyspaceArgs) GetKeyspace() string {
 	return p.Keyspace
 }
-func (p *SetKeyspaceArgs) IsSetKeyspace() bool {
-	return true
-}
-
 func (p *SetKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -6185,11 +6613,16 @@ func NewSetKeyspaceResult() *SetKeyspaceResult {
 	return &SetKeyspaceResult{}
 }
 
+var SetKeyspaceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SetKeyspaceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SetKeyspaceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *SetKeyspaceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SetKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -6225,7 +6658,7 @@ func (p *SetKeyspaceResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *SetKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -6236,11 +6669,8 @@ func (p *SetKeyspaceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("set_keyspace_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -6252,7 +6682,7 @@ func (p *SetKeyspaceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SetKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -6289,23 +6719,20 @@ func (p *GetArgs) GetKey() []byte {
 	return p.Key
 }
 
+var GetArgs_ColumnPath_DEFAULT *ColumnPath
+
 func (p *GetArgs) GetColumnPath() *ColumnPath {
+	if !p.IsSetColumnPath() {
+		return GetArgs_ColumnPath_DEFAULT
+	}
 	return p.ColumnPath
 }
 
 func (p *GetArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *GetArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *GetArgs) IsSetColumnPath() bool {
-	return true
-}
-
-func (p *GetArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.ColumnPath != nil
 }
 
 func (p *GetArgs) Read(iprot thrift.TProtocol) error {
@@ -6358,7 +6785,7 @@ func (p *GetArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnPath = NewColumnPath()
+	p.ColumnPath = &ColumnPath{}
 	if err := p.ColumnPath.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnPath, err)
 	}
@@ -6398,31 +6825,27 @@ func (p *GetArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnPath != nil {
-		if err := oprot.WriteFieldBegin("column_path", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_path: %s", p, err)
-		}
-		if err := p.ColumnPath.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnPath, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_path: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_path", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_path: %s", p, err)
+	}
+	if err := p.ColumnPath.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnPath, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_path: %s", p, err)
 	}
 	return err
 }
@@ -6459,43 +6882,68 @@ func NewGetResult() *GetResult {
 	return &GetResult{}
 }
 
+var GetResult_Success_DEFAULT *ColumnOrSuperColumn
+
 func (p *GetResult) GetSuccess() *ColumnOrSuperColumn {
+	if !p.IsSetSuccess() {
+		return GetResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var GetResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *GetResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return GetResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var GetResult_Nfe_DEFAULT *NotFoundException
+
 func (p *GetResult) GetNfe() *NotFoundException {
+	if !p.IsSetNfe() {
+		return GetResult_Nfe_DEFAULT
+	}
 	return p.Nfe
 }
 
+var GetResult_Ue_DEFAULT *UnavailableException
+
 func (p *GetResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return GetResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var GetResult_Te_DEFAULT *TimedOutException
+
 func (p *GetResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return GetResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *GetResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *GetResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *GetResult) IsSetNfe() bool {
-	return true
+	return p.Nfe != nil
 }
 
 func (p *GetResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *GetResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *GetResult) Read(iprot thrift.TProtocol) error {
@@ -6547,7 +6995,7 @@ func (p *GetResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *GetResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewColumnOrSuperColumn()
+	p.Success = &ColumnOrSuperColumn{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -6555,7 +7003,7 @@ func (p *GetResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *GetResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -6563,7 +7011,7 @@ func (p *GetResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Nfe = NewNotFoundException()
+	p.Nfe = &NotFoundException{}
 	if err := p.Nfe.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Nfe, err)
 	}
@@ -6571,7 +7019,7 @@ func (p *GetResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -6579,7 +7027,7 @@ func (p *GetResult) ReadField3(iprot thrift.TProtocol) error {
 }
 
 func (p *GetResult) ReadField4(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -6590,27 +7038,20 @@ func (p *GetResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("get_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField4(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Nfe != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField4(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -6622,7 +7063,7 @@ func (p *GetResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -6637,7 +7078,7 @@ func (p *GetResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -6652,7 +7093,7 @@ func (p *GetResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Nfe != nil {
+	if p.IsSetNfe() {
 		if err := oprot.WriteFieldBegin("nfe", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:nfe: %s", p, err)
 		}
@@ -6667,7 +7108,7 @@ func (p *GetResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:ue: %s", p, err)
 		}
@@ -6682,7 +7123,7 @@ func (p *GetResult) writeField3(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetResult) writeField4(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 4); err != nil {
 			return fmt.Errorf("%T write field begin error 4:te: %s", p, err)
 		}
@@ -6720,31 +7161,33 @@ func (p *GetSliceArgs) GetKey() []byte {
 	return p.Key
 }
 
+var GetSliceArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *GetSliceArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return GetSliceArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var GetSliceArgs_Predicate_DEFAULT *SlicePredicate
+
 func (p *GetSliceArgs) GetPredicate() *SlicePredicate {
+	if !p.IsSetPredicate() {
+		return GetSliceArgs_Predicate_DEFAULT
+	}
 	return p.Predicate
 }
 
 func (p *GetSliceArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *GetSliceArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *GetSliceArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *GetSliceArgs) IsSetPredicate() bool {
-	return true
-}
-
-func (p *GetSliceArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Predicate != nil
 }
 
 func (p *GetSliceArgs) Read(iprot thrift.TProtocol) error {
@@ -6801,7 +7244,7 @@ func (p *GetSliceArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -6809,7 +7252,7 @@ func (p *GetSliceArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.Predicate = NewSlicePredicate()
+	p.Predicate = &SlicePredicate{}
 	if err := p.Predicate.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Predicate, err)
 	}
@@ -6852,46 +7295,40 @@ func (p *GetSliceArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetSliceArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetSliceArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Predicate != nil {
-		if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
-		}
-		if err := p.Predicate.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
+	}
+	if err := p.Predicate.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
 	}
 	return err
 }
@@ -6927,35 +7364,52 @@ func NewGetSliceResult() *GetSliceResult {
 	return &GetSliceResult{}
 }
 
+var GetSliceResult_Success_DEFAULT []*ColumnOrSuperColumn
+
 func (p *GetSliceResult) GetSuccess() []*ColumnOrSuperColumn {
 	return p.Success
 }
 
+var GetSliceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *GetSliceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return GetSliceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var GetSliceResult_Ue_DEFAULT *UnavailableException
+
 func (p *GetSliceResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return GetSliceResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var GetSliceResult_Te_DEFAULT *TimedOutException
+
 func (p *GetSliceResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return GetSliceResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *GetSliceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *GetSliceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *GetSliceResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *GetSliceResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *GetSliceResult) Read(iprot thrift.TProtocol) error {
@@ -7010,11 +7464,11 @@ func (p *GetSliceResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*ColumnOrSuperColumn, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem199 := NewColumnOrSuperColumn()
-		if err := _elem199.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem199, err)
+		_elem123 := &ColumnOrSuperColumn{}
+		if err := _elem123.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem123, err)
 		}
-		p.Success = append(p.Success, _elem199)
+		p.Success = append(p.Success, _elem123)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -7023,7 +7477,7 @@ func (p *GetSliceResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -7031,7 +7485,7 @@ func (p *GetSliceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -7039,7 +7493,7 @@ func (p *GetSliceResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -7050,23 +7504,17 @@ func (p *GetSliceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("get_slice_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -7078,7 +7526,7 @@ func (p *GetSliceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetSliceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -7101,7 +7549,7 @@ func (p *GetSliceResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetSliceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -7116,7 +7564,7 @@ func (p *GetSliceResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetSliceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -7131,7 +7579,7 @@ func (p *GetSliceResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetSliceResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -7169,31 +7617,33 @@ func (p *GetCountArgs) GetKey() []byte {
 	return p.Key
 }
 
+var GetCountArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *GetCountArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return GetCountArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var GetCountArgs_Predicate_DEFAULT *SlicePredicate
+
 func (p *GetCountArgs) GetPredicate() *SlicePredicate {
+	if !p.IsSetPredicate() {
+		return GetCountArgs_Predicate_DEFAULT
+	}
 	return p.Predicate
 }
 
 func (p *GetCountArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *GetCountArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *GetCountArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *GetCountArgs) IsSetPredicate() bool {
-	return true
-}
-
-func (p *GetCountArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Predicate != nil
 }
 
 func (p *GetCountArgs) Read(iprot thrift.TProtocol) error {
@@ -7250,7 +7700,7 @@ func (p *GetCountArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetCountArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -7258,7 +7708,7 @@ func (p *GetCountArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetCountArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.Predicate = NewSlicePredicate()
+	p.Predicate = &SlicePredicate{}
 	if err := p.Predicate.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Predicate, err)
 	}
@@ -7301,46 +7751,40 @@ func (p *GetCountArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetCountArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetCountArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetCountArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Predicate != nil {
-		if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
-		}
-		if err := p.Predicate.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
+	}
+	if err := p.Predicate.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
 	}
 	return err
 }
@@ -7366,7 +7810,7 @@ func (p *GetCountArgs) String() string {
 }
 
 type GetCountResult struct {
-	Success int32                    `thrift:"success,0"`
+	Success *int32                   `thrift:"success,0"`
 	Ire     *InvalidRequestException `thrift:"ire,1"`
 	Ue      *UnavailableException    `thrift:"ue,2"`
 	Te      *TimedOutException       `thrift:"te,3"`
@@ -7376,35 +7820,55 @@ func NewGetCountResult() *GetCountResult {
 	return &GetCountResult{}
 }
 
+var GetCountResult_Success_DEFAULT int32
+
 func (p *GetCountResult) GetSuccess() int32 {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return GetCountResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var GetCountResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *GetCountResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return GetCountResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var GetCountResult_Ue_DEFAULT *UnavailableException
+
 func (p *GetCountResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return GetCountResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var GetCountResult_Te_DEFAULT *TimedOutException
+
 func (p *GetCountResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return GetCountResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *GetCountResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *GetCountResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *GetCountResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *GetCountResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *GetCountResult) Read(iprot thrift.TProtocol) error {
@@ -7455,13 +7919,13 @@ func (p *GetCountResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadI32(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *GetCountResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -7469,7 +7933,7 @@ func (p *GetCountResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetCountResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -7477,7 +7941,7 @@ func (p *GetCountResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetCountResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -7488,23 +7952,17 @@ func (p *GetCountResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("get_count_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -7516,20 +7974,22 @@ func (p *GetCountResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetCountResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.I32, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteI32(int32(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.I32, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteI32(int32(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *GetCountResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -7544,7 +8004,7 @@ func (p *GetCountResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetCountResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -7559,7 +8019,7 @@ func (p *GetCountResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetCountResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -7597,31 +8057,33 @@ func (p *MultigetSliceArgs) GetKeys() [][]byte {
 	return p.Keys
 }
 
+var MultigetSliceArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *MultigetSliceArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return MultigetSliceArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var MultigetSliceArgs_Predicate_DEFAULT *SlicePredicate
+
 func (p *MultigetSliceArgs) GetPredicate() *SlicePredicate {
+	if !p.IsSetPredicate() {
+		return MultigetSliceArgs_Predicate_DEFAULT
+	}
 	return p.Predicate
 }
 
 func (p *MultigetSliceArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *MultigetSliceArgs) IsSetKeys() bool {
-	return true
-}
-
 func (p *MultigetSliceArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *MultigetSliceArgs) IsSetPredicate() bool {
-	return true
-}
-
-func (p *MultigetSliceArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Predicate != nil
 }
 
 func (p *MultigetSliceArgs) Read(iprot thrift.TProtocol) error {
@@ -7676,13 +8138,13 @@ func (p *MultigetSliceArgs) ReadField1(iprot thrift.TProtocol) error {
 	tSlice := make([][]byte, 0, size)
 	p.Keys = tSlice
 	for i := 0; i < size; i++ {
-		var _elem200 []byte
+		var _elem124 []byte
 		if v, err := iprot.ReadBinary(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_elem200 = v
+			_elem124 = v
 		}
-		p.Keys = append(p.Keys, _elem200)
+		p.Keys = append(p.Keys, _elem124)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -7691,7 +8153,7 @@ func (p *MultigetSliceArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -7699,7 +8161,7 @@ func (p *MultigetSliceArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.Predicate = NewSlicePredicate()
+	p.Predicate = &SlicePredicate{}
 	if err := p.Predicate.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Predicate, err)
 	}
@@ -7742,54 +8204,48 @@ func (p *MultigetSliceArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Keys != nil {
-		if err := oprot.WriteFieldBegin("keys", thrift.LIST, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:keys: %s", p, err)
+	if err := oprot.WriteFieldBegin("keys", thrift.LIST, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:keys: %s", p, err)
+	}
+	if err := oprot.WriteListBegin(thrift.STRING, len(p.Keys)); err != nil {
+		return fmt.Errorf("error writing list begin: %s", err)
+	}
+	for _, v := range p.Keys {
+		if err := oprot.WriteBinary(v); err != nil {
+			return fmt.Errorf("%T. (0) field write error: %s", p, err)
 		}
-		if err := oprot.WriteListBegin(thrift.STRING, len(p.Keys)); err != nil {
-			return fmt.Errorf("error writing list begin: %s", err)
-		}
-		for _, v := range p.Keys {
-			if err := oprot.WriteBinary(v); err != nil {
-				return fmt.Errorf("%T. (0) field write error: %s", p, err)
-			}
-		}
-		if err := oprot.WriteListEnd(); err != nil {
-			return fmt.Errorf("error writing list end: %s", err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:keys: %s", p, err)
-		}
+	}
+	if err := oprot.WriteListEnd(); err != nil {
+		return fmt.Errorf("error writing list end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:keys: %s", p, err)
 	}
 	return err
 }
 
 func (p *MultigetSliceArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *MultigetSliceArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Predicate != nil {
-		if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
-		}
-		if err := p.Predicate.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
+	}
+	if err := p.Predicate.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
 	}
 	return err
 }
@@ -7825,35 +8281,52 @@ func NewMultigetSliceResult() *MultigetSliceResult {
 	return &MultigetSliceResult{}
 }
 
+var MultigetSliceResult_Success_DEFAULT map[string][]*ColumnOrSuperColumn
+
 func (p *MultigetSliceResult) GetSuccess() map[string][]*ColumnOrSuperColumn {
 	return p.Success
 }
 
+var MultigetSliceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *MultigetSliceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return MultigetSliceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var MultigetSliceResult_Ue_DEFAULT *UnavailableException
+
 func (p *MultigetSliceResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return MultigetSliceResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var MultigetSliceResult_Te_DEFAULT *TimedOutException
+
 func (p *MultigetSliceResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return MultigetSliceResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *MultigetSliceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *MultigetSliceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *MultigetSliceResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *MultigetSliceResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *MultigetSliceResult) Read(iprot thrift.TProtocol) error {
@@ -7908,29 +8381,29 @@ func (p *MultigetSliceResult) ReadField0(iprot thrift.TProtocol) error {
 	tMap := make(map[string][]*ColumnOrSuperColumn, size)
 	p.Success = tMap
 	for i := 0; i < size; i++ {
-		var _key201 string
+		var _key125 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_key201 = v
+			_key125 = v
 		}
 		_, size, err := iprot.ReadListBegin()
 		if err != nil {
 			return fmt.Errorf("error reading list begin: %s", err)
 		}
 		tSlice := make([]*ColumnOrSuperColumn, 0, size)
-		_val202 := tSlice
+		_val126 := tSlice
 		for i := 0; i < size; i++ {
-			_elem203 := NewColumnOrSuperColumn()
-			if err := _elem203.Read(iprot); err != nil {
-				return fmt.Errorf("%T error reading struct: %s", _elem203, err)
+			_elem127 := &ColumnOrSuperColumn{}
+			if err := _elem127.Read(iprot); err != nil {
+				return fmt.Errorf("%T error reading struct: %s", _elem127, err)
 			}
-			_val202 = append(_val202, _elem203)
+			_val126 = append(_val126, _elem127)
 		}
 		if err := iprot.ReadListEnd(); err != nil {
 			return fmt.Errorf("error reading list end: %s", err)
 		}
-		p.Success[_key201] = _val202
+		p.Success[_key125] = _val126
 	}
 	if err := iprot.ReadMapEnd(); err != nil {
 		return fmt.Errorf("error reading map end: %s", err)
@@ -7939,7 +8412,7 @@ func (p *MultigetSliceResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -7947,7 +8420,7 @@ func (p *MultigetSliceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -7955,7 +8428,7 @@ func (p *MultigetSliceResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -7966,23 +8439,17 @@ func (p *MultigetSliceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("multiget_slice_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -7994,7 +8461,7 @@ func (p *MultigetSliceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *MultigetSliceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.MAP, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -8028,7 +8495,7 @@ func (p *MultigetSliceResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *MultigetSliceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -8043,7 +8510,7 @@ func (p *MultigetSliceResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *MultigetSliceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -8058,7 +8525,7 @@ func (p *MultigetSliceResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *MultigetSliceResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -8096,31 +8563,33 @@ func (p *MultigetCountArgs) GetKeys() [][]byte {
 	return p.Keys
 }
 
+var MultigetCountArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *MultigetCountArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return MultigetCountArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var MultigetCountArgs_Predicate_DEFAULT *SlicePredicate
+
 func (p *MultigetCountArgs) GetPredicate() *SlicePredicate {
+	if !p.IsSetPredicate() {
+		return MultigetCountArgs_Predicate_DEFAULT
+	}
 	return p.Predicate
 }
 
 func (p *MultigetCountArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *MultigetCountArgs) IsSetKeys() bool {
-	return true
-}
-
 func (p *MultigetCountArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *MultigetCountArgs) IsSetPredicate() bool {
-	return true
-}
-
-func (p *MultigetCountArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Predicate != nil
 }
 
 func (p *MultigetCountArgs) Read(iprot thrift.TProtocol) error {
@@ -8175,13 +8644,13 @@ func (p *MultigetCountArgs) ReadField1(iprot thrift.TProtocol) error {
 	tSlice := make([][]byte, 0, size)
 	p.Keys = tSlice
 	for i := 0; i < size; i++ {
-		var _elem204 []byte
+		var _elem128 []byte
 		if v, err := iprot.ReadBinary(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_elem204 = v
+			_elem128 = v
 		}
-		p.Keys = append(p.Keys, _elem204)
+		p.Keys = append(p.Keys, _elem128)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -8190,7 +8659,7 @@ func (p *MultigetCountArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -8198,7 +8667,7 @@ func (p *MultigetCountArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.Predicate = NewSlicePredicate()
+	p.Predicate = &SlicePredicate{}
 	if err := p.Predicate.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Predicate, err)
 	}
@@ -8241,54 +8710,48 @@ func (p *MultigetCountArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Keys != nil {
-		if err := oprot.WriteFieldBegin("keys", thrift.LIST, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:keys: %s", p, err)
+	if err := oprot.WriteFieldBegin("keys", thrift.LIST, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:keys: %s", p, err)
+	}
+	if err := oprot.WriteListBegin(thrift.STRING, len(p.Keys)); err != nil {
+		return fmt.Errorf("error writing list begin: %s", err)
+	}
+	for _, v := range p.Keys {
+		if err := oprot.WriteBinary(v); err != nil {
+			return fmt.Errorf("%T. (0) field write error: %s", p, err)
 		}
-		if err := oprot.WriteListBegin(thrift.STRING, len(p.Keys)); err != nil {
-			return fmt.Errorf("error writing list begin: %s", err)
-		}
-		for _, v := range p.Keys {
-			if err := oprot.WriteBinary(v); err != nil {
-				return fmt.Errorf("%T. (0) field write error: %s", p, err)
-			}
-		}
-		if err := oprot.WriteListEnd(); err != nil {
-			return fmt.Errorf("error writing list end: %s", err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:keys: %s", p, err)
-		}
+	}
+	if err := oprot.WriteListEnd(); err != nil {
+		return fmt.Errorf("error writing list end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:keys: %s", p, err)
 	}
 	return err
 }
 
 func (p *MultigetCountArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *MultigetCountArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Predicate != nil {
-		if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
-		}
-		if err := p.Predicate.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:predicate: %s", p, err)
+	}
+	if err := p.Predicate.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:predicate: %s", p, err)
 	}
 	return err
 }
@@ -8324,35 +8787,52 @@ func NewMultigetCountResult() *MultigetCountResult {
 	return &MultigetCountResult{}
 }
 
+var MultigetCountResult_Success_DEFAULT map[string]int32
+
 func (p *MultigetCountResult) GetSuccess() map[string]int32 {
 	return p.Success
 }
 
+var MultigetCountResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *MultigetCountResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return MultigetCountResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var MultigetCountResult_Ue_DEFAULT *UnavailableException
+
 func (p *MultigetCountResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return MultigetCountResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var MultigetCountResult_Te_DEFAULT *TimedOutException
+
 func (p *MultigetCountResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return MultigetCountResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *MultigetCountResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *MultigetCountResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *MultigetCountResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *MultigetCountResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *MultigetCountResult) Read(iprot thrift.TProtocol) error {
@@ -8407,19 +8887,19 @@ func (p *MultigetCountResult) ReadField0(iprot thrift.TProtocol) error {
 	tMap := make(map[string]int32, size)
 	p.Success = tMap
 	for i := 0; i < size; i++ {
-		var _key205 string
+		var _key129 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_key205 = v
+			_key129 = v
 		}
-		var _val206 int32
+		var _val130 int32
 		if v, err := iprot.ReadI32(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_val206 = v
+			_val130 = v
 		}
-		p.Success[_key205] = _val206
+		p.Success[_key129] = _val130
 	}
 	if err := iprot.ReadMapEnd(); err != nil {
 		return fmt.Errorf("error reading map end: %s", err)
@@ -8428,7 +8908,7 @@ func (p *MultigetCountResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -8436,7 +8916,7 @@ func (p *MultigetCountResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -8444,7 +8924,7 @@ func (p *MultigetCountResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -8455,23 +8935,17 @@ func (p *MultigetCountResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("multiget_count_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -8483,7 +8957,7 @@ func (p *MultigetCountResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *MultigetCountResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.MAP, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -8509,7 +8983,7 @@ func (p *MultigetCountResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *MultigetCountResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -8524,7 +8998,7 @@ func (p *MultigetCountResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *MultigetCountResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -8539,7 +9013,7 @@ func (p *MultigetCountResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *MultigetCountResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -8573,15 +9047,30 @@ func NewGetRangeSlicesArgs() *GetRangeSlicesArgs {
 	}
 }
 
+var GetRangeSlicesArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *GetRangeSlicesArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return GetRangeSlicesArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var GetRangeSlicesArgs_Predicate_DEFAULT *SlicePredicate
+
 func (p *GetRangeSlicesArgs) GetPredicate() *SlicePredicate {
+	if !p.IsSetPredicate() {
+		return GetRangeSlicesArgs_Predicate_DEFAULT
+	}
 	return p.Predicate
 }
 
+var GetRangeSlicesArgs_RangeA1_DEFAULT *KeyRange
+
 func (p *GetRangeSlicesArgs) GetRangeA1() *KeyRange {
+	if !p.IsSetRangeA1() {
+		return GetRangeSlicesArgs_RangeA1_DEFAULT
+	}
 	return p.RangeA1
 }
 
@@ -8589,19 +9078,15 @@ func (p *GetRangeSlicesArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
 func (p *GetRangeSlicesArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *GetRangeSlicesArgs) IsSetPredicate() bool {
-	return true
+	return p.Predicate != nil
 }
 
 func (p *GetRangeSlicesArgs) IsSetRangeA1() bool {
-	return true
-}
-
-func (p *GetRangeSlicesArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.RangeA1 != nil
 }
 
 func (p *GetRangeSlicesArgs) Read(iprot thrift.TProtocol) error {
@@ -8649,7 +9134,7 @@ func (p *GetRangeSlicesArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -8657,7 +9142,7 @@ func (p *GetRangeSlicesArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.Predicate = NewSlicePredicate()
+	p.Predicate = &SlicePredicate{}
 	if err := p.Predicate.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Predicate, err)
 	}
@@ -8665,7 +9150,9 @@ func (p *GetRangeSlicesArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.RangeA1 = NewKeyRange()
+	p.RangeA1 = &KeyRange{
+		Count: 100,
+	}
 	if err := p.RangeA1.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.RangeA1, err)
 	}
@@ -8708,46 +9195,40 @@ func (p *GetRangeSlicesArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetRangeSlicesArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Predicate != nil {
-		if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:predicate: %s", p, err)
-		}
-		if err := p.Predicate.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:predicate: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("predicate", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:predicate: %s", p, err)
+	}
+	if err := p.Predicate.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Predicate, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:predicate: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetRangeSlicesArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.RangeA1 != nil {
-		if err := oprot.WriteFieldBegin("range", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:range: %s", p, err)
-		}
-		if err := p.RangeA1.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.RangeA1, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:range: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("range", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:range: %s", p, err)
+	}
+	if err := p.RangeA1.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.RangeA1, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:range: %s", p, err)
 	}
 	return err
 }
@@ -8783,35 +9264,52 @@ func NewGetRangeSlicesResult() *GetRangeSlicesResult {
 	return &GetRangeSlicesResult{}
 }
 
+var GetRangeSlicesResult_Success_DEFAULT []*KeySlice
+
 func (p *GetRangeSlicesResult) GetSuccess() []*KeySlice {
 	return p.Success
 }
 
+var GetRangeSlicesResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *GetRangeSlicesResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return GetRangeSlicesResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var GetRangeSlicesResult_Ue_DEFAULT *UnavailableException
+
 func (p *GetRangeSlicesResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return GetRangeSlicesResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var GetRangeSlicesResult_Te_DEFAULT *TimedOutException
+
 func (p *GetRangeSlicesResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return GetRangeSlicesResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *GetRangeSlicesResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *GetRangeSlicesResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *GetRangeSlicesResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *GetRangeSlicesResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *GetRangeSlicesResult) Read(iprot thrift.TProtocol) error {
@@ -8866,11 +9364,11 @@ func (p *GetRangeSlicesResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*KeySlice, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem207 := NewKeySlice()
-		if err := _elem207.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem207, err)
+		_elem131 := &KeySlice{}
+		if err := _elem131.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem131, err)
 		}
-		p.Success = append(p.Success, _elem207)
+		p.Success = append(p.Success, _elem131)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -8879,7 +9377,7 @@ func (p *GetRangeSlicesResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -8887,7 +9385,7 @@ func (p *GetRangeSlicesResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -8895,7 +9393,7 @@ func (p *GetRangeSlicesResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -8906,23 +9404,17 @@ func (p *GetRangeSlicesResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("get_range_slices_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -8934,7 +9426,7 @@ func (p *GetRangeSlicesResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetRangeSlicesResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -8957,7 +9449,7 @@ func (p *GetRangeSlicesResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetRangeSlicesResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -8972,7 +9464,7 @@ func (p *GetRangeSlicesResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetRangeSlicesResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -8987,7 +9479,7 @@ func (p *GetRangeSlicesResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetRangeSlicesResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -9025,7 +9517,12 @@ func (p *GetPagedSliceArgs) GetColumnFamily() string {
 	return p.ColumnFamily
 }
 
+var GetPagedSliceArgs_RangeA1_DEFAULT *KeyRange
+
 func (p *GetPagedSliceArgs) GetRangeA1() *KeyRange {
+	if !p.IsSetRangeA1() {
+		return GetPagedSliceArgs_RangeA1_DEFAULT
+	}
 	return p.RangeA1
 }
 
@@ -9036,20 +9533,8 @@ func (p *GetPagedSliceArgs) GetStartColumn() []byte {
 func (p *GetPagedSliceArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *GetPagedSliceArgs) IsSetColumnFamily() bool {
-	return true
-}
-
 func (p *GetPagedSliceArgs) IsSetRangeA1() bool {
-	return true
-}
-
-func (p *GetPagedSliceArgs) IsSetStartColumn() bool {
-	return true
-}
-
-func (p *GetPagedSliceArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.RangeA1 != nil
 }
 
 func (p *GetPagedSliceArgs) Read(iprot thrift.TProtocol) error {
@@ -9106,7 +9591,9 @@ func (p *GetPagedSliceArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetPagedSliceArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.RangeA1 = NewKeyRange()
+	p.RangeA1 = &KeyRange{
+		Count: 100,
+	}
 	if err := p.RangeA1.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.RangeA1, err)
 	}
@@ -9171,31 +9658,27 @@ func (p *GetPagedSliceArgs) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetPagedSliceArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.RangeA1 != nil {
-		if err := oprot.WriteFieldBegin("range", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:range: %s", p, err)
-		}
-		if err := p.RangeA1.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.RangeA1, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:range: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("range", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:range: %s", p, err)
+	}
+	if err := p.RangeA1.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.RangeA1, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:range: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetPagedSliceArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.StartColumn != nil {
-		if err := oprot.WriteFieldBegin("start_column", thrift.STRING, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:start_column: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.StartColumn); err != nil {
-			return fmt.Errorf("%T.start_column (3) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:start_column: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("start_column", thrift.STRING, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:start_column: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.StartColumn); err != nil {
+		return fmt.Errorf("%T.start_column (3) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:start_column: %s", p, err)
 	}
 	return err
 }
@@ -9231,35 +9714,52 @@ func NewGetPagedSliceResult() *GetPagedSliceResult {
 	return &GetPagedSliceResult{}
 }
 
+var GetPagedSliceResult_Success_DEFAULT []*KeySlice
+
 func (p *GetPagedSliceResult) GetSuccess() []*KeySlice {
 	return p.Success
 }
 
+var GetPagedSliceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *GetPagedSliceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return GetPagedSliceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var GetPagedSliceResult_Ue_DEFAULT *UnavailableException
+
 func (p *GetPagedSliceResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return GetPagedSliceResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var GetPagedSliceResult_Te_DEFAULT *TimedOutException
+
 func (p *GetPagedSliceResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return GetPagedSliceResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *GetPagedSliceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *GetPagedSliceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *GetPagedSliceResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *GetPagedSliceResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *GetPagedSliceResult) Read(iprot thrift.TProtocol) error {
@@ -9314,11 +9814,11 @@ func (p *GetPagedSliceResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*KeySlice, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem208 := NewKeySlice()
-		if err := _elem208.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem208, err)
+		_elem132 := &KeySlice{}
+		if err := _elem132.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem132, err)
 		}
-		p.Success = append(p.Success, _elem208)
+		p.Success = append(p.Success, _elem132)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -9327,7 +9827,7 @@ func (p *GetPagedSliceResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *GetPagedSliceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -9335,7 +9835,7 @@ func (p *GetPagedSliceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetPagedSliceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -9343,7 +9843,7 @@ func (p *GetPagedSliceResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetPagedSliceResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -9354,23 +9854,17 @@ func (p *GetPagedSliceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("get_paged_slice_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -9382,7 +9876,7 @@ func (p *GetPagedSliceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetPagedSliceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -9405,7 +9899,7 @@ func (p *GetPagedSliceResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetPagedSliceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -9420,7 +9914,7 @@ func (p *GetPagedSliceResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetPagedSliceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -9435,7 +9929,7 @@ func (p *GetPagedSliceResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *GetPagedSliceResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -9469,15 +9963,30 @@ func NewGetIndexedSlicesArgs() *GetIndexedSlicesArgs {
 	}
 }
 
+var GetIndexedSlicesArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *GetIndexedSlicesArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return GetIndexedSlicesArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var GetIndexedSlicesArgs_IndexClause_DEFAULT *IndexClause
+
 func (p *GetIndexedSlicesArgs) GetIndexClause() *IndexClause {
+	if !p.IsSetIndexClause() {
+		return GetIndexedSlicesArgs_IndexClause_DEFAULT
+	}
 	return p.IndexClause
 }
 
+var GetIndexedSlicesArgs_ColumnPredicate_DEFAULT *SlicePredicate
+
 func (p *GetIndexedSlicesArgs) GetColumnPredicate() *SlicePredicate {
+	if !p.IsSetColumnPredicate() {
+		return GetIndexedSlicesArgs_ColumnPredicate_DEFAULT
+	}
 	return p.ColumnPredicate
 }
 
@@ -9485,19 +9994,15 @@ func (p *GetIndexedSlicesArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
 func (p *GetIndexedSlicesArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *GetIndexedSlicesArgs) IsSetIndexClause() bool {
-	return true
+	return p.IndexClause != nil
 }
 
 func (p *GetIndexedSlicesArgs) IsSetColumnPredicate() bool {
-	return true
-}
-
-func (p *GetIndexedSlicesArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.ColumnPredicate != nil
 }
 
 func (p *GetIndexedSlicesArgs) Read(iprot thrift.TProtocol) error {
@@ -9545,7 +10050,7 @@ func (p *GetIndexedSlicesArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -9553,7 +10058,9 @@ func (p *GetIndexedSlicesArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.IndexClause = NewIndexClause()
+	p.IndexClause = &IndexClause{
+		Count: 100,
+	}
 	if err := p.IndexClause.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.IndexClause, err)
 	}
@@ -9561,7 +10068,7 @@ func (p *GetIndexedSlicesArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.ColumnPredicate = NewSlicePredicate()
+	p.ColumnPredicate = &SlicePredicate{}
 	if err := p.ColumnPredicate.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnPredicate, err)
 	}
@@ -9604,46 +10111,40 @@ func (p *GetIndexedSlicesArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetIndexedSlicesArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.IndexClause != nil {
-		if err := oprot.WriteFieldBegin("index_clause", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:index_clause: %s", p, err)
-		}
-		if err := p.IndexClause.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.IndexClause, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:index_clause: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("index_clause", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:index_clause: %s", p, err)
+	}
+	if err := p.IndexClause.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.IndexClause, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:index_clause: %s", p, err)
 	}
 	return err
 }
 
 func (p *GetIndexedSlicesArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.ColumnPredicate != nil {
-		if err := oprot.WriteFieldBegin("column_predicate", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:column_predicate: %s", p, err)
-		}
-		if err := p.ColumnPredicate.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnPredicate, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:column_predicate: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_predicate", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:column_predicate: %s", p, err)
+	}
+	if err := p.ColumnPredicate.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnPredicate, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:column_predicate: %s", p, err)
 	}
 	return err
 }
@@ -9679,35 +10180,52 @@ func NewGetIndexedSlicesResult() *GetIndexedSlicesResult {
 	return &GetIndexedSlicesResult{}
 }
 
+var GetIndexedSlicesResult_Success_DEFAULT []*KeySlice
+
 func (p *GetIndexedSlicesResult) GetSuccess() []*KeySlice {
 	return p.Success
 }
 
+var GetIndexedSlicesResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *GetIndexedSlicesResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return GetIndexedSlicesResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var GetIndexedSlicesResult_Ue_DEFAULT *UnavailableException
+
 func (p *GetIndexedSlicesResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return GetIndexedSlicesResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var GetIndexedSlicesResult_Te_DEFAULT *TimedOutException
+
 func (p *GetIndexedSlicesResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return GetIndexedSlicesResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *GetIndexedSlicesResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *GetIndexedSlicesResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *GetIndexedSlicesResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *GetIndexedSlicesResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *GetIndexedSlicesResult) Read(iprot thrift.TProtocol) error {
@@ -9762,11 +10280,11 @@ func (p *GetIndexedSlicesResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*KeySlice, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem209 := NewKeySlice()
-		if err := _elem209.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem209, err)
+		_elem133 := &KeySlice{}
+		if err := _elem133.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem133, err)
 		}
-		p.Success = append(p.Success, _elem209)
+		p.Success = append(p.Success, _elem133)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -9775,7 +10293,7 @@ func (p *GetIndexedSlicesResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -9783,7 +10301,7 @@ func (p *GetIndexedSlicesResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -9791,7 +10309,7 @@ func (p *GetIndexedSlicesResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -9802,23 +10320,17 @@ func (p *GetIndexedSlicesResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("get_indexed_slices_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -9830,7 +10342,7 @@ func (p *GetIndexedSlicesResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *GetIndexedSlicesResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -9853,7 +10365,7 @@ func (p *GetIndexedSlicesResult) writeField0(oprot thrift.TProtocol) (err error)
 }
 
 func (p *GetIndexedSlicesResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -9868,7 +10380,7 @@ func (p *GetIndexedSlicesResult) writeField1(oprot thrift.TProtocol) (err error)
 }
 
 func (p *GetIndexedSlicesResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -9883,7 +10395,7 @@ func (p *GetIndexedSlicesResult) writeField2(oprot thrift.TProtocol) (err error)
 }
 
 func (p *GetIndexedSlicesResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -9921,31 +10433,33 @@ func (p *InsertArgs) GetKey() []byte {
 	return p.Key
 }
 
+var InsertArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *InsertArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return InsertArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var InsertArgs_Column_DEFAULT *Column
+
 func (p *InsertArgs) GetColumn() *Column {
+	if !p.IsSetColumn() {
+		return InsertArgs_Column_DEFAULT
+	}
 	return p.Column
 }
 
 func (p *InsertArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *InsertArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *InsertArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *InsertArgs) IsSetColumn() bool {
-	return true
-}
-
-func (p *InsertArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Column != nil
 }
 
 func (p *InsertArgs) Read(iprot thrift.TProtocol) error {
@@ -10002,7 +10516,7 @@ func (p *InsertArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *InsertArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -10010,7 +10524,7 @@ func (p *InsertArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *InsertArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.Column = NewColumn()
+	p.Column = &Column{}
 	if err := p.Column.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Column, err)
 	}
@@ -10053,46 +10567,40 @@ func (p *InsertArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *InsertArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *InsertArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *InsertArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Column != nil {
-		if err := oprot.WriteFieldBegin("column", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:column: %s", p, err)
-		}
-		if err := p.Column.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Column, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:column: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:column: %s", p, err)
+	}
+	if err := p.Column.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Column, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:column: %s", p, err)
 	}
 	return err
 }
@@ -10127,27 +10635,42 @@ func NewInsertResult() *InsertResult {
 	return &InsertResult{}
 }
 
+var InsertResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *InsertResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return InsertResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var InsertResult_Ue_DEFAULT *UnavailableException
+
 func (p *InsertResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return InsertResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var InsertResult_Te_DEFAULT *TimedOutException
+
 func (p *InsertResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return InsertResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *InsertResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *InsertResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *InsertResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *InsertResult) Read(iprot thrift.TProtocol) error {
@@ -10191,7 +10714,7 @@ func (p *InsertResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *InsertResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -10199,7 +10722,7 @@ func (p *InsertResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *InsertResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -10207,7 +10730,7 @@ func (p *InsertResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *InsertResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -10218,19 +10741,14 @@ func (p *InsertResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("insert_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -10242,7 +10760,7 @@ func (p *InsertResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *InsertResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -10257,7 +10775,7 @@ func (p *InsertResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *InsertResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -10272,7 +10790,7 @@ func (p *InsertResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *InsertResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -10310,31 +10828,33 @@ func (p *AddArgs) GetKey() []byte {
 	return p.Key
 }
 
+var AddArgs_ColumnParent_DEFAULT *ColumnParent
+
 func (p *AddArgs) GetColumnParent() *ColumnParent {
+	if !p.IsSetColumnParent() {
+		return AddArgs_ColumnParent_DEFAULT
+	}
 	return p.ColumnParent
 }
 
+var AddArgs_Column_DEFAULT *CounterColumn
+
 func (p *AddArgs) GetColumn() *CounterColumn {
+	if !p.IsSetColumn() {
+		return AddArgs_Column_DEFAULT
+	}
 	return p.Column
 }
 
 func (p *AddArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *AddArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *AddArgs) IsSetColumnParent() bool {
-	return true
+	return p.ColumnParent != nil
 }
 
 func (p *AddArgs) IsSetColumn() bool {
-	return true
-}
-
-func (p *AddArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Column != nil
 }
 
 func (p *AddArgs) Read(iprot thrift.TProtocol) error {
@@ -10391,7 +10911,7 @@ func (p *AddArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *AddArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnParent = NewColumnParent()
+	p.ColumnParent = &ColumnParent{}
 	if err := p.ColumnParent.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnParent, err)
 	}
@@ -10399,7 +10919,7 @@ func (p *AddArgs) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *AddArgs) ReadField3(iprot thrift.TProtocol) error {
-	p.Column = NewCounterColumn()
+	p.Column = &CounterColumn{}
 	if err := p.Column.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Column, err)
 	}
@@ -10442,46 +10962,40 @@ func (p *AddArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *AddArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *AddArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnParent != nil {
-		if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
-		}
-		if err := p.ColumnParent.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_parent", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_parent: %s", p, err)
+	}
+	if err := p.ColumnParent.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnParent, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_parent: %s", p, err)
 	}
 	return err
 }
 
 func (p *AddArgs) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Column != nil {
-		if err := oprot.WriteFieldBegin("column", thrift.STRUCT, 3); err != nil {
-			return fmt.Errorf("%T write field begin error 3:column: %s", p, err)
-		}
-		if err := p.Column.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Column, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 3:column: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column", thrift.STRUCT, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:column: %s", p, err)
+	}
+	if err := p.Column.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Column, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:column: %s", p, err)
 	}
 	return err
 }
@@ -10516,27 +11030,42 @@ func NewAddResult() *AddResult {
 	return &AddResult{}
 }
 
+var AddResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *AddResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return AddResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var AddResult_Ue_DEFAULT *UnavailableException
+
 func (p *AddResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return AddResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var AddResult_Te_DEFAULT *TimedOutException
+
 func (p *AddResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return AddResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *AddResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *AddResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *AddResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *AddResult) Read(iprot thrift.TProtocol) error {
@@ -10580,7 +11109,7 @@ func (p *AddResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *AddResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -10588,7 +11117,7 @@ func (p *AddResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *AddResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -10596,7 +11125,7 @@ func (p *AddResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *AddResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -10607,19 +11136,14 @@ func (p *AddResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("add_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -10631,7 +11155,7 @@ func (p *AddResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *AddResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -10646,7 +11170,7 @@ func (p *AddResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *AddResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -10661,7 +11185,7 @@ func (p *AddResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *AddResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -10682,6 +11206,538 @@ func (p *AddResult) String() string {
 	return fmt.Sprintf("AddResult(%+v)", *p)
 }
 
+type CasArgs struct {
+	Key                    []byte           `thrift:"key,1,required"`
+	ColumnFamily           string           `thrift:"column_family,2,required"`
+	Expected               []*Column        `thrift:"expected,3"`
+	Updates                []*Column        `thrift:"updates,4"`
+	SerialConsistencyLevel ConsistencyLevel `thrift:"serial_consistency_level,5,required"`
+	CommitConsistencyLevel ConsistencyLevel `thrift:"commit_consistency_level,6,required"`
+}
+
+func NewCasArgs() *CasArgs {
+	return &CasArgs{
+		SerialConsistencyLevel: 9,
+
+		CommitConsistencyLevel: 2,
+	}
+}
+
+func (p *CasArgs) GetKey() []byte {
+	return p.Key
+}
+
+func (p *CasArgs) GetColumnFamily() string {
+	return p.ColumnFamily
+}
+
+func (p *CasArgs) GetExpected() []*Column {
+	return p.Expected
+}
+
+func (p *CasArgs) GetUpdates() []*Column {
+	return p.Updates
+}
+
+func (p *CasArgs) GetSerialConsistencyLevel() ConsistencyLevel {
+	return p.SerialConsistencyLevel
+}
+
+func (p *CasArgs) GetCommitConsistencyLevel() ConsistencyLevel {
+	return p.CommitConsistencyLevel
+}
+func (p *CasArgs) Read(iprot thrift.TProtocol) error {
+	if _, err := iprot.ReadStructBegin(); err != nil {
+		return fmt.Errorf("%T read error: %s", p, err)
+	}
+	for {
+		_, fieldTypeId, fieldId, err := iprot.ReadFieldBegin()
+		if err != nil {
+			return fmt.Errorf("%T field %d read error: %s", p, fieldId, err)
+		}
+		if fieldTypeId == thrift.STOP {
+			break
+		}
+		switch fieldId {
+		case 1:
+			if err := p.ReadField1(iprot); err != nil {
+				return err
+			}
+		case 2:
+			if err := p.ReadField2(iprot); err != nil {
+				return err
+			}
+		case 3:
+			if err := p.ReadField3(iprot); err != nil {
+				return err
+			}
+		case 4:
+			if err := p.ReadField4(iprot); err != nil {
+				return err
+			}
+		case 5:
+			if err := p.ReadField5(iprot); err != nil {
+				return err
+			}
+		case 6:
+			if err := p.ReadField6(iprot); err != nil {
+				return err
+			}
+		default:
+			if err := iprot.Skip(fieldTypeId); err != nil {
+				return err
+			}
+		}
+		if err := iprot.ReadFieldEnd(); err != nil {
+			return err
+		}
+	}
+	if err := iprot.ReadStructEnd(); err != nil {
+		return fmt.Errorf("%T read struct end error: %s", p, err)
+	}
+	return nil
+}
+
+func (p *CasArgs) ReadField1(iprot thrift.TProtocol) error {
+	if v, err := iprot.ReadBinary(); err != nil {
+		return fmt.Errorf("error reading field 1: %s", err)
+	} else {
+		p.Key = v
+	}
+	return nil
+}
+
+func (p *CasArgs) ReadField2(iprot thrift.TProtocol) error {
+	if v, err := iprot.ReadString(); err != nil {
+		return fmt.Errorf("error reading field 2: %s", err)
+	} else {
+		p.ColumnFamily = v
+	}
+	return nil
+}
+
+func (p *CasArgs) ReadField3(iprot thrift.TProtocol) error {
+	_, size, err := iprot.ReadListBegin()
+	if err != nil {
+		return fmt.Errorf("error reading list begin: %s", err)
+	}
+	tSlice := make([]*Column, 0, size)
+	p.Expected = tSlice
+	for i := 0; i < size; i++ {
+		_elem134 := &Column{}
+		if err := _elem134.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem134, err)
+		}
+		p.Expected = append(p.Expected, _elem134)
+	}
+	if err := iprot.ReadListEnd(); err != nil {
+		return fmt.Errorf("error reading list end: %s", err)
+	}
+	return nil
+}
+
+func (p *CasArgs) ReadField4(iprot thrift.TProtocol) error {
+	_, size, err := iprot.ReadListBegin()
+	if err != nil {
+		return fmt.Errorf("error reading list begin: %s", err)
+	}
+	tSlice := make([]*Column, 0, size)
+	p.Updates = tSlice
+	for i := 0; i < size; i++ {
+		_elem135 := &Column{}
+		if err := _elem135.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem135, err)
+		}
+		p.Updates = append(p.Updates, _elem135)
+	}
+	if err := iprot.ReadListEnd(); err != nil {
+		return fmt.Errorf("error reading list end: %s", err)
+	}
+	return nil
+}
+
+func (p *CasArgs) ReadField5(iprot thrift.TProtocol) error {
+	if v, err := iprot.ReadI32(); err != nil {
+		return fmt.Errorf("error reading field 5: %s", err)
+	} else {
+		temp := ConsistencyLevel(v)
+		p.SerialConsistencyLevel = temp
+	}
+	return nil
+}
+
+func (p *CasArgs) ReadField6(iprot thrift.TProtocol) error {
+	if v, err := iprot.ReadI32(); err != nil {
+		return fmt.Errorf("error reading field 6: %s", err)
+	} else {
+		temp := ConsistencyLevel(v)
+		p.CommitConsistencyLevel = temp
+	}
+	return nil
+}
+
+func (p *CasArgs) Write(oprot thrift.TProtocol) error {
+	if err := oprot.WriteStructBegin("cas_args"); err != nil {
+		return fmt.Errorf("%T write struct begin error: %s", p, err)
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField4(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField5(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField6(oprot); err != nil {
+		return err
+	}
+	if err := oprot.WriteFieldStop(); err != nil {
+		return fmt.Errorf("write field stop error: %s", err)
+	}
+	if err := oprot.WriteStructEnd(); err != nil {
+		return fmt.Errorf("write struct stop error: %s", err)
+	}
+	return nil
+}
+
+func (p *CasArgs) writeField1(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
+	}
+	return err
+}
+
+func (p *CasArgs) writeField2(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("column_family", thrift.STRING, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_family: %s", p, err)
+	}
+	if err := oprot.WriteString(string(p.ColumnFamily)); err != nil {
+		return fmt.Errorf("%T.column_family (2) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_family: %s", p, err)
+	}
+	return err
+}
+
+func (p *CasArgs) writeField3(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("expected", thrift.LIST, 3); err != nil {
+		return fmt.Errorf("%T write field begin error 3:expected: %s", p, err)
+	}
+	if err := oprot.WriteListBegin(thrift.STRUCT, len(p.Expected)); err != nil {
+		return fmt.Errorf("error writing list begin: %s", err)
+	}
+	for _, v := range p.Expected {
+		if err := v.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", v, err)
+		}
+	}
+	if err := oprot.WriteListEnd(); err != nil {
+		return fmt.Errorf("error writing list end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 3:expected: %s", p, err)
+	}
+	return err
+}
+
+func (p *CasArgs) writeField4(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("updates", thrift.LIST, 4); err != nil {
+		return fmt.Errorf("%T write field begin error 4:updates: %s", p, err)
+	}
+	if err := oprot.WriteListBegin(thrift.STRUCT, len(p.Updates)); err != nil {
+		return fmt.Errorf("error writing list begin: %s", err)
+	}
+	for _, v := range p.Updates {
+		if err := v.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", v, err)
+		}
+	}
+	if err := oprot.WriteListEnd(); err != nil {
+		return fmt.Errorf("error writing list end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 4:updates: %s", p, err)
+	}
+	return err
+}
+
+func (p *CasArgs) writeField5(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("serial_consistency_level", thrift.I32, 5); err != nil {
+		return fmt.Errorf("%T write field begin error 5:serial_consistency_level: %s", p, err)
+	}
+	if err := oprot.WriteI32(int32(p.SerialConsistencyLevel)); err != nil {
+		return fmt.Errorf("%T.serial_consistency_level (5) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 5:serial_consistency_level: %s", p, err)
+	}
+	return err
+}
+
+func (p *CasArgs) writeField6(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("commit_consistency_level", thrift.I32, 6); err != nil {
+		return fmt.Errorf("%T write field begin error 6:commit_consistency_level: %s", p, err)
+	}
+	if err := oprot.WriteI32(int32(p.CommitConsistencyLevel)); err != nil {
+		return fmt.Errorf("%T.commit_consistency_level (6) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 6:commit_consistency_level: %s", p, err)
+	}
+	return err
+}
+
+func (p *CasArgs) String() string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("CasArgs(%+v)", *p)
+}
+
+type CasResult struct {
+	Success *CASResult_              `thrift:"success,0"`
+	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Ue      *UnavailableException    `thrift:"ue,2"`
+	Te      *TimedOutException       `thrift:"te,3"`
+}
+
+func NewCasResult() *CasResult {
+	return &CasResult{}
+}
+
+var CasResult_Success_DEFAULT *CASResult_
+
+func (p *CasResult) GetSuccess() *CASResult_ {
+	if !p.IsSetSuccess() {
+		return CasResult_Success_DEFAULT
+	}
+	return p.Success
+}
+
+var CasResult_Ire_DEFAULT *InvalidRequestException
+
+func (p *CasResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return CasResult_Ire_DEFAULT
+	}
+	return p.Ire
+}
+
+var CasResult_Ue_DEFAULT *UnavailableException
+
+func (p *CasResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return CasResult_Ue_DEFAULT
+	}
+	return p.Ue
+}
+
+var CasResult_Te_DEFAULT *TimedOutException
+
+func (p *CasResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return CasResult_Te_DEFAULT
+	}
+	return p.Te
+}
+func (p *CasResult) IsSetSuccess() bool {
+	return p.Success != nil
+}
+
+func (p *CasResult) IsSetIre() bool {
+	return p.Ire != nil
+}
+
+func (p *CasResult) IsSetUe() bool {
+	return p.Ue != nil
+}
+
+func (p *CasResult) IsSetTe() bool {
+	return p.Te != nil
+}
+
+func (p *CasResult) Read(iprot thrift.TProtocol) error {
+	if _, err := iprot.ReadStructBegin(); err != nil {
+		return fmt.Errorf("%T read error: %s", p, err)
+	}
+	for {
+		_, fieldTypeId, fieldId, err := iprot.ReadFieldBegin()
+		if err != nil {
+			return fmt.Errorf("%T field %d read error: %s", p, fieldId, err)
+		}
+		if fieldTypeId == thrift.STOP {
+			break
+		}
+		switch fieldId {
+		case 0:
+			if err := p.ReadField0(iprot); err != nil {
+				return err
+			}
+		case 1:
+			if err := p.ReadField1(iprot); err != nil {
+				return err
+			}
+		case 2:
+			if err := p.ReadField2(iprot); err != nil {
+				return err
+			}
+		case 3:
+			if err := p.ReadField3(iprot); err != nil {
+				return err
+			}
+		default:
+			if err := iprot.Skip(fieldTypeId); err != nil {
+				return err
+			}
+		}
+		if err := iprot.ReadFieldEnd(); err != nil {
+			return err
+		}
+	}
+	if err := iprot.ReadStructEnd(); err != nil {
+		return fmt.Errorf("%T read struct end error: %s", p, err)
+	}
+	return nil
+}
+
+func (p *CasResult) ReadField0(iprot thrift.TProtocol) error {
+	p.Success = &CASResult_{}
+	if err := p.Success.Read(iprot); err != nil {
+		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
+	}
+	return nil
+}
+
+func (p *CasResult) ReadField1(iprot thrift.TProtocol) error {
+	p.Ire = &InvalidRequestException{}
+	if err := p.Ire.Read(iprot); err != nil {
+		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
+	}
+	return nil
+}
+
+func (p *CasResult) ReadField2(iprot thrift.TProtocol) error {
+	p.Ue = &UnavailableException{}
+	if err := p.Ue.Read(iprot); err != nil {
+		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
+	}
+	return nil
+}
+
+func (p *CasResult) ReadField3(iprot thrift.TProtocol) error {
+	p.Te = &TimedOutException{}
+	if err := p.Te.Read(iprot); err != nil {
+		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
+	}
+	return nil
+}
+
+func (p *CasResult) Write(oprot thrift.TProtocol) error {
+	if err := oprot.WriteStructBegin("cas_result"); err != nil {
+		return fmt.Errorf("%T write struct begin error: %s", p, err)
+	}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := oprot.WriteFieldStop(); err != nil {
+		return fmt.Errorf("write field stop error: %s", err)
+	}
+	if err := oprot.WriteStructEnd(); err != nil {
+		return fmt.Errorf("write struct stop error: %s", err)
+	}
+	return nil
+}
+
+func (p *CasResult) writeField0(oprot thrift.TProtocol) (err error) {
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := p.Success.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", p.Success, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
+	}
+	return err
+}
+
+func (p *CasResult) writeField1(oprot thrift.TProtocol) (err error) {
+	if p.IsSetIre() {
+		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
+			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
+		}
+		if err := p.Ire.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", p.Ire, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 1:ire: %s", p, err)
+		}
+	}
+	return err
+}
+
+func (p *CasResult) writeField2(oprot thrift.TProtocol) (err error) {
+	if p.IsSetUe() {
+		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
+			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
+		}
+		if err := p.Ue.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", p.Ue, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 2:ue: %s", p, err)
+		}
+	}
+	return err
+}
+
+func (p *CasResult) writeField3(oprot thrift.TProtocol) (err error) {
+	if p.IsSetTe() {
+		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
+			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
+		}
+		if err := p.Te.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", p.Te, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 3:te: %s", p, err)
+		}
+	}
+	return err
+}
+
+func (p *CasResult) String() string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("CasResult(%+v)", *p)
+}
+
 type RemoveArgs struct {
 	Key              []byte           `thrift:"key,1,required"`
 	ColumnPath       *ColumnPath      `thrift:"column_path,2,required"`
@@ -10699,7 +11755,12 @@ func (p *RemoveArgs) GetKey() []byte {
 	return p.Key
 }
 
+var RemoveArgs_ColumnPath_DEFAULT *ColumnPath
+
 func (p *RemoveArgs) GetColumnPath() *ColumnPath {
+	if !p.IsSetColumnPath() {
+		return RemoveArgs_ColumnPath_DEFAULT
+	}
 	return p.ColumnPath
 }
 
@@ -10710,20 +11771,8 @@ func (p *RemoveArgs) GetTimestamp() int64 {
 func (p *RemoveArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *RemoveArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *RemoveArgs) IsSetColumnPath() bool {
-	return true
-}
-
-func (p *RemoveArgs) IsSetTimestamp() bool {
-	return true
-}
-
-func (p *RemoveArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.ColumnPath != nil
 }
 
 func (p *RemoveArgs) Read(iprot thrift.TProtocol) error {
@@ -10780,7 +11829,7 @@ func (p *RemoveArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.ColumnPath = NewColumnPath()
+	p.ColumnPath = &ColumnPath{}
 	if err := p.ColumnPath.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.ColumnPath, err)
 	}
@@ -10832,31 +11881,27 @@ func (p *RemoveArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *RemoveArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *RemoveArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.ColumnPath != nil {
-		if err := oprot.WriteFieldBegin("column_path", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:column_path: %s", p, err)
-		}
-		if err := p.ColumnPath.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.ColumnPath, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:column_path: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("column_path", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:column_path: %s", p, err)
+	}
+	if err := p.ColumnPath.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.ColumnPath, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:column_path: %s", p, err)
 	}
 	return err
 }
@@ -10904,27 +11949,42 @@ func NewRemoveResult() *RemoveResult {
 	return &RemoveResult{}
 }
 
+var RemoveResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *RemoveResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return RemoveResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var RemoveResult_Ue_DEFAULT *UnavailableException
+
 func (p *RemoveResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return RemoveResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var RemoveResult_Te_DEFAULT *TimedOutException
+
 func (p *RemoveResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return RemoveResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *RemoveResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *RemoveResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *RemoveResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *RemoveResult) Read(iprot thrift.TProtocol) error {
@@ -10968,7 +12028,7 @@ func (p *RemoveResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -10976,7 +12036,7 @@ func (p *RemoveResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -10984,7 +12044,7 @@ func (p *RemoveResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -10995,19 +12055,14 @@ func (p *RemoveResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("remove_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -11019,7 +12074,7 @@ func (p *RemoveResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *RemoveResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -11034,7 +12089,7 @@ func (p *RemoveResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *RemoveResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -11049,7 +12104,7 @@ func (p *RemoveResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *RemoveResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -11086,23 +12141,20 @@ func (p *RemoveCounterArgs) GetKey() []byte {
 	return p.Key
 }
 
+var RemoveCounterArgs_Path_DEFAULT *ColumnPath
+
 func (p *RemoveCounterArgs) GetPath() *ColumnPath {
+	if !p.IsSetPath() {
+		return RemoveCounterArgs_Path_DEFAULT
+	}
 	return p.Path
 }
 
 func (p *RemoveCounterArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *RemoveCounterArgs) IsSetKey() bool {
-	return true
-}
-
 func (p *RemoveCounterArgs) IsSetPath() bool {
-	return true
-}
-
-func (p *RemoveCounterArgs) IsSetConsistencyLevel() bool {
-	return true
+	return p.Path != nil
 }
 
 func (p *RemoveCounterArgs) Read(iprot thrift.TProtocol) error {
@@ -11155,7 +12207,7 @@ func (p *RemoveCounterArgs) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveCounterArgs) ReadField2(iprot thrift.TProtocol) error {
-	p.Path = NewColumnPath()
+	p.Path = &ColumnPath{}
 	if err := p.Path.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Path, err)
 	}
@@ -11195,31 +12247,27 @@ func (p *RemoveCounterArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *RemoveCounterArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Key != nil {
-		if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Key); err != nil {
-			return fmt.Errorf("%T.key (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:key: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("key", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:key: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Key); err != nil {
+		return fmt.Errorf("%T.key (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:key: %s", p, err)
 	}
 	return err
 }
 
 func (p *RemoveCounterArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Path != nil {
-		if err := oprot.WriteFieldBegin("path", thrift.STRUCT, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:path: %s", p, err)
-		}
-		if err := p.Path.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.Path, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:path: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("path", thrift.STRUCT, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:path: %s", p, err)
+	}
+	if err := p.Path.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.Path, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:path: %s", p, err)
 	}
 	return err
 }
@@ -11254,27 +12302,42 @@ func NewRemoveCounterResult() *RemoveCounterResult {
 	return &RemoveCounterResult{}
 }
 
+var RemoveCounterResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *RemoveCounterResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return RemoveCounterResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var RemoveCounterResult_Ue_DEFAULT *UnavailableException
+
 func (p *RemoveCounterResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return RemoveCounterResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var RemoveCounterResult_Te_DEFAULT *TimedOutException
+
 func (p *RemoveCounterResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return RemoveCounterResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *RemoveCounterResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *RemoveCounterResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *RemoveCounterResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *RemoveCounterResult) Read(iprot thrift.TProtocol) error {
@@ -11318,7 +12381,7 @@ func (p *RemoveCounterResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveCounterResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -11326,7 +12389,7 @@ func (p *RemoveCounterResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveCounterResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -11334,7 +12397,7 @@ func (p *RemoveCounterResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *RemoveCounterResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -11345,19 +12408,14 @@ func (p *RemoveCounterResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("remove_counter_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -11369,7 +12427,7 @@ func (p *RemoveCounterResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *RemoveCounterResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -11384,7 +12442,7 @@ func (p *RemoveCounterResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *RemoveCounterResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -11399,7 +12457,7 @@ func (p *RemoveCounterResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *RemoveCounterResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -11438,14 +12496,6 @@ func (p *BatchMutateArgs) GetMutationMap() map[string]map[string][]*Mutation {
 func (p *BatchMutateArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *BatchMutateArgs) IsSetMutationMap() bool {
-	return true
-}
-
-func (p *BatchMutateArgs) IsSetConsistencyLevel() bool {
-	return true
-}
-
 func (p *BatchMutateArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -11490,47 +12540,47 @@ func (p *BatchMutateArgs) ReadField1(iprot thrift.TProtocol) error {
 	tMap := make(map[string]map[string][]*Mutation, size)
 	p.MutationMap = tMap
 	for i := 0; i < size; i++ {
-		var _key210 string
+		var _key136 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_key210 = v
+			_key136 = v
 		}
 		_, _, size, err := iprot.ReadMapBegin()
 		if err != nil {
 			return fmt.Errorf("error reading map begin: %s", err)
 		}
 		tMap := make(map[string][]*Mutation, size)
-		_val211 := tMap
+		_val137 := tMap
 		for i := 0; i < size; i++ {
-			var _key212 string
+			var _key138 string
 			if v, err := iprot.ReadString(); err != nil {
 				return fmt.Errorf("error reading field 0: %s", err)
 			} else {
-				_key212 = v
+				_key138 = v
 			}
 			_, size, err := iprot.ReadListBegin()
 			if err != nil {
 				return fmt.Errorf("error reading list begin: %s", err)
 			}
 			tSlice := make([]*Mutation, 0, size)
-			_val213 := tSlice
+			_val139 := tSlice
 			for i := 0; i < size; i++ {
-				_elem214 := NewMutation()
-				if err := _elem214.Read(iprot); err != nil {
-					return fmt.Errorf("%T error reading struct: %s", _elem214, err)
+				_elem140 := &Mutation{}
+				if err := _elem140.Read(iprot); err != nil {
+					return fmt.Errorf("%T error reading struct: %s", _elem140, err)
 				}
-				_val213 = append(_val213, _elem214)
+				_val139 = append(_val139, _elem140)
 			}
 			if err := iprot.ReadListEnd(); err != nil {
 				return fmt.Errorf("error reading list end: %s", err)
 			}
-			_val211[_key212] = _val213
+			_val137[_key138] = _val139
 		}
 		if err := iprot.ReadMapEnd(); err != nil {
 			return fmt.Errorf("error reading map end: %s", err)
 		}
-		p.MutationMap[_key210] = _val211
+		p.MutationMap[_key136] = _val137
 	}
 	if err := iprot.ReadMapEnd(); err != nil {
 		return fmt.Errorf("error reading map end: %s", err)
@@ -11568,46 +12618,44 @@ func (p *BatchMutateArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *BatchMutateArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.MutationMap != nil {
-		if err := oprot.WriteFieldBegin("mutation_map", thrift.MAP, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:mutation_map: %s", p, err)
+	if err := oprot.WriteFieldBegin("mutation_map", thrift.MAP, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:mutation_map: %s", p, err)
+	}
+	if err := oprot.WriteMapBegin(thrift.STRING, thrift.MAP, len(p.MutationMap)); err != nil {
+		return fmt.Errorf("error writing map begin: %s", err)
+	}
+	for k, v := range p.MutationMap {
+		if err := oprot.WriteString(string(k)); err != nil {
+			return fmt.Errorf("%T. (0) field write error: %s", p, err)
 		}
-		if err := oprot.WriteMapBegin(thrift.STRING, thrift.MAP, len(p.MutationMap)); err != nil {
+		if err := oprot.WriteMapBegin(thrift.STRING, thrift.LIST, len(v)); err != nil {
 			return fmt.Errorf("error writing map begin: %s", err)
 		}
-		for k, v := range p.MutationMap {
+		for k, v := range v {
 			if err := oprot.WriteString(string(k)); err != nil {
 				return fmt.Errorf("%T. (0) field write error: %s", p, err)
 			}
-			if err := oprot.WriteMapBegin(thrift.STRING, thrift.LIST, len(v)); err != nil {
-				return fmt.Errorf("error writing map begin: %s", err)
+			if err := oprot.WriteListBegin(thrift.STRUCT, len(v)); err != nil {
+				return fmt.Errorf("error writing list begin: %s", err)
 			}
-			for k, v := range v {
-				if err := oprot.WriteString(string(k)); err != nil {
-					return fmt.Errorf("%T. (0) field write error: %s", p, err)
-				}
-				if err := oprot.WriteListBegin(thrift.STRUCT, len(v)); err != nil {
-					return fmt.Errorf("error writing list begin: %s", err)
-				}
-				for _, v := range v {
-					if err := v.Write(oprot); err != nil {
-						return fmt.Errorf("%T error writing struct: %s", v, err)
-					}
-				}
-				if err := oprot.WriteListEnd(); err != nil {
-					return fmt.Errorf("error writing list end: %s", err)
+			for _, v := range v {
+				if err := v.Write(oprot); err != nil {
+					return fmt.Errorf("%T error writing struct: %s", v, err)
 				}
 			}
-			if err := oprot.WriteMapEnd(); err != nil {
-				return fmt.Errorf("error writing map end: %s", err)
+			if err := oprot.WriteListEnd(); err != nil {
+				return fmt.Errorf("error writing list end: %s", err)
 			}
 		}
 		if err := oprot.WriteMapEnd(); err != nil {
 			return fmt.Errorf("error writing map end: %s", err)
 		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:mutation_map: %s", p, err)
-		}
+	}
+	if err := oprot.WriteMapEnd(); err != nil {
+		return fmt.Errorf("error writing map end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:mutation_map: %s", p, err)
 	}
 	return err
 }
@@ -11642,27 +12690,42 @@ func NewBatchMutateResult() *BatchMutateResult {
 	return &BatchMutateResult{}
 }
 
+var BatchMutateResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *BatchMutateResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return BatchMutateResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var BatchMutateResult_Ue_DEFAULT *UnavailableException
+
 func (p *BatchMutateResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return BatchMutateResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var BatchMutateResult_Te_DEFAULT *TimedOutException
+
 func (p *BatchMutateResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return BatchMutateResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *BatchMutateResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *BatchMutateResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *BatchMutateResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *BatchMutateResult) Read(iprot thrift.TProtocol) error {
@@ -11706,7 +12769,7 @@ func (p *BatchMutateResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *BatchMutateResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -11714,7 +12777,7 @@ func (p *BatchMutateResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *BatchMutateResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -11722,7 +12785,7 @@ func (p *BatchMutateResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *BatchMutateResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -11733,19 +12796,14 @@ func (p *BatchMutateResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("batch_mutate_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -11757,7 +12815,7 @@ func (p *BatchMutateResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *BatchMutateResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -11772,7 +12830,7 @@ func (p *BatchMutateResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *BatchMutateResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -11787,7 +12845,7 @@ func (p *BatchMutateResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *BatchMutateResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -11826,14 +12884,6 @@ func (p *AtomicBatchMutateArgs) GetMutationMap() map[string]map[string][]*Mutati
 func (p *AtomicBatchMutateArgs) GetConsistencyLevel() ConsistencyLevel {
 	return p.ConsistencyLevel
 }
-func (p *AtomicBatchMutateArgs) IsSetMutationMap() bool {
-	return true
-}
-
-func (p *AtomicBatchMutateArgs) IsSetConsistencyLevel() bool {
-	return true
-}
-
 func (p *AtomicBatchMutateArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -11878,47 +12928,47 @@ func (p *AtomicBatchMutateArgs) ReadField1(iprot thrift.TProtocol) error {
 	tMap := make(map[string]map[string][]*Mutation, size)
 	p.MutationMap = tMap
 	for i := 0; i < size; i++ {
-		var _key215 string
+		var _key141 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_key215 = v
+			_key141 = v
 		}
 		_, _, size, err := iprot.ReadMapBegin()
 		if err != nil {
 			return fmt.Errorf("error reading map begin: %s", err)
 		}
 		tMap := make(map[string][]*Mutation, size)
-		_val216 := tMap
+		_val142 := tMap
 		for i := 0; i < size; i++ {
-			var _key217 string
+			var _key143 string
 			if v, err := iprot.ReadString(); err != nil {
 				return fmt.Errorf("error reading field 0: %s", err)
 			} else {
-				_key217 = v
+				_key143 = v
 			}
 			_, size, err := iprot.ReadListBegin()
 			if err != nil {
 				return fmt.Errorf("error reading list begin: %s", err)
 			}
 			tSlice := make([]*Mutation, 0, size)
-			_val218 := tSlice
+			_val144 := tSlice
 			for i := 0; i < size; i++ {
-				_elem219 := NewMutation()
-				if err := _elem219.Read(iprot); err != nil {
-					return fmt.Errorf("%T error reading struct: %s", _elem219, err)
+				_elem145 := &Mutation{}
+				if err := _elem145.Read(iprot); err != nil {
+					return fmt.Errorf("%T error reading struct: %s", _elem145, err)
 				}
-				_val218 = append(_val218, _elem219)
+				_val144 = append(_val144, _elem145)
 			}
 			if err := iprot.ReadListEnd(); err != nil {
 				return fmt.Errorf("error reading list end: %s", err)
 			}
-			_val216[_key217] = _val218
+			_val142[_key143] = _val144
 		}
 		if err := iprot.ReadMapEnd(); err != nil {
 			return fmt.Errorf("error reading map end: %s", err)
 		}
-		p.MutationMap[_key215] = _val216
+		p.MutationMap[_key141] = _val142
 	}
 	if err := iprot.ReadMapEnd(); err != nil {
 		return fmt.Errorf("error reading map end: %s", err)
@@ -11956,46 +13006,44 @@ func (p *AtomicBatchMutateArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *AtomicBatchMutateArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.MutationMap != nil {
-		if err := oprot.WriteFieldBegin("mutation_map", thrift.MAP, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:mutation_map: %s", p, err)
+	if err := oprot.WriteFieldBegin("mutation_map", thrift.MAP, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:mutation_map: %s", p, err)
+	}
+	if err := oprot.WriteMapBegin(thrift.STRING, thrift.MAP, len(p.MutationMap)); err != nil {
+		return fmt.Errorf("error writing map begin: %s", err)
+	}
+	for k, v := range p.MutationMap {
+		if err := oprot.WriteString(string(k)); err != nil {
+			return fmt.Errorf("%T. (0) field write error: %s", p, err)
 		}
-		if err := oprot.WriteMapBegin(thrift.STRING, thrift.MAP, len(p.MutationMap)); err != nil {
+		if err := oprot.WriteMapBegin(thrift.STRING, thrift.LIST, len(v)); err != nil {
 			return fmt.Errorf("error writing map begin: %s", err)
 		}
-		for k, v := range p.MutationMap {
+		for k, v := range v {
 			if err := oprot.WriteString(string(k)); err != nil {
 				return fmt.Errorf("%T. (0) field write error: %s", p, err)
 			}
-			if err := oprot.WriteMapBegin(thrift.STRING, thrift.LIST, len(v)); err != nil {
-				return fmt.Errorf("error writing map begin: %s", err)
+			if err := oprot.WriteListBegin(thrift.STRUCT, len(v)); err != nil {
+				return fmt.Errorf("error writing list begin: %s", err)
 			}
-			for k, v := range v {
-				if err := oprot.WriteString(string(k)); err != nil {
-					return fmt.Errorf("%T. (0) field write error: %s", p, err)
-				}
-				if err := oprot.WriteListBegin(thrift.STRUCT, len(v)); err != nil {
-					return fmt.Errorf("error writing list begin: %s", err)
-				}
-				for _, v := range v {
-					if err := v.Write(oprot); err != nil {
-						return fmt.Errorf("%T error writing struct: %s", v, err)
-					}
-				}
-				if err := oprot.WriteListEnd(); err != nil {
-					return fmt.Errorf("error writing list end: %s", err)
+			for _, v := range v {
+				if err := v.Write(oprot); err != nil {
+					return fmt.Errorf("%T error writing struct: %s", v, err)
 				}
 			}
-			if err := oprot.WriteMapEnd(); err != nil {
-				return fmt.Errorf("error writing map end: %s", err)
+			if err := oprot.WriteListEnd(); err != nil {
+				return fmt.Errorf("error writing list end: %s", err)
 			}
 		}
 		if err := oprot.WriteMapEnd(); err != nil {
 			return fmt.Errorf("error writing map end: %s", err)
 		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:mutation_map: %s", p, err)
-		}
+	}
+	if err := oprot.WriteMapEnd(); err != nil {
+		return fmt.Errorf("error writing map end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:mutation_map: %s", p, err)
 	}
 	return err
 }
@@ -12030,27 +13078,42 @@ func NewAtomicBatchMutateResult() *AtomicBatchMutateResult {
 	return &AtomicBatchMutateResult{}
 }
 
+var AtomicBatchMutateResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *AtomicBatchMutateResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return AtomicBatchMutateResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var AtomicBatchMutateResult_Ue_DEFAULT *UnavailableException
+
 func (p *AtomicBatchMutateResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return AtomicBatchMutateResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var AtomicBatchMutateResult_Te_DEFAULT *TimedOutException
+
 func (p *AtomicBatchMutateResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return AtomicBatchMutateResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *AtomicBatchMutateResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *AtomicBatchMutateResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *AtomicBatchMutateResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *AtomicBatchMutateResult) Read(iprot thrift.TProtocol) error {
@@ -12094,7 +13157,7 @@ func (p *AtomicBatchMutateResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *AtomicBatchMutateResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -12102,7 +13165,7 @@ func (p *AtomicBatchMutateResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *AtomicBatchMutateResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -12110,7 +13173,7 @@ func (p *AtomicBatchMutateResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *AtomicBatchMutateResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -12121,19 +13184,14 @@ func (p *AtomicBatchMutateResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("atomic_batch_mutate_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -12145,7 +13203,7 @@ func (p *AtomicBatchMutateResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *AtomicBatchMutateResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -12160,7 +13218,7 @@ func (p *AtomicBatchMutateResult) writeField1(oprot thrift.TProtocol) (err error
 }
 
 func (p *AtomicBatchMutateResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -12175,7 +13233,7 @@ func (p *AtomicBatchMutateResult) writeField2(oprot thrift.TProtocol) (err error
 }
 
 func (p *AtomicBatchMutateResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -12207,10 +13265,6 @@ func NewTruncateArgs() *TruncateArgs {
 func (p *TruncateArgs) GetCfname() string {
 	return p.Cfname
 }
-func (p *TruncateArgs) IsSetCfname() bool {
-	return true
-}
-
 func (p *TruncateArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -12298,27 +13352,42 @@ func NewTruncateResult() *TruncateResult {
 	return &TruncateResult{}
 }
 
+var TruncateResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *TruncateResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return TruncateResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var TruncateResult_Ue_DEFAULT *UnavailableException
+
 func (p *TruncateResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return TruncateResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var TruncateResult_Te_DEFAULT *TimedOutException
+
 func (p *TruncateResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return TruncateResult_Te_DEFAULT
+	}
 	return p.Te
 }
 func (p *TruncateResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *TruncateResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *TruncateResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *TruncateResult) Read(iprot thrift.TProtocol) error {
@@ -12362,7 +13431,7 @@ func (p *TruncateResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *TruncateResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -12370,7 +13439,7 @@ func (p *TruncateResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *TruncateResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -12378,7 +13447,7 @@ func (p *TruncateResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *TruncateResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -12389,19 +13458,14 @@ func (p *TruncateResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("truncate_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -12413,7 +13477,7 @@ func (p *TruncateResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *TruncateResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -12428,7 +13492,7 @@ func (p *TruncateResult) writeField1(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *TruncateResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -12443,7 +13507,7 @@ func (p *TruncateResult) writeField2(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *TruncateResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -12525,19 +13589,26 @@ func NewDescribeSchemaVersionsResult() *DescribeSchemaVersionsResult {
 	return &DescribeSchemaVersionsResult{}
 }
 
+var DescribeSchemaVersionsResult_Success_DEFAULT map[string][]string
+
 func (p *DescribeSchemaVersionsResult) GetSuccess() map[string][]string {
 	return p.Success
 }
 
+var DescribeSchemaVersionsResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeSchemaVersionsResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeSchemaVersionsResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeSchemaVersionsResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeSchemaVersionsResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeSchemaVersionsResult) Read(iprot thrift.TProtocol) error {
@@ -12584,31 +13655,31 @@ func (p *DescribeSchemaVersionsResult) ReadField0(iprot thrift.TProtocol) error 
 	tMap := make(map[string][]string, size)
 	p.Success = tMap
 	for i := 0; i < size; i++ {
-		var _key220 string
+		var _key146 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_key220 = v
+			_key146 = v
 		}
 		_, size, err := iprot.ReadListBegin()
 		if err != nil {
 			return fmt.Errorf("error reading list begin: %s", err)
 		}
 		tSlice := make([]string, 0, size)
-		_val221 := tSlice
+		_val147 := tSlice
 		for i := 0; i < size; i++ {
-			var _elem222 string
+			var _elem148 string
 			if v, err := iprot.ReadString(); err != nil {
 				return fmt.Errorf("error reading field 0: %s", err)
 			} else {
-				_elem222 = v
+				_elem148 = v
 			}
-			_val221 = append(_val221, _elem222)
+			_val147 = append(_val147, _elem148)
 		}
 		if err := iprot.ReadListEnd(); err != nil {
 			return fmt.Errorf("error reading list end: %s", err)
 		}
-		p.Success[_key220] = _val221
+		p.Success[_key146] = _val147
 	}
 	if err := iprot.ReadMapEnd(); err != nil {
 		return fmt.Errorf("error reading map end: %s", err)
@@ -12617,7 +13688,7 @@ func (p *DescribeSchemaVersionsResult) ReadField0(iprot thrift.TProtocol) error 
 }
 
 func (p *DescribeSchemaVersionsResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -12628,15 +13699,11 @@ func (p *DescribeSchemaVersionsResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_schema_versions_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -12648,7 +13715,7 @@ func (p *DescribeSchemaVersionsResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeSchemaVersionsResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.MAP, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -12682,7 +13749,7 @@ func (p *DescribeSchemaVersionsResult) writeField0(oprot thrift.TProtocol) (err 
 }
 
 func (p *DescribeSchemaVersionsResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -12764,19 +13831,26 @@ func NewDescribeKeyspacesResult() *DescribeKeyspacesResult {
 	return &DescribeKeyspacesResult{}
 }
 
+var DescribeKeyspacesResult_Success_DEFAULT []*KsDef
+
 func (p *DescribeKeyspacesResult) GetSuccess() []*KsDef {
 	return p.Success
 }
 
+var DescribeKeyspacesResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeKeyspacesResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeKeyspacesResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeKeyspacesResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeKeyspacesResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeKeyspacesResult) Read(iprot thrift.TProtocol) error {
@@ -12823,11 +13897,13 @@ func (p *DescribeKeyspacesResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*KsDef, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem223 := NewKsDef()
-		if err := _elem223.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem223, err)
+		_elem149 := &KsDef{
+			DurableWrites: true,
 		}
-		p.Success = append(p.Success, _elem223)
+		if err := _elem149.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem149, err)
+		}
+		p.Success = append(p.Success, _elem149)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -12836,7 +13912,7 @@ func (p *DescribeKeyspacesResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeKeyspacesResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -12847,15 +13923,11 @@ func (p *DescribeKeyspacesResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_keyspaces_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -12867,7 +13939,7 @@ func (p *DescribeKeyspacesResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeKeyspacesResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -12890,7 +13962,7 @@ func (p *DescribeKeyspacesResult) writeField0(oprot thrift.TProtocol) (err error
 }
 
 func (p *DescribeKeyspacesResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -12964,18 +14036,23 @@ func (p *DescribeClusterNameArgs) String() string {
 }
 
 type DescribeClusterNameResult struct {
-	Success string `thrift:"success,0"`
+	Success *string `thrift:"success,0"`
 }
 
 func NewDescribeClusterNameResult() *DescribeClusterNameResult {
 	return &DescribeClusterNameResult{}
 }
 
+var DescribeClusterNameResult_Success_DEFAULT string
+
 func (p *DescribeClusterNameResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return DescribeClusterNameResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 func (p *DescribeClusterNameResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeClusterNameResult) Read(iprot thrift.TProtocol) error {
@@ -13014,7 +14091,7 @@ func (p *DescribeClusterNameResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
@@ -13023,11 +14100,8 @@ func (p *DescribeClusterNameResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_cluster_name_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -13039,14 +14113,16 @@ func (p *DescribeClusterNameResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeClusterNameResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
@@ -13111,18 +14187,23 @@ func (p *DescribeVersionArgs) String() string {
 }
 
 type DescribeVersionResult struct {
-	Success string `thrift:"success,0"`
+	Success *string `thrift:"success,0"`
 }
 
 func NewDescribeVersionResult() *DescribeVersionResult {
 	return &DescribeVersionResult{}
 }
 
+var DescribeVersionResult_Success_DEFAULT string
+
 func (p *DescribeVersionResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return DescribeVersionResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 func (p *DescribeVersionResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeVersionResult) Read(iprot thrift.TProtocol) error {
@@ -13161,7 +14242,7 @@ func (p *DescribeVersionResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
@@ -13170,11 +14251,8 @@ func (p *DescribeVersionResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_version_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -13186,14 +14264,16 @@ func (p *DescribeVersionResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeVersionResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
@@ -13216,10 +14296,6 @@ func NewDescribeRingArgs() *DescribeRingArgs {
 func (p *DescribeRingArgs) GetKeyspace() string {
 	return p.Keyspace
 }
-func (p *DescribeRingArgs) IsSetKeyspace() bool {
-	return true
-}
-
 func (p *DescribeRingArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -13306,19 +14382,26 @@ func NewDescribeRingResult() *DescribeRingResult {
 	return &DescribeRingResult{}
 }
 
+var DescribeRingResult_Success_DEFAULT []*TokenRange
+
 func (p *DescribeRingResult) GetSuccess() []*TokenRange {
 	return p.Success
 }
 
+var DescribeRingResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeRingResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeRingResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeRingResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeRingResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeRingResult) Read(iprot thrift.TProtocol) error {
@@ -13365,11 +14448,11 @@ func (p *DescribeRingResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*TokenRange, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem224 := NewTokenRange()
-		if err := _elem224.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem224, err)
+		_elem150 := &TokenRange{}
+		if err := _elem150.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem150, err)
 		}
-		p.Success = append(p.Success, _elem224)
+		p.Success = append(p.Success, _elem150)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -13378,7 +14461,7 @@ func (p *DescribeRingResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeRingResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -13389,15 +14472,11 @@ func (p *DescribeRingResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_ring_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -13409,7 +14488,7 @@ func (p *DescribeRingResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeRingResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -13432,7 +14511,7 @@ func (p *DescribeRingResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *DescribeRingResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -13451,6 +14530,253 @@ func (p *DescribeRingResult) String() string {
 		return "<nil>"
 	}
 	return fmt.Sprintf("DescribeRingResult(%+v)", *p)
+}
+
+type DescribeLocalRingArgs struct {
+	Keyspace string `thrift:"keyspace,1,required"`
+}
+
+func NewDescribeLocalRingArgs() *DescribeLocalRingArgs {
+	return &DescribeLocalRingArgs{}
+}
+
+func (p *DescribeLocalRingArgs) GetKeyspace() string {
+	return p.Keyspace
+}
+func (p *DescribeLocalRingArgs) Read(iprot thrift.TProtocol) error {
+	if _, err := iprot.ReadStructBegin(); err != nil {
+		return fmt.Errorf("%T read error: %s", p, err)
+	}
+	for {
+		_, fieldTypeId, fieldId, err := iprot.ReadFieldBegin()
+		if err != nil {
+			return fmt.Errorf("%T field %d read error: %s", p, fieldId, err)
+		}
+		if fieldTypeId == thrift.STOP {
+			break
+		}
+		switch fieldId {
+		case 1:
+			if err := p.ReadField1(iprot); err != nil {
+				return err
+			}
+		default:
+			if err := iprot.Skip(fieldTypeId); err != nil {
+				return err
+			}
+		}
+		if err := iprot.ReadFieldEnd(); err != nil {
+			return err
+		}
+	}
+	if err := iprot.ReadStructEnd(); err != nil {
+		return fmt.Errorf("%T read struct end error: %s", p, err)
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingArgs) ReadField1(iprot thrift.TProtocol) error {
+	if v, err := iprot.ReadString(); err != nil {
+		return fmt.Errorf("error reading field 1: %s", err)
+	} else {
+		p.Keyspace = v
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingArgs) Write(oprot thrift.TProtocol) error {
+	if err := oprot.WriteStructBegin("describe_local_ring_args"); err != nil {
+		return fmt.Errorf("%T write struct begin error: %s", p, err)
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := oprot.WriteFieldStop(); err != nil {
+		return fmt.Errorf("write field stop error: %s", err)
+	}
+	if err := oprot.WriteStructEnd(); err != nil {
+		return fmt.Errorf("write struct stop error: %s", err)
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingArgs) writeField1(oprot thrift.TProtocol) (err error) {
+	if err := oprot.WriteFieldBegin("keyspace", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:keyspace: %s", p, err)
+	}
+	if err := oprot.WriteString(string(p.Keyspace)); err != nil {
+		return fmt.Errorf("%T.keyspace (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:keyspace: %s", p, err)
+	}
+	return err
+}
+
+func (p *DescribeLocalRingArgs) String() string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("DescribeLocalRingArgs(%+v)", *p)
+}
+
+type DescribeLocalRingResult struct {
+	Success []*TokenRange            `thrift:"success,0"`
+	Ire     *InvalidRequestException `thrift:"ire,1"`
+}
+
+func NewDescribeLocalRingResult() *DescribeLocalRingResult {
+	return &DescribeLocalRingResult{}
+}
+
+var DescribeLocalRingResult_Success_DEFAULT []*TokenRange
+
+func (p *DescribeLocalRingResult) GetSuccess() []*TokenRange {
+	return p.Success
+}
+
+var DescribeLocalRingResult_Ire_DEFAULT *InvalidRequestException
+
+func (p *DescribeLocalRingResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeLocalRingResult_Ire_DEFAULT
+	}
+	return p.Ire
+}
+func (p *DescribeLocalRingResult) IsSetSuccess() bool {
+	return p.Success != nil
+}
+
+func (p *DescribeLocalRingResult) IsSetIre() bool {
+	return p.Ire != nil
+}
+
+func (p *DescribeLocalRingResult) Read(iprot thrift.TProtocol) error {
+	if _, err := iprot.ReadStructBegin(); err != nil {
+		return fmt.Errorf("%T read error: %s", p, err)
+	}
+	for {
+		_, fieldTypeId, fieldId, err := iprot.ReadFieldBegin()
+		if err != nil {
+			return fmt.Errorf("%T field %d read error: %s", p, fieldId, err)
+		}
+		if fieldTypeId == thrift.STOP {
+			break
+		}
+		switch fieldId {
+		case 0:
+			if err := p.ReadField0(iprot); err != nil {
+				return err
+			}
+		case 1:
+			if err := p.ReadField1(iprot); err != nil {
+				return err
+			}
+		default:
+			if err := iprot.Skip(fieldTypeId); err != nil {
+				return err
+			}
+		}
+		if err := iprot.ReadFieldEnd(); err != nil {
+			return err
+		}
+	}
+	if err := iprot.ReadStructEnd(); err != nil {
+		return fmt.Errorf("%T read struct end error: %s", p, err)
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingResult) ReadField0(iprot thrift.TProtocol) error {
+	_, size, err := iprot.ReadListBegin()
+	if err != nil {
+		return fmt.Errorf("error reading list begin: %s", err)
+	}
+	tSlice := make([]*TokenRange, 0, size)
+	p.Success = tSlice
+	for i := 0; i < size; i++ {
+		_elem151 := &TokenRange{}
+		if err := _elem151.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem151, err)
+		}
+		p.Success = append(p.Success, _elem151)
+	}
+	if err := iprot.ReadListEnd(); err != nil {
+		return fmt.Errorf("error reading list end: %s", err)
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingResult) ReadField1(iprot thrift.TProtocol) error {
+	p.Ire = &InvalidRequestException{}
+	if err := p.Ire.Read(iprot); err != nil {
+		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingResult) Write(oprot thrift.TProtocol) error {
+	if err := oprot.WriteStructBegin("describe_local_ring_result"); err != nil {
+		return fmt.Errorf("%T write struct begin error: %s", p, err)
+	}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := oprot.WriteFieldStop(); err != nil {
+		return fmt.Errorf("write field stop error: %s", err)
+	}
+	if err := oprot.WriteStructEnd(); err != nil {
+		return fmt.Errorf("write struct stop error: %s", err)
+	}
+	return nil
+}
+
+func (p *DescribeLocalRingResult) writeField0(oprot thrift.TProtocol) (err error) {
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteListBegin(thrift.STRUCT, len(p.Success)); err != nil {
+			return fmt.Errorf("error writing list begin: %s", err)
+		}
+		for _, v := range p.Success {
+			if err := v.Write(oprot); err != nil {
+				return fmt.Errorf("%T error writing struct: %s", v, err)
+			}
+		}
+		if err := oprot.WriteListEnd(); err != nil {
+			return fmt.Errorf("error writing list end: %s", err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
+	}
+	return err
+}
+
+func (p *DescribeLocalRingResult) writeField1(oprot thrift.TProtocol) (err error) {
+	if p.IsSetIre() {
+		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
+			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
+		}
+		if err := p.Ire.Write(oprot); err != nil {
+			return fmt.Errorf("%T error writing struct: %s", p.Ire, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 1:ire: %s", p, err)
+		}
+	}
+	return err
+}
+
+func (p *DescribeLocalRingResult) String() string {
+	if p == nil {
+		return "<nil>"
+	}
+	return fmt.Sprintf("DescribeLocalRingResult(%+v)", *p)
 }
 
 type DescribeTokenMapArgs struct {
@@ -13514,19 +14840,26 @@ func NewDescribeTokenMapResult() *DescribeTokenMapResult {
 	return &DescribeTokenMapResult{}
 }
 
+var DescribeTokenMapResult_Success_DEFAULT map[string]string
+
 func (p *DescribeTokenMapResult) GetSuccess() map[string]string {
 	return p.Success
 }
 
+var DescribeTokenMapResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeTokenMapResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeTokenMapResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeTokenMapResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeTokenMapResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeTokenMapResult) Read(iprot thrift.TProtocol) error {
@@ -13573,19 +14906,19 @@ func (p *DescribeTokenMapResult) ReadField0(iprot thrift.TProtocol) error {
 	tMap := make(map[string]string, size)
 	p.Success = tMap
 	for i := 0; i < size; i++ {
-		var _key225 string
+		var _key152 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_key225 = v
+			_key152 = v
 		}
-		var _val226 string
+		var _val153 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_val226 = v
+			_val153 = v
 		}
-		p.Success[_key225] = _val226
+		p.Success[_key152] = _val153
 	}
 	if err := iprot.ReadMapEnd(); err != nil {
 		return fmt.Errorf("error reading map end: %s", err)
@@ -13594,7 +14927,7 @@ func (p *DescribeTokenMapResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeTokenMapResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -13605,15 +14938,11 @@ func (p *DescribeTokenMapResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_token_map_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -13625,7 +14954,7 @@ func (p *DescribeTokenMapResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeTokenMapResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.MAP, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -13651,7 +14980,7 @@ func (p *DescribeTokenMapResult) writeField0(oprot thrift.TProtocol) (err error)
 }
 
 func (p *DescribeTokenMapResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -13725,18 +15054,23 @@ func (p *DescribePartitionerArgs) String() string {
 }
 
 type DescribePartitionerResult struct {
-	Success string `thrift:"success,0"`
+	Success *string `thrift:"success,0"`
 }
 
 func NewDescribePartitionerResult() *DescribePartitionerResult {
 	return &DescribePartitionerResult{}
 }
 
+var DescribePartitionerResult_Success_DEFAULT string
+
 func (p *DescribePartitionerResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return DescribePartitionerResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 func (p *DescribePartitionerResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribePartitionerResult) Read(iprot thrift.TProtocol) error {
@@ -13775,7 +15109,7 @@ func (p *DescribePartitionerResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
@@ -13784,11 +15118,8 @@ func (p *DescribePartitionerResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_partitioner_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -13800,14 +15131,16 @@ func (p *DescribePartitionerResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribePartitionerResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
@@ -13872,18 +15205,23 @@ func (p *DescribeSnitchArgs) String() string {
 }
 
 type DescribeSnitchResult struct {
-	Success string `thrift:"success,0"`
+	Success *string `thrift:"success,0"`
 }
 
 func NewDescribeSnitchResult() *DescribeSnitchResult {
 	return &DescribeSnitchResult{}
 }
 
+var DescribeSnitchResult_Success_DEFAULT string
+
 func (p *DescribeSnitchResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return DescribeSnitchResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 func (p *DescribeSnitchResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeSnitchResult) Read(iprot thrift.TProtocol) error {
@@ -13922,7 +15260,7 @@ func (p *DescribeSnitchResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
@@ -13931,11 +15269,8 @@ func (p *DescribeSnitchResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_snitch_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -13947,14 +15282,16 @@ func (p *DescribeSnitchResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeSnitchResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
@@ -13977,10 +15314,6 @@ func NewDescribeKeyspaceArgs() *DescribeKeyspaceArgs {
 func (p *DescribeKeyspaceArgs) GetKeyspace() string {
 	return p.Keyspace
 }
-func (p *DescribeKeyspaceArgs) IsSetKeyspace() bool {
-	return true
-}
-
 func (p *DescribeKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14068,27 +15401,42 @@ func NewDescribeKeyspaceResult() *DescribeKeyspaceResult {
 	return &DescribeKeyspaceResult{}
 }
 
+var DescribeKeyspaceResult_Success_DEFAULT *KsDef
+
 func (p *DescribeKeyspaceResult) GetSuccess() *KsDef {
+	if !p.IsSetSuccess() {
+		return DescribeKeyspaceResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var DescribeKeyspaceResult_Nfe_DEFAULT *NotFoundException
+
 func (p *DescribeKeyspaceResult) GetNfe() *NotFoundException {
+	if !p.IsSetNfe() {
+		return DescribeKeyspaceResult_Nfe_DEFAULT
+	}
 	return p.Nfe
 }
 
+var DescribeKeyspaceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeKeyspaceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeKeyspaceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeKeyspaceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeKeyspaceResult) IsSetNfe() bool {
-	return true
+	return p.Nfe != nil
 }
 
 func (p *DescribeKeyspaceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -14132,7 +15480,9 @@ func (p *DescribeKeyspaceResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeKeyspaceResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewKsDef()
+	p.Success = &KsDef{
+		DurableWrites: true,
+	}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -14140,7 +15490,7 @@ func (p *DescribeKeyspaceResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Nfe = NewNotFoundException()
+	p.Nfe = &NotFoundException{}
 	if err := p.Nfe.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Nfe, err)
 	}
@@ -14148,7 +15498,7 @@ func (p *DescribeKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeKeyspaceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -14159,19 +15509,14 @@ func (p *DescribeKeyspaceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_keyspace_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Nfe != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -14183,7 +15528,7 @@ func (p *DescribeKeyspaceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeKeyspaceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -14198,7 +15543,7 @@ func (p *DescribeKeyspaceResult) writeField0(oprot thrift.TProtocol) (err error)
 }
 
 func (p *DescribeKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Nfe != nil {
+	if p.IsSetNfe() {
 		if err := oprot.WriteFieldBegin("nfe", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:nfe: %s", p, err)
 		}
@@ -14213,7 +15558,7 @@ func (p *DescribeKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error)
 }
 
 func (p *DescribeKeyspaceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ire: %s", p, err)
 		}
@@ -14260,22 +15605,6 @@ func (p *DescribeSplitsArgs) GetEndToken() string {
 func (p *DescribeSplitsArgs) GetKeysPerSplit() int32 {
 	return p.KeysPerSplit
 }
-func (p *DescribeSplitsArgs) IsSetCfName() bool {
-	return true
-}
-
-func (p *DescribeSplitsArgs) IsSetStartToken() bool {
-	return true
-}
-
-func (p *DescribeSplitsArgs) IsSetEndToken() bool {
-	return true
-}
-
-func (p *DescribeSplitsArgs) IsSetKeysPerSplit() bool {
-	return true
-}
-
 func (p *DescribeSplitsArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14449,19 +15778,26 @@ func NewDescribeSplitsResult() *DescribeSplitsResult {
 	return &DescribeSplitsResult{}
 }
 
+var DescribeSplitsResult_Success_DEFAULT []string
+
 func (p *DescribeSplitsResult) GetSuccess() []string {
 	return p.Success
 }
 
+var DescribeSplitsResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeSplitsResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeSplitsResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeSplitsResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeSplitsResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeSplitsResult) Read(iprot thrift.TProtocol) error {
@@ -14508,13 +15844,13 @@ func (p *DescribeSplitsResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]string, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		var _elem227 string
+		var _elem154 string
 		if v, err := iprot.ReadString(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_elem227 = v
+			_elem154 = v
 		}
-		p.Success = append(p.Success, _elem227)
+		p.Success = append(p.Success, _elem154)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -14523,7 +15859,7 @@ func (p *DescribeSplitsResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeSplitsResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -14534,15 +15870,11 @@ func (p *DescribeSplitsResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_splits_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -14554,7 +15886,7 @@ func (p *DescribeSplitsResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeSplitsResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -14577,7 +15909,7 @@ func (p *DescribeSplitsResult) writeField0(oprot thrift.TProtocol) (err error) {
 }
 
 func (p *DescribeSplitsResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -14658,11 +15990,13 @@ func NewTraceNextQueryResult() *TraceNextQueryResult {
 	return &TraceNextQueryResult{}
 }
 
+var TraceNextQueryResult_Success_DEFAULT []byte
+
 func (p *TraceNextQueryResult) GetSuccess() []byte {
 	return p.Success
 }
 func (p *TraceNextQueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *TraceNextQueryResult) Read(iprot thrift.TProtocol) error {
@@ -14710,11 +16044,8 @@ func (p *TraceNextQueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("trace_next_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -14726,7 +16057,7 @@ func (p *TraceNextQueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *TraceNextQueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -14773,22 +16104,6 @@ func (p *DescribeSplitsExArgs) GetEndToken() string {
 func (p *DescribeSplitsExArgs) GetKeysPerSplit() int32 {
 	return p.KeysPerSplit
 }
-func (p *DescribeSplitsExArgs) IsSetCfName() bool {
-	return true
-}
-
-func (p *DescribeSplitsExArgs) IsSetStartToken() bool {
-	return true
-}
-
-func (p *DescribeSplitsExArgs) IsSetEndToken() bool {
-	return true
-}
-
-func (p *DescribeSplitsExArgs) IsSetKeysPerSplit() bool {
-	return true
-}
-
 func (p *DescribeSplitsExArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -14962,19 +16277,26 @@ func NewDescribeSplitsExResult() *DescribeSplitsExResult {
 	return &DescribeSplitsExResult{}
 }
 
+var DescribeSplitsExResult_Success_DEFAULT []*CfSplit
+
 func (p *DescribeSplitsExResult) GetSuccess() []*CfSplit {
 	return p.Success
 }
 
+var DescribeSplitsExResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *DescribeSplitsExResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return DescribeSplitsExResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *DescribeSplitsExResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *DescribeSplitsExResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *DescribeSplitsExResult) Read(iprot thrift.TProtocol) error {
@@ -15021,11 +16343,11 @@ func (p *DescribeSplitsExResult) ReadField0(iprot thrift.TProtocol) error {
 	tSlice := make([]*CfSplit, 0, size)
 	p.Success = tSlice
 	for i := 0; i < size; i++ {
-		_elem228 := NewCfSplit()
-		if err := _elem228.Read(iprot); err != nil {
-			return fmt.Errorf("%T error reading struct: %s", _elem228, err)
+		_elem155 := &CfSplit{}
+		if err := _elem155.Read(iprot); err != nil {
+			return fmt.Errorf("%T error reading struct: %s", _elem155, err)
 		}
-		p.Success = append(p.Success, _elem228)
+		p.Success = append(p.Success, _elem155)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -15034,7 +16356,7 @@ func (p *DescribeSplitsExResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *DescribeSplitsExResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -15045,15 +16367,11 @@ func (p *DescribeSplitsExResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("describe_splits_ex_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -15065,7 +16383,7 @@ func (p *DescribeSplitsExResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *DescribeSplitsExResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.LIST, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -15088,7 +16406,7 @@ func (p *DescribeSplitsExResult) writeField0(oprot thrift.TProtocol) (err error)
 }
 
 func (p *DescribeSplitsExResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -15117,11 +16435,16 @@ func NewSystemAddColumnFamilyArgs() *SystemAddColumnFamilyArgs {
 	return &SystemAddColumnFamilyArgs{}
 }
 
+var SystemAddColumnFamilyArgs_CfDef_DEFAULT *CfDef
+
 func (p *SystemAddColumnFamilyArgs) GetCfDef() *CfDef {
+	if !p.IsSetCfDef() {
+		return SystemAddColumnFamilyArgs_CfDef_DEFAULT
+	}
 	return p.CfDef
 }
 func (p *SystemAddColumnFamilyArgs) IsSetCfDef() bool {
-	return true
+	return p.CfDef != nil
 }
 
 func (p *SystemAddColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
@@ -15157,7 +16480,15 @@ func (p *SystemAddColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddColumnFamilyArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.CfDef = NewCfDef()
+	p.CfDef = &CfDef{
+		ColumnType: "Standard",
+
+		ComparatorType: "BytesType",
+
+		Caching: "keys_only",
+
+		SpeculativeRetry: "NONE",
+	}
 	if err := p.CfDef.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.CfDef, err)
 	}
@@ -15181,16 +16512,14 @@ func (p *SystemAddColumnFamilyArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddColumnFamilyArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.CfDef != nil {
-		if err := oprot.WriteFieldBegin("cf_def", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:cf_def: %s", p, err)
-		}
-		if err := p.CfDef.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.CfDef, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:cf_def: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("cf_def", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:cf_def: %s", p, err)
+	}
+	if err := p.CfDef.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.CfDef, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:cf_def: %s", p, err)
 	}
 	return err
 }
@@ -15203,7 +16532,7 @@ func (p *SystemAddColumnFamilyArgs) String() string {
 }
 
 type SystemAddColumnFamilyResult struct {
-	Success string                       `thrift:"success,0"`
+	Success *string                      `thrift:"success,0"`
 	Ire     *InvalidRequestException     `thrift:"ire,1"`
 	Sde     *SchemaDisagreementException `thrift:"sde,2"`
 }
@@ -15212,27 +16541,42 @@ func NewSystemAddColumnFamilyResult() *SystemAddColumnFamilyResult {
 	return &SystemAddColumnFamilyResult{}
 }
 
+var SystemAddColumnFamilyResult_Success_DEFAULT string
+
 func (p *SystemAddColumnFamilyResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return SystemAddColumnFamilyResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var SystemAddColumnFamilyResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SystemAddColumnFamilyResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SystemAddColumnFamilyResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var SystemAddColumnFamilyResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *SystemAddColumnFamilyResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return SystemAddColumnFamilyResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *SystemAddColumnFamilyResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *SystemAddColumnFamilyResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SystemAddColumnFamilyResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *SystemAddColumnFamilyResult) Read(iprot thrift.TProtocol) error {
@@ -15279,13 +16623,13 @@ func (p *SystemAddColumnFamilyResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *SystemAddColumnFamilyResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -15293,7 +16637,7 @@ func (p *SystemAddColumnFamilyResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddColumnFamilyResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -15304,19 +16648,14 @@ func (p *SystemAddColumnFamilyResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("system_add_column_family_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -15328,20 +16667,22 @@ func (p *SystemAddColumnFamilyResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddColumnFamilyResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *SystemAddColumnFamilyResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -15356,7 +16697,7 @@ func (p *SystemAddColumnFamilyResult) writeField1(oprot thrift.TProtocol) (err e
 }
 
 func (p *SystemAddColumnFamilyResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:sde: %s", p, err)
 		}
@@ -15388,10 +16729,6 @@ func NewSystemDropColumnFamilyArgs() *SystemDropColumnFamilyArgs {
 func (p *SystemDropColumnFamilyArgs) GetColumnFamily() string {
 	return p.ColumnFamily
 }
-func (p *SystemDropColumnFamilyArgs) IsSetColumnFamily() bool {
-	return true
-}
-
 func (p *SystemDropColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -15470,7 +16807,7 @@ func (p *SystemDropColumnFamilyArgs) String() string {
 }
 
 type SystemDropColumnFamilyResult struct {
-	Success string                       `thrift:"success,0"`
+	Success *string                      `thrift:"success,0"`
 	Ire     *InvalidRequestException     `thrift:"ire,1"`
 	Sde     *SchemaDisagreementException `thrift:"sde,2"`
 }
@@ -15479,27 +16816,42 @@ func NewSystemDropColumnFamilyResult() *SystemDropColumnFamilyResult {
 	return &SystemDropColumnFamilyResult{}
 }
 
+var SystemDropColumnFamilyResult_Success_DEFAULT string
+
 func (p *SystemDropColumnFamilyResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return SystemDropColumnFamilyResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var SystemDropColumnFamilyResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SystemDropColumnFamilyResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SystemDropColumnFamilyResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var SystemDropColumnFamilyResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *SystemDropColumnFamilyResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return SystemDropColumnFamilyResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *SystemDropColumnFamilyResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *SystemDropColumnFamilyResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SystemDropColumnFamilyResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *SystemDropColumnFamilyResult) Read(iprot thrift.TProtocol) error {
@@ -15546,13 +16898,13 @@ func (p *SystemDropColumnFamilyResult) ReadField0(iprot thrift.TProtocol) error 
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *SystemDropColumnFamilyResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -15560,7 +16912,7 @@ func (p *SystemDropColumnFamilyResult) ReadField1(iprot thrift.TProtocol) error 
 }
 
 func (p *SystemDropColumnFamilyResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -15571,19 +16923,14 @@ func (p *SystemDropColumnFamilyResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("system_drop_column_family_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -15595,20 +16942,22 @@ func (p *SystemDropColumnFamilyResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemDropColumnFamilyResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *SystemDropColumnFamilyResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -15623,7 +16972,7 @@ func (p *SystemDropColumnFamilyResult) writeField1(oprot thrift.TProtocol) (err 
 }
 
 func (p *SystemDropColumnFamilyResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:sde: %s", p, err)
 		}
@@ -15652,11 +17001,16 @@ func NewSystemAddKeyspaceArgs() *SystemAddKeyspaceArgs {
 	return &SystemAddKeyspaceArgs{}
 }
 
+var SystemAddKeyspaceArgs_KsDef_DEFAULT *KsDef
+
 func (p *SystemAddKeyspaceArgs) GetKsDef() *KsDef {
+	if !p.IsSetKsDef() {
+		return SystemAddKeyspaceArgs_KsDef_DEFAULT
+	}
 	return p.KsDef
 }
 func (p *SystemAddKeyspaceArgs) IsSetKsDef() bool {
-	return true
+	return p.KsDef != nil
 }
 
 func (p *SystemAddKeyspaceArgs) Read(iprot thrift.TProtocol) error {
@@ -15692,7 +17046,9 @@ func (p *SystemAddKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddKeyspaceArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.KsDef = NewKsDef()
+	p.KsDef = &KsDef{
+		DurableWrites: true,
+	}
 	if err := p.KsDef.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.KsDef, err)
 	}
@@ -15716,16 +17072,14 @@ func (p *SystemAddKeyspaceArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddKeyspaceArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.KsDef != nil {
-		if err := oprot.WriteFieldBegin("ks_def", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:ks_def: %s", p, err)
-		}
-		if err := p.KsDef.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.KsDef, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:ks_def: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("ks_def", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:ks_def: %s", p, err)
+	}
+	if err := p.KsDef.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.KsDef, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:ks_def: %s", p, err)
 	}
 	return err
 }
@@ -15738,7 +17092,7 @@ func (p *SystemAddKeyspaceArgs) String() string {
 }
 
 type SystemAddKeyspaceResult struct {
-	Success string                       `thrift:"success,0"`
+	Success *string                      `thrift:"success,0"`
 	Ire     *InvalidRequestException     `thrift:"ire,1"`
 	Sde     *SchemaDisagreementException `thrift:"sde,2"`
 }
@@ -15747,27 +17101,42 @@ func NewSystemAddKeyspaceResult() *SystemAddKeyspaceResult {
 	return &SystemAddKeyspaceResult{}
 }
 
+var SystemAddKeyspaceResult_Success_DEFAULT string
+
 func (p *SystemAddKeyspaceResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return SystemAddKeyspaceResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var SystemAddKeyspaceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SystemAddKeyspaceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SystemAddKeyspaceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var SystemAddKeyspaceResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *SystemAddKeyspaceResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return SystemAddKeyspaceResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *SystemAddKeyspaceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *SystemAddKeyspaceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SystemAddKeyspaceResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *SystemAddKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -15814,13 +17183,13 @@ func (p *SystemAddKeyspaceResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *SystemAddKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -15828,7 +17197,7 @@ func (p *SystemAddKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddKeyspaceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -15839,19 +17208,14 @@ func (p *SystemAddKeyspaceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("system_add_keyspace_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -15863,20 +17227,22 @@ func (p *SystemAddKeyspaceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemAddKeyspaceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *SystemAddKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -15891,7 +17257,7 @@ func (p *SystemAddKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error
 }
 
 func (p *SystemAddKeyspaceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:sde: %s", p, err)
 		}
@@ -15923,10 +17289,6 @@ func NewSystemDropKeyspaceArgs() *SystemDropKeyspaceArgs {
 func (p *SystemDropKeyspaceArgs) GetKeyspace() string {
 	return p.Keyspace
 }
-func (p *SystemDropKeyspaceArgs) IsSetKeyspace() bool {
-	return true
-}
-
 func (p *SystemDropKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -16005,7 +17367,7 @@ func (p *SystemDropKeyspaceArgs) String() string {
 }
 
 type SystemDropKeyspaceResult struct {
-	Success string                       `thrift:"success,0"`
+	Success *string                      `thrift:"success,0"`
 	Ire     *InvalidRequestException     `thrift:"ire,1"`
 	Sde     *SchemaDisagreementException `thrift:"sde,2"`
 }
@@ -16014,27 +17376,42 @@ func NewSystemDropKeyspaceResult() *SystemDropKeyspaceResult {
 	return &SystemDropKeyspaceResult{}
 }
 
+var SystemDropKeyspaceResult_Success_DEFAULT string
+
 func (p *SystemDropKeyspaceResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return SystemDropKeyspaceResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var SystemDropKeyspaceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SystemDropKeyspaceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SystemDropKeyspaceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var SystemDropKeyspaceResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *SystemDropKeyspaceResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return SystemDropKeyspaceResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *SystemDropKeyspaceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *SystemDropKeyspaceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SystemDropKeyspaceResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *SystemDropKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -16081,13 +17458,13 @@ func (p *SystemDropKeyspaceResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *SystemDropKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -16095,7 +17472,7 @@ func (p *SystemDropKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemDropKeyspaceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -16106,19 +17483,14 @@ func (p *SystemDropKeyspaceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("system_drop_keyspace_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -16130,20 +17502,22 @@ func (p *SystemDropKeyspaceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemDropKeyspaceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *SystemDropKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -16158,7 +17532,7 @@ func (p *SystemDropKeyspaceResult) writeField1(oprot thrift.TProtocol) (err erro
 }
 
 func (p *SystemDropKeyspaceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:sde: %s", p, err)
 		}
@@ -16187,11 +17561,16 @@ func NewSystemUpdateKeyspaceArgs() *SystemUpdateKeyspaceArgs {
 	return &SystemUpdateKeyspaceArgs{}
 }
 
+var SystemUpdateKeyspaceArgs_KsDef_DEFAULT *KsDef
+
 func (p *SystemUpdateKeyspaceArgs) GetKsDef() *KsDef {
+	if !p.IsSetKsDef() {
+		return SystemUpdateKeyspaceArgs_KsDef_DEFAULT
+	}
 	return p.KsDef
 }
 func (p *SystemUpdateKeyspaceArgs) IsSetKsDef() bool {
-	return true
+	return p.KsDef != nil
 }
 
 func (p *SystemUpdateKeyspaceArgs) Read(iprot thrift.TProtocol) error {
@@ -16227,7 +17606,9 @@ func (p *SystemUpdateKeyspaceArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateKeyspaceArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.KsDef = NewKsDef()
+	p.KsDef = &KsDef{
+		DurableWrites: true,
+	}
 	if err := p.KsDef.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.KsDef, err)
 	}
@@ -16251,16 +17632,14 @@ func (p *SystemUpdateKeyspaceArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateKeyspaceArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.KsDef != nil {
-		if err := oprot.WriteFieldBegin("ks_def", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:ks_def: %s", p, err)
-		}
-		if err := p.KsDef.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.KsDef, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:ks_def: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("ks_def", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:ks_def: %s", p, err)
+	}
+	if err := p.KsDef.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.KsDef, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:ks_def: %s", p, err)
 	}
 	return err
 }
@@ -16273,7 +17652,7 @@ func (p *SystemUpdateKeyspaceArgs) String() string {
 }
 
 type SystemUpdateKeyspaceResult struct {
-	Success string                       `thrift:"success,0"`
+	Success *string                      `thrift:"success,0"`
 	Ire     *InvalidRequestException     `thrift:"ire,1"`
 	Sde     *SchemaDisagreementException `thrift:"sde,2"`
 }
@@ -16282,27 +17661,42 @@ func NewSystemUpdateKeyspaceResult() *SystemUpdateKeyspaceResult {
 	return &SystemUpdateKeyspaceResult{}
 }
 
+var SystemUpdateKeyspaceResult_Success_DEFAULT string
+
 func (p *SystemUpdateKeyspaceResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return SystemUpdateKeyspaceResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var SystemUpdateKeyspaceResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SystemUpdateKeyspaceResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SystemUpdateKeyspaceResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var SystemUpdateKeyspaceResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *SystemUpdateKeyspaceResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return SystemUpdateKeyspaceResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *SystemUpdateKeyspaceResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *SystemUpdateKeyspaceResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SystemUpdateKeyspaceResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *SystemUpdateKeyspaceResult) Read(iprot thrift.TProtocol) error {
@@ -16349,13 +17743,13 @@ func (p *SystemUpdateKeyspaceResult) ReadField0(iprot thrift.TProtocol) error {
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *SystemUpdateKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -16363,7 +17757,7 @@ func (p *SystemUpdateKeyspaceResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateKeyspaceResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -16374,19 +17768,14 @@ func (p *SystemUpdateKeyspaceResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("system_update_keyspace_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -16398,20 +17787,22 @@ func (p *SystemUpdateKeyspaceResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateKeyspaceResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *SystemUpdateKeyspaceResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -16426,7 +17817,7 @@ func (p *SystemUpdateKeyspaceResult) writeField1(oprot thrift.TProtocol) (err er
 }
 
 func (p *SystemUpdateKeyspaceResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:sde: %s", p, err)
 		}
@@ -16455,11 +17846,16 @@ func NewSystemUpdateColumnFamilyArgs() *SystemUpdateColumnFamilyArgs {
 	return &SystemUpdateColumnFamilyArgs{}
 }
 
+var SystemUpdateColumnFamilyArgs_CfDef_DEFAULT *CfDef
+
 func (p *SystemUpdateColumnFamilyArgs) GetCfDef() *CfDef {
+	if !p.IsSetCfDef() {
+		return SystemUpdateColumnFamilyArgs_CfDef_DEFAULT
+	}
 	return p.CfDef
 }
 func (p *SystemUpdateColumnFamilyArgs) IsSetCfDef() bool {
-	return true
+	return p.CfDef != nil
 }
 
 func (p *SystemUpdateColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
@@ -16495,7 +17891,15 @@ func (p *SystemUpdateColumnFamilyArgs) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateColumnFamilyArgs) ReadField1(iprot thrift.TProtocol) error {
-	p.CfDef = NewCfDef()
+	p.CfDef = &CfDef{
+		ColumnType: "Standard",
+
+		ComparatorType: "BytesType",
+
+		Caching: "keys_only",
+
+		SpeculativeRetry: "NONE",
+	}
 	if err := p.CfDef.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.CfDef, err)
 	}
@@ -16519,16 +17923,14 @@ func (p *SystemUpdateColumnFamilyArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateColumnFamilyArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.CfDef != nil {
-		if err := oprot.WriteFieldBegin("cf_def", thrift.STRUCT, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:cf_def: %s", p, err)
-		}
-		if err := p.CfDef.Write(oprot); err != nil {
-			return fmt.Errorf("%T error writing struct: %s", p.CfDef, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:cf_def: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("cf_def", thrift.STRUCT, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:cf_def: %s", p, err)
+	}
+	if err := p.CfDef.Write(oprot); err != nil {
+		return fmt.Errorf("%T error writing struct: %s", p.CfDef, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:cf_def: %s", p, err)
 	}
 	return err
 }
@@ -16541,7 +17943,7 @@ func (p *SystemUpdateColumnFamilyArgs) String() string {
 }
 
 type SystemUpdateColumnFamilyResult struct {
-	Success string                       `thrift:"success,0"`
+	Success *string                      `thrift:"success,0"`
 	Ire     *InvalidRequestException     `thrift:"ire,1"`
 	Sde     *SchemaDisagreementException `thrift:"sde,2"`
 }
@@ -16550,27 +17952,42 @@ func NewSystemUpdateColumnFamilyResult() *SystemUpdateColumnFamilyResult {
 	return &SystemUpdateColumnFamilyResult{}
 }
 
+var SystemUpdateColumnFamilyResult_Success_DEFAULT string
+
 func (p *SystemUpdateColumnFamilyResult) GetSuccess() string {
-	return p.Success
+	if !p.IsSetSuccess() {
+		return SystemUpdateColumnFamilyResult_Success_DEFAULT
+	}
+	return *p.Success
 }
 
+var SystemUpdateColumnFamilyResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SystemUpdateColumnFamilyResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SystemUpdateColumnFamilyResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var SystemUpdateColumnFamilyResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *SystemUpdateColumnFamilyResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return SystemUpdateColumnFamilyResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *SystemUpdateColumnFamilyResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *SystemUpdateColumnFamilyResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SystemUpdateColumnFamilyResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *SystemUpdateColumnFamilyResult) Read(iprot thrift.TProtocol) error {
@@ -16617,13 +18034,13 @@ func (p *SystemUpdateColumnFamilyResult) ReadField0(iprot thrift.TProtocol) erro
 	if v, err := iprot.ReadString(); err != nil {
 		return fmt.Errorf("error reading field 0: %s", err)
 	} else {
-		p.Success = v
+		p.Success = &v
 	}
 	return nil
 }
 
 func (p *SystemUpdateColumnFamilyResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -16631,7 +18048,7 @@ func (p *SystemUpdateColumnFamilyResult) ReadField1(iprot thrift.TProtocol) erro
 }
 
 func (p *SystemUpdateColumnFamilyResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -16642,19 +18059,14 @@ func (p *SystemUpdateColumnFamilyResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("system_update_column_family_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -16666,20 +18078,22 @@ func (p *SystemUpdateColumnFamilyResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SystemUpdateColumnFamilyResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
-		return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
-	}
-	if err := oprot.WriteString(string(p.Success)); err != nil {
-		return fmt.Errorf("%T.success (0) field write error: %s", p, err)
-	}
-	if err := oprot.WriteFieldEnd(); err != nil {
-		return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+	if p.IsSetSuccess() {
+		if err := oprot.WriteFieldBegin("success", thrift.STRING, 0); err != nil {
+			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
+		}
+		if err := oprot.WriteString(string(*p.Success)); err != nil {
+			return fmt.Errorf("%T.success (0) field write error: %s", p, err)
+		}
+		if err := oprot.WriteFieldEnd(); err != nil {
+			return fmt.Errorf("%T write field end error 0:success: %s", p, err)
+		}
 	}
 	return err
 }
 
 func (p *SystemUpdateColumnFamilyResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -16694,7 +18108,7 @@ func (p *SystemUpdateColumnFamilyResult) writeField1(oprot thrift.TProtocol) (er
 }
 
 func (p *SystemUpdateColumnFamilyResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:sde: %s", p, err)
 		}
@@ -16731,14 +18145,6 @@ func (p *ExecuteCqlQueryArgs) GetQuery() []byte {
 func (p *ExecuteCqlQueryArgs) GetCompression() Compression {
 	return p.Compression
 }
-func (p *ExecuteCqlQueryArgs) IsSetQuery() bool {
-	return true
-}
-
-func (p *ExecuteCqlQueryArgs) IsSetCompression() bool {
-	return true
-}
-
 func (p *ExecuteCqlQueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -16814,16 +18220,14 @@ func (p *ExecuteCqlQueryArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Query != nil {
-		if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Query); err != nil {
-			return fmt.Errorf("%T.query (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:query: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Query); err != nil {
+		return fmt.Errorf("%T.query (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:query: %s", p, err)
 	}
 	return err
 }
@@ -16860,43 +18264,68 @@ func NewExecuteCqlQueryResult() *ExecuteCqlQueryResult {
 	return &ExecuteCqlQueryResult{}
 }
 
+var ExecuteCqlQueryResult_Success_DEFAULT *CqlResult_
+
 func (p *ExecuteCqlQueryResult) GetSuccess() *CqlResult_ {
+	if !p.IsSetSuccess() {
+		return ExecuteCqlQueryResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var ExecuteCqlQueryResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *ExecuteCqlQueryResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return ExecuteCqlQueryResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var ExecuteCqlQueryResult_Ue_DEFAULT *UnavailableException
+
 func (p *ExecuteCqlQueryResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return ExecuteCqlQueryResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var ExecuteCqlQueryResult_Te_DEFAULT *TimedOutException
+
 func (p *ExecuteCqlQueryResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return ExecuteCqlQueryResult_Te_DEFAULT
+	}
 	return p.Te
 }
 
+var ExecuteCqlQueryResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *ExecuteCqlQueryResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return ExecuteCqlQueryResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *ExecuteCqlQueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *ExecuteCqlQueryResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *ExecuteCqlQueryResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *ExecuteCqlQueryResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *ExecuteCqlQueryResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *ExecuteCqlQueryResult) Read(iprot thrift.TProtocol) error {
@@ -16948,7 +18377,7 @@ func (p *ExecuteCqlQueryResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewCqlResult_()
+	p.Success = &CqlResult_{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -16956,7 +18385,7 @@ func (p *ExecuteCqlQueryResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -16964,7 +18393,7 @@ func (p *ExecuteCqlQueryResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -16972,7 +18401,7 @@ func (p *ExecuteCqlQueryResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -16980,7 +18409,7 @@ func (p *ExecuteCqlQueryResult) ReadField3(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryResult) ReadField4(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -16991,27 +18420,20 @@ func (p *ExecuteCqlQueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("execute_cql_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField4(oprot); err != nil {
-			return err
-		}
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField4(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -17023,7 +18445,7 @@ func (p *ExecuteCqlQueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCqlQueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -17038,7 +18460,7 @@ func (p *ExecuteCqlQueryResult) writeField0(oprot thrift.TProtocol) (err error) 
 }
 
 func (p *ExecuteCqlQueryResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -17053,7 +18475,7 @@ func (p *ExecuteCqlQueryResult) writeField1(oprot thrift.TProtocol) (err error) 
 }
 
 func (p *ExecuteCqlQueryResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -17068,7 +18490,7 @@ func (p *ExecuteCqlQueryResult) writeField2(oprot thrift.TProtocol) (err error) 
 }
 
 func (p *ExecuteCqlQueryResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -17083,7 +18505,7 @@ func (p *ExecuteCqlQueryResult) writeField3(oprot thrift.TProtocol) (err error) 
 }
 
 func (p *ExecuteCqlQueryResult) writeField4(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 4); err != nil {
 			return fmt.Errorf("%T write field begin error 4:sde: %s", p, err)
 		}
@@ -17125,18 +18547,6 @@ func (p *ExecuteCql3QueryArgs) GetCompression() Compression {
 func (p *ExecuteCql3QueryArgs) GetConsistency() ConsistencyLevel {
 	return p.Consistency
 }
-func (p *ExecuteCql3QueryArgs) IsSetQuery() bool {
-	return true
-}
-
-func (p *ExecuteCql3QueryArgs) IsSetCompression() bool {
-	return true
-}
-
-func (p *ExecuteCql3QueryArgs) IsSetConsistency() bool {
-	return true
-}
-
 func (p *ExecuteCql3QueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -17229,16 +18639,14 @@ func (p *ExecuteCql3QueryArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Query != nil {
-		if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Query); err != nil {
-			return fmt.Errorf("%T.query (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:query: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Query); err != nil {
+		return fmt.Errorf("%T.query (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:query: %s", p, err)
 	}
 	return err
 }
@@ -17288,43 +18696,68 @@ func NewExecuteCql3QueryResult() *ExecuteCql3QueryResult {
 	return &ExecuteCql3QueryResult{}
 }
 
+var ExecuteCql3QueryResult_Success_DEFAULT *CqlResult_
+
 func (p *ExecuteCql3QueryResult) GetSuccess() *CqlResult_ {
+	if !p.IsSetSuccess() {
+		return ExecuteCql3QueryResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var ExecuteCql3QueryResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *ExecuteCql3QueryResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return ExecuteCql3QueryResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var ExecuteCql3QueryResult_Ue_DEFAULT *UnavailableException
+
 func (p *ExecuteCql3QueryResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return ExecuteCql3QueryResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var ExecuteCql3QueryResult_Te_DEFAULT *TimedOutException
+
 func (p *ExecuteCql3QueryResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return ExecuteCql3QueryResult_Te_DEFAULT
+	}
 	return p.Te
 }
 
+var ExecuteCql3QueryResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *ExecuteCql3QueryResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return ExecuteCql3QueryResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *ExecuteCql3QueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *ExecuteCql3QueryResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *ExecuteCql3QueryResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *ExecuteCql3QueryResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *ExecuteCql3QueryResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *ExecuteCql3QueryResult) Read(iprot thrift.TProtocol) error {
@@ -17376,7 +18809,7 @@ func (p *ExecuteCql3QueryResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewCqlResult_()
+	p.Success = &CqlResult_{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -17384,7 +18817,7 @@ func (p *ExecuteCql3QueryResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -17392,7 +18825,7 @@ func (p *ExecuteCql3QueryResult) ReadField1(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -17400,7 +18833,7 @@ func (p *ExecuteCql3QueryResult) ReadField2(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -17408,7 +18841,7 @@ func (p *ExecuteCql3QueryResult) ReadField3(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryResult) ReadField4(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -17419,27 +18852,20 @@ func (p *ExecuteCql3QueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("execute_cql3_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField4(oprot); err != nil {
-			return err
-		}
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField4(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -17451,7 +18877,7 @@ func (p *ExecuteCql3QueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *ExecuteCql3QueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -17466,7 +18892,7 @@ func (p *ExecuteCql3QueryResult) writeField0(oprot thrift.TProtocol) (err error)
 }
 
 func (p *ExecuteCql3QueryResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -17481,7 +18907,7 @@ func (p *ExecuteCql3QueryResult) writeField1(oprot thrift.TProtocol) (err error)
 }
 
 func (p *ExecuteCql3QueryResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -17496,7 +18922,7 @@ func (p *ExecuteCql3QueryResult) writeField2(oprot thrift.TProtocol) (err error)
 }
 
 func (p *ExecuteCql3QueryResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -17511,7 +18937,7 @@ func (p *ExecuteCql3QueryResult) writeField3(oprot thrift.TProtocol) (err error)
 }
 
 func (p *ExecuteCql3QueryResult) writeField4(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 4); err != nil {
 			return fmt.Errorf("%T write field begin error 4:sde: %s", p, err)
 		}
@@ -17548,14 +18974,6 @@ func (p *PrepareCqlQueryArgs) GetQuery() []byte {
 func (p *PrepareCqlQueryArgs) GetCompression() Compression {
 	return p.Compression
 }
-func (p *PrepareCqlQueryArgs) IsSetQuery() bool {
-	return true
-}
-
-func (p *PrepareCqlQueryArgs) IsSetCompression() bool {
-	return true
-}
-
 func (p *PrepareCqlQueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -17631,16 +19049,14 @@ func (p *PrepareCqlQueryArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCqlQueryArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Query != nil {
-		if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Query); err != nil {
-			return fmt.Errorf("%T.query (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:query: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Query); err != nil {
+		return fmt.Errorf("%T.query (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:query: %s", p, err)
 	}
 	return err
 }
@@ -17674,19 +19090,29 @@ func NewPrepareCqlQueryResult() *PrepareCqlQueryResult {
 	return &PrepareCqlQueryResult{}
 }
 
+var PrepareCqlQueryResult_Success_DEFAULT *CqlPreparedResult_
+
 func (p *PrepareCqlQueryResult) GetSuccess() *CqlPreparedResult_ {
+	if !p.IsSetSuccess() {
+		return PrepareCqlQueryResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var PrepareCqlQueryResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *PrepareCqlQueryResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return PrepareCqlQueryResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *PrepareCqlQueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *PrepareCqlQueryResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *PrepareCqlQueryResult) Read(iprot thrift.TProtocol) error {
@@ -17726,7 +19152,7 @@ func (p *PrepareCqlQueryResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCqlQueryResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewCqlPreparedResult_()
+	p.Success = &CqlPreparedResult_{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -17734,7 +19160,7 @@ func (p *PrepareCqlQueryResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCqlQueryResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -17745,15 +19171,11 @@ func (p *PrepareCqlQueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("prepare_cql_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -17765,7 +19187,7 @@ func (p *PrepareCqlQueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCqlQueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -17780,7 +19202,7 @@ func (p *PrepareCqlQueryResult) writeField0(oprot thrift.TProtocol) (err error) 
 }
 
 func (p *PrepareCqlQueryResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -17817,14 +19239,6 @@ func (p *PrepareCql3QueryArgs) GetQuery() []byte {
 func (p *PrepareCql3QueryArgs) GetCompression() Compression {
 	return p.Compression
 }
-func (p *PrepareCql3QueryArgs) IsSetQuery() bool {
-	return true
-}
-
-func (p *PrepareCql3QueryArgs) IsSetCompression() bool {
-	return true
-}
-
 func (p *PrepareCql3QueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -17900,16 +19314,14 @@ func (p *PrepareCql3QueryArgs) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCql3QueryArgs) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Query != nil {
-		if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
-			return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
-		}
-		if err := oprot.WriteBinary(p.Query); err != nil {
-			return fmt.Errorf("%T.query (1) field write error: %s", p, err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 1:query: %s", p, err)
-		}
+	if err := oprot.WriteFieldBegin("query", thrift.STRING, 1); err != nil {
+		return fmt.Errorf("%T write field begin error 1:query: %s", p, err)
+	}
+	if err := oprot.WriteBinary(p.Query); err != nil {
+		return fmt.Errorf("%T.query (1) field write error: %s", p, err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 1:query: %s", p, err)
 	}
 	return err
 }
@@ -17943,19 +19355,29 @@ func NewPrepareCql3QueryResult() *PrepareCql3QueryResult {
 	return &PrepareCql3QueryResult{}
 }
 
+var PrepareCql3QueryResult_Success_DEFAULT *CqlPreparedResult_
+
 func (p *PrepareCql3QueryResult) GetSuccess() *CqlPreparedResult_ {
+	if !p.IsSetSuccess() {
+		return PrepareCql3QueryResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var PrepareCql3QueryResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *PrepareCql3QueryResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return PrepareCql3QueryResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *PrepareCql3QueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *PrepareCql3QueryResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *PrepareCql3QueryResult) Read(iprot thrift.TProtocol) error {
@@ -17995,7 +19417,7 @@ func (p *PrepareCql3QueryResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCql3QueryResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewCqlPreparedResult_()
+	p.Success = &CqlPreparedResult_{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -18003,7 +19425,7 @@ func (p *PrepareCql3QueryResult) ReadField0(iprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCql3QueryResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -18014,15 +19436,11 @@ func (p *PrepareCql3QueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("prepare_cql3_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -18034,7 +19452,7 @@ func (p *PrepareCql3QueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *PrepareCql3QueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -18049,7 +19467,7 @@ func (p *PrepareCql3QueryResult) writeField0(oprot thrift.TProtocol) (err error)
 }
 
 func (p *PrepareCql3QueryResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -18086,14 +19504,6 @@ func (p *ExecutePreparedCqlQueryArgs) GetItemId() int32 {
 func (p *ExecutePreparedCqlQueryArgs) GetValues() [][]byte {
 	return p.Values
 }
-func (p *ExecutePreparedCqlQueryArgs) IsSetItemId() bool {
-	return true
-}
-
-func (p *ExecutePreparedCqlQueryArgs) IsSetValues() bool {
-	return true
-}
-
 func (p *ExecutePreparedCqlQueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -18147,13 +19557,13 @@ func (p *ExecutePreparedCqlQueryArgs) ReadField2(iprot thrift.TProtocol) error {
 	tSlice := make([][]byte, 0, size)
 	p.Values = tSlice
 	for i := 0; i < size; i++ {
-		var _elem229 []byte
+		var _elem156 []byte
 		if v, err := iprot.ReadBinary(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_elem229 = v
+			_elem156 = v
 		}
-		p.Values = append(p.Values, _elem229)
+		p.Values = append(p.Values, _elem156)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -18194,24 +19604,22 @@ func (p *ExecutePreparedCqlQueryArgs) writeField1(oprot thrift.TProtocol) (err e
 }
 
 func (p *ExecutePreparedCqlQueryArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Values != nil {
-		if err := oprot.WriteFieldBegin("values", thrift.LIST, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:values: %s", p, err)
+	if err := oprot.WriteFieldBegin("values", thrift.LIST, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:values: %s", p, err)
+	}
+	if err := oprot.WriteListBegin(thrift.STRING, len(p.Values)); err != nil {
+		return fmt.Errorf("error writing list begin: %s", err)
+	}
+	for _, v := range p.Values {
+		if err := oprot.WriteBinary(v); err != nil {
+			return fmt.Errorf("%T. (0) field write error: %s", p, err)
 		}
-		if err := oprot.WriteListBegin(thrift.STRING, len(p.Values)); err != nil {
-			return fmt.Errorf("error writing list begin: %s", err)
-		}
-		for _, v := range p.Values {
-			if err := oprot.WriteBinary(v); err != nil {
-				return fmt.Errorf("%T. (0) field write error: %s", p, err)
-			}
-		}
-		if err := oprot.WriteListEnd(); err != nil {
-			return fmt.Errorf("error writing list end: %s", err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:values: %s", p, err)
-		}
+	}
+	if err := oprot.WriteListEnd(); err != nil {
+		return fmt.Errorf("error writing list end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:values: %s", p, err)
 	}
 	return err
 }
@@ -18235,43 +19643,68 @@ func NewExecutePreparedCqlQueryResult() *ExecutePreparedCqlQueryResult {
 	return &ExecutePreparedCqlQueryResult{}
 }
 
+var ExecutePreparedCqlQueryResult_Success_DEFAULT *CqlResult_
+
 func (p *ExecutePreparedCqlQueryResult) GetSuccess() *CqlResult_ {
+	if !p.IsSetSuccess() {
+		return ExecutePreparedCqlQueryResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var ExecutePreparedCqlQueryResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *ExecutePreparedCqlQueryResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return ExecutePreparedCqlQueryResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var ExecutePreparedCqlQueryResult_Ue_DEFAULT *UnavailableException
+
 func (p *ExecutePreparedCqlQueryResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return ExecutePreparedCqlQueryResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var ExecutePreparedCqlQueryResult_Te_DEFAULT *TimedOutException
+
 func (p *ExecutePreparedCqlQueryResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return ExecutePreparedCqlQueryResult_Te_DEFAULT
+	}
 	return p.Te
 }
 
+var ExecutePreparedCqlQueryResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *ExecutePreparedCqlQueryResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return ExecutePreparedCqlQueryResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *ExecutePreparedCqlQueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *ExecutePreparedCqlQueryResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *ExecutePreparedCqlQueryResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *ExecutePreparedCqlQueryResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *ExecutePreparedCqlQueryResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *ExecutePreparedCqlQueryResult) Read(iprot thrift.TProtocol) error {
@@ -18323,7 +19756,7 @@ func (p *ExecutePreparedCqlQueryResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecutePreparedCqlQueryResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewCqlResult_()
+	p.Success = &CqlResult_{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -18331,7 +19764,7 @@ func (p *ExecutePreparedCqlQueryResult) ReadField0(iprot thrift.TProtocol) error
 }
 
 func (p *ExecutePreparedCqlQueryResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -18339,7 +19772,7 @@ func (p *ExecutePreparedCqlQueryResult) ReadField1(iprot thrift.TProtocol) error
 }
 
 func (p *ExecutePreparedCqlQueryResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -18347,7 +19780,7 @@ func (p *ExecutePreparedCqlQueryResult) ReadField2(iprot thrift.TProtocol) error
 }
 
 func (p *ExecutePreparedCqlQueryResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -18355,7 +19788,7 @@ func (p *ExecutePreparedCqlQueryResult) ReadField3(iprot thrift.TProtocol) error
 }
 
 func (p *ExecutePreparedCqlQueryResult) ReadField4(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -18366,27 +19799,20 @@ func (p *ExecutePreparedCqlQueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("execute_prepared_cql_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField4(oprot); err != nil {
-			return err
-		}
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField4(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -18398,7 +19824,7 @@ func (p *ExecutePreparedCqlQueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *ExecutePreparedCqlQueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -18413,7 +19839,7 @@ func (p *ExecutePreparedCqlQueryResult) writeField0(oprot thrift.TProtocol) (err
 }
 
 func (p *ExecutePreparedCqlQueryResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -18428,7 +19854,7 @@ func (p *ExecutePreparedCqlQueryResult) writeField1(oprot thrift.TProtocol) (err
 }
 
 func (p *ExecutePreparedCqlQueryResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -18443,7 +19869,7 @@ func (p *ExecutePreparedCqlQueryResult) writeField2(oprot thrift.TProtocol) (err
 }
 
 func (p *ExecutePreparedCqlQueryResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -18458,7 +19884,7 @@ func (p *ExecutePreparedCqlQueryResult) writeField3(oprot thrift.TProtocol) (err
 }
 
 func (p *ExecutePreparedCqlQueryResult) writeField4(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 4); err != nil {
 			return fmt.Errorf("%T write field begin error 4:sde: %s", p, err)
 		}
@@ -18500,18 +19926,6 @@ func (p *ExecutePreparedCql3QueryArgs) GetValues() [][]byte {
 func (p *ExecutePreparedCql3QueryArgs) GetConsistency() ConsistencyLevel {
 	return p.Consistency
 }
-func (p *ExecutePreparedCql3QueryArgs) IsSetItemId() bool {
-	return true
-}
-
-func (p *ExecutePreparedCql3QueryArgs) IsSetValues() bool {
-	return true
-}
-
-func (p *ExecutePreparedCql3QueryArgs) IsSetConsistency() bool {
-	return true
-}
-
 func (p *ExecutePreparedCql3QueryArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -18569,13 +19983,13 @@ func (p *ExecutePreparedCql3QueryArgs) ReadField2(iprot thrift.TProtocol) error 
 	tSlice := make([][]byte, 0, size)
 	p.Values = tSlice
 	for i := 0; i < size; i++ {
-		var _elem230 []byte
+		var _elem157 []byte
 		if v, err := iprot.ReadBinary(); err != nil {
 			return fmt.Errorf("error reading field 0: %s", err)
 		} else {
-			_elem230 = v
+			_elem157 = v
 		}
-		p.Values = append(p.Values, _elem230)
+		p.Values = append(p.Values, _elem157)
 	}
 	if err := iprot.ReadListEnd(); err != nil {
 		return fmt.Errorf("error reading list end: %s", err)
@@ -18629,24 +20043,22 @@ func (p *ExecutePreparedCql3QueryArgs) writeField1(oprot thrift.TProtocol) (err 
 }
 
 func (p *ExecutePreparedCql3QueryArgs) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Values != nil {
-		if err := oprot.WriteFieldBegin("values", thrift.LIST, 2); err != nil {
-			return fmt.Errorf("%T write field begin error 2:values: %s", p, err)
+	if err := oprot.WriteFieldBegin("values", thrift.LIST, 2); err != nil {
+		return fmt.Errorf("%T write field begin error 2:values: %s", p, err)
+	}
+	if err := oprot.WriteListBegin(thrift.STRING, len(p.Values)); err != nil {
+		return fmt.Errorf("error writing list begin: %s", err)
+	}
+	for _, v := range p.Values {
+		if err := oprot.WriteBinary(v); err != nil {
+			return fmt.Errorf("%T. (0) field write error: %s", p, err)
 		}
-		if err := oprot.WriteListBegin(thrift.STRING, len(p.Values)); err != nil {
-			return fmt.Errorf("error writing list begin: %s", err)
-		}
-		for _, v := range p.Values {
-			if err := oprot.WriteBinary(v); err != nil {
-				return fmt.Errorf("%T. (0) field write error: %s", p, err)
-			}
-		}
-		if err := oprot.WriteListEnd(); err != nil {
-			return fmt.Errorf("error writing list end: %s", err)
-		}
-		if err := oprot.WriteFieldEnd(); err != nil {
-			return fmt.Errorf("%T write field end error 2:values: %s", p, err)
-		}
+	}
+	if err := oprot.WriteListEnd(); err != nil {
+		return fmt.Errorf("error writing list end: %s", err)
+	}
+	if err := oprot.WriteFieldEnd(); err != nil {
+		return fmt.Errorf("%T write field end error 2:values: %s", p, err)
 	}
 	return err
 }
@@ -18683,43 +20095,68 @@ func NewExecutePreparedCql3QueryResult() *ExecutePreparedCql3QueryResult {
 	return &ExecutePreparedCql3QueryResult{}
 }
 
+var ExecutePreparedCql3QueryResult_Success_DEFAULT *CqlResult_
+
 func (p *ExecutePreparedCql3QueryResult) GetSuccess() *CqlResult_ {
+	if !p.IsSetSuccess() {
+		return ExecutePreparedCql3QueryResult_Success_DEFAULT
+	}
 	return p.Success
 }
 
+var ExecutePreparedCql3QueryResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *ExecutePreparedCql3QueryResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return ExecutePreparedCql3QueryResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 
+var ExecutePreparedCql3QueryResult_Ue_DEFAULT *UnavailableException
+
 func (p *ExecutePreparedCql3QueryResult) GetUe() *UnavailableException {
+	if !p.IsSetUe() {
+		return ExecutePreparedCql3QueryResult_Ue_DEFAULT
+	}
 	return p.Ue
 }
 
+var ExecutePreparedCql3QueryResult_Te_DEFAULT *TimedOutException
+
 func (p *ExecutePreparedCql3QueryResult) GetTe() *TimedOutException {
+	if !p.IsSetTe() {
+		return ExecutePreparedCql3QueryResult_Te_DEFAULT
+	}
 	return p.Te
 }
 
+var ExecutePreparedCql3QueryResult_Sde_DEFAULT *SchemaDisagreementException
+
 func (p *ExecutePreparedCql3QueryResult) GetSde() *SchemaDisagreementException {
+	if !p.IsSetSde() {
+		return ExecutePreparedCql3QueryResult_Sde_DEFAULT
+	}
 	return p.Sde
 }
 func (p *ExecutePreparedCql3QueryResult) IsSetSuccess() bool {
-	return true
+	return p.Success != nil
 }
 
 func (p *ExecutePreparedCql3QueryResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *ExecutePreparedCql3QueryResult) IsSetUe() bool {
-	return true
+	return p.Ue != nil
 }
 
 func (p *ExecutePreparedCql3QueryResult) IsSetTe() bool {
-	return true
+	return p.Te != nil
 }
 
 func (p *ExecutePreparedCql3QueryResult) IsSetSde() bool {
-	return true
+	return p.Sde != nil
 }
 
 func (p *ExecutePreparedCql3QueryResult) Read(iprot thrift.TProtocol) error {
@@ -18771,7 +20208,7 @@ func (p *ExecutePreparedCql3QueryResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *ExecutePreparedCql3QueryResult) ReadField0(iprot thrift.TProtocol) error {
-	p.Success = NewCqlResult_()
+	p.Success = &CqlResult_{}
 	if err := p.Success.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Success, err)
 	}
@@ -18779,7 +20216,7 @@ func (p *ExecutePreparedCql3QueryResult) ReadField0(iprot thrift.TProtocol) erro
 }
 
 func (p *ExecutePreparedCql3QueryResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -18787,7 +20224,7 @@ func (p *ExecutePreparedCql3QueryResult) ReadField1(iprot thrift.TProtocol) erro
 }
 
 func (p *ExecutePreparedCql3QueryResult) ReadField2(iprot thrift.TProtocol) error {
-	p.Ue = NewUnavailableException()
+	p.Ue = &UnavailableException{}
 	if err := p.Ue.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ue, err)
 	}
@@ -18795,7 +20232,7 @@ func (p *ExecutePreparedCql3QueryResult) ReadField2(iprot thrift.TProtocol) erro
 }
 
 func (p *ExecutePreparedCql3QueryResult) ReadField3(iprot thrift.TProtocol) error {
-	p.Te = NewTimedOutException()
+	p.Te = &TimedOutException{}
 	if err := p.Te.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Te, err)
 	}
@@ -18803,7 +20240,7 @@ func (p *ExecutePreparedCql3QueryResult) ReadField3(iprot thrift.TProtocol) erro
 }
 
 func (p *ExecutePreparedCql3QueryResult) ReadField4(iprot thrift.TProtocol) error {
-	p.Sde = NewSchemaDisagreementException()
+	p.Sde = &SchemaDisagreementException{}
 	if err := p.Sde.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Sde, err)
 	}
@@ -18814,27 +20251,20 @@ func (p *ExecutePreparedCql3QueryResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("execute_prepared_cql3_query_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Sde != nil:
-		if err := p.writeField4(oprot); err != nil {
-			return err
-		}
-	case p.Te != nil:
-		if err := p.writeField3(oprot); err != nil {
-			return err
-		}
-	case p.Ue != nil:
-		if err := p.writeField2(oprot); err != nil {
-			return err
-		}
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
-	default:
-		if err := p.writeField0(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField0(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField1(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField2(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField3(oprot); err != nil {
+		return err
+	}
+	if err := p.writeField4(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -18846,7 +20276,7 @@ func (p *ExecutePreparedCql3QueryResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *ExecutePreparedCql3QueryResult) writeField0(oprot thrift.TProtocol) (err error) {
-	if p.Success != nil {
+	if p.IsSetSuccess() {
 		if err := oprot.WriteFieldBegin("success", thrift.STRUCT, 0); err != nil {
 			return fmt.Errorf("%T write field begin error 0:success: %s", p, err)
 		}
@@ -18861,7 +20291,7 @@ func (p *ExecutePreparedCql3QueryResult) writeField0(oprot thrift.TProtocol) (er
 }
 
 func (p *ExecutePreparedCql3QueryResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}
@@ -18876,7 +20306,7 @@ func (p *ExecutePreparedCql3QueryResult) writeField1(oprot thrift.TProtocol) (er
 }
 
 func (p *ExecutePreparedCql3QueryResult) writeField2(oprot thrift.TProtocol) (err error) {
-	if p.Ue != nil {
+	if p.IsSetUe() {
 		if err := oprot.WriteFieldBegin("ue", thrift.STRUCT, 2); err != nil {
 			return fmt.Errorf("%T write field begin error 2:ue: %s", p, err)
 		}
@@ -18891,7 +20321,7 @@ func (p *ExecutePreparedCql3QueryResult) writeField2(oprot thrift.TProtocol) (er
 }
 
 func (p *ExecutePreparedCql3QueryResult) writeField3(oprot thrift.TProtocol) (err error) {
-	if p.Te != nil {
+	if p.IsSetTe() {
 		if err := oprot.WriteFieldBegin("te", thrift.STRUCT, 3); err != nil {
 			return fmt.Errorf("%T write field begin error 3:te: %s", p, err)
 		}
@@ -18906,7 +20336,7 @@ func (p *ExecutePreparedCql3QueryResult) writeField3(oprot thrift.TProtocol) (er
 }
 
 func (p *ExecutePreparedCql3QueryResult) writeField4(oprot thrift.TProtocol) (err error) {
-	if p.Sde != nil {
+	if p.IsSetSde() {
 		if err := oprot.WriteFieldBegin("sde", thrift.STRUCT, 4); err != nil {
 			return fmt.Errorf("%T write field begin error 4:sde: %s", p, err)
 		}
@@ -18938,10 +20368,6 @@ func NewSetCqlVersionArgs() *SetCqlVersionArgs {
 func (p *SetCqlVersionArgs) GetVersion() string {
 	return p.Version
 }
-func (p *SetCqlVersionArgs) IsSetVersion() bool {
-	return true
-}
-
 func (p *SetCqlVersionArgs) Read(iprot thrift.TProtocol) error {
 	if _, err := iprot.ReadStructBegin(); err != nil {
 		return fmt.Errorf("%T read error: %s", p, err)
@@ -19027,11 +20453,16 @@ func NewSetCqlVersionResult() *SetCqlVersionResult {
 	return &SetCqlVersionResult{}
 }
 
+var SetCqlVersionResult_Ire_DEFAULT *InvalidRequestException
+
 func (p *SetCqlVersionResult) GetIre() *InvalidRequestException {
+	if !p.IsSetIre() {
+		return SetCqlVersionResult_Ire_DEFAULT
+	}
 	return p.Ire
 }
 func (p *SetCqlVersionResult) IsSetIre() bool {
-	return true
+	return p.Ire != nil
 }
 
 func (p *SetCqlVersionResult) Read(iprot thrift.TProtocol) error {
@@ -19067,7 +20498,7 @@ func (p *SetCqlVersionResult) Read(iprot thrift.TProtocol) error {
 }
 
 func (p *SetCqlVersionResult) ReadField1(iprot thrift.TProtocol) error {
-	p.Ire = NewInvalidRequestException()
+	p.Ire = &InvalidRequestException{}
 	if err := p.Ire.Read(iprot); err != nil {
 		return fmt.Errorf("%T error reading struct: %s", p.Ire, err)
 	}
@@ -19078,11 +20509,8 @@ func (p *SetCqlVersionResult) Write(oprot thrift.TProtocol) error {
 	if err := oprot.WriteStructBegin("set_cql_version_result"); err != nil {
 		return fmt.Errorf("%T write struct begin error: %s", p, err)
 	}
-	switch {
-	case p.Ire != nil:
-		if err := p.writeField1(oprot); err != nil {
-			return err
-		}
+	if err := p.writeField1(oprot); err != nil {
+		return err
 	}
 	if err := oprot.WriteFieldStop(); err != nil {
 		return fmt.Errorf("write field stop error: %s", err)
@@ -19094,7 +20522,7 @@ func (p *SetCqlVersionResult) Write(oprot thrift.TProtocol) error {
 }
 
 func (p *SetCqlVersionResult) writeField1(oprot thrift.TProtocol) (err error) {
-	if p.Ire != nil {
+	if p.IsSetIre() {
 		if err := oprot.WriteFieldBegin("ire", thrift.STRUCT, 1); err != nil {
 			return fmt.Errorf("%T write field begin error 1:ire: %s", p, err)
 		}

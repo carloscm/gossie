@@ -59,6 +59,17 @@ func (_mr *_MockCassandraRecorder) BatchMutate(arg0, arg1 interface{}) *gomock.C
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "BatchMutate", arg0, arg1)
 }
 
+func (_m *MockCassandra) Cas(_param0 []byte, _param1 string, _param2 []*cassandra.Column, _param3 []*cassandra.Column, _param4 cassandra.ConsistencyLevel, _param5 cassandra.ConsistencyLevel) (*cassandra.CASResult_, error) {
+	ret := _m.ctrl.Call(_m, "Cas", _param0, _param1, _param2, _param3, _param4, _param5)
+	ret0, _ := ret[0].(*cassandra.CASResult_)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockCassandraRecorder) Cas(arg0, arg1, arg2, arg3, arg4, arg5 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Cas", arg0, arg1, arg2, arg3, arg4, arg5)
+}
+
 func (_m *MockCassandra) DescribeClusterName() (string, error) {
 	ret := _m.ctrl.Call(_m, "DescribeClusterName")
 	ret0, _ := ret[0].(string)
@@ -90,6 +101,17 @@ func (_m *MockCassandra) DescribeKeyspaces() ([]*cassandra.KsDef, error) {
 
 func (_mr *_MockCassandraRecorder) DescribeKeyspaces() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "DescribeKeyspaces")
+}
+
+func (_m *MockCassandra) DescribeLocalRing(_param0 string) ([]*cassandra.TokenRange, error) {
+	ret := _m.ctrl.Call(_m, "DescribeLocalRing", _param0)
+	ret0, _ := ret[0].([]*cassandra.TokenRange)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockCassandraRecorder) DescribeLocalRing(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "DescribeLocalRing", arg0)
 }
 
 func (_m *MockCassandra) DescribePartitioner() (string, error) {

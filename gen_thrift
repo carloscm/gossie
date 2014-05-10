@@ -1,0 +1,2 @@
+#!/bin/sh
+thrift --gen go cassandra.thrift
