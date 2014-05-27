@@ -6,7 +6,7 @@ package cassandra
 import (
 	"bytes"
 	"fmt"
-	"git.apache.org/thrift.git/lib/go/thrift"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 // (needed to ensure safety because of naive import list construction.)
@@ -6280,7 +6280,7 @@ func (p *cassandraProcessorSetCqlVersion) Process(seqId int32, iprot, oprot thri
 // HELPER FUNCTIONS AND STRUCTURES
 
 type LoginArgs struct {
-	AuthRequest *AuthenticationRequest `thrift:"auth_request,1,required"`
+	AuthRequest *AuthenticationRequest `thrift:"auth_request,1,required" json:"auth_request"`
 }
 
 func NewLoginArgs() *LoginArgs {
@@ -6376,8 +6376,8 @@ func (p *LoginArgs) String() string {
 }
 
 type LoginResult struct {
-	Authnx *AuthenticationException `thrift:"authnx,1"`
-	Authzx *AuthorizationException  `thrift:"authzx,2"`
+	Authnx *AuthenticationException `thrift:"authnx,1" json:"authnx"`
+	Authzx *AuthorizationException  `thrift:"authzx,2" json:"authzx"`
 }
 
 func NewLoginResult() *LoginResult {
@@ -6518,7 +6518,7 @@ func (p *LoginResult) String() string {
 }
 
 type SetKeyspaceArgs struct {
-	Keyspace string `thrift:"keyspace,1,required"`
+	Keyspace string `thrift:"keyspace,1,required" json:"keyspace"`
 }
 
 func NewSetKeyspaceArgs() *SetKeyspaceArgs {
@@ -6606,7 +6606,7 @@ func (p *SetKeyspaceArgs) String() string {
 }
 
 type SetKeyspaceResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewSetKeyspaceResult() *SetKeyspaceResult {
@@ -6704,9 +6704,9 @@ func (p *SetKeyspaceResult) String() string {
 }
 
 type GetArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	ColumnPath       *ColumnPath      `thrift:"column_path,2,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,3,required"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	ColumnPath       *ColumnPath      `thrift:"column_path,2,required" json:"column_path"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,3,required" json:"consistency_level"`
 }
 
 func NewGetArgs() *GetArgs {
@@ -6871,11 +6871,11 @@ func (p *GetArgs) String() string {
 }
 
 type GetResult struct {
-	Success *ColumnOrSuperColumn     `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Nfe     *NotFoundException       `thrift:"nfe,2"`
-	Ue      *UnavailableException    `thrift:"ue,3"`
-	Te      *TimedOutException       `thrift:"te,4"`
+	Success *ColumnOrSuperColumn     `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Nfe     *NotFoundException       `thrift:"nfe,2" json:"nfe"`
+	Ue      *UnavailableException    `thrift:"ue,3" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,4" json:"te"`
 }
 
 func NewGetResult() *GetResult {
@@ -7145,10 +7145,10 @@ func (p *GetResult) String() string {
 }
 
 type GetSliceArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required"`
-	Predicate        *SlicePredicate  `thrift:"predicate,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required" json:"column_parent"`
+	Predicate        *SlicePredicate  `thrift:"predicate,3,required" json:"predicate"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewGetSliceArgs() *GetSliceArgs {
@@ -7354,10 +7354,10 @@ func (p *GetSliceArgs) String() string {
 }
 
 type GetSliceResult struct {
-	Success []*ColumnOrSuperColumn   `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success []*ColumnOrSuperColumn   `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewGetSliceResult() *GetSliceResult {
@@ -7601,10 +7601,10 @@ func (p *GetSliceResult) String() string {
 }
 
 type GetCountArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required"`
-	Predicate        *SlicePredicate  `thrift:"predicate,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required" json:"column_parent"`
+	Predicate        *SlicePredicate  `thrift:"predicate,3,required" json:"predicate"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewGetCountArgs() *GetCountArgs {
@@ -7810,10 +7810,10 @@ func (p *GetCountArgs) String() string {
 }
 
 type GetCountResult struct {
-	Success *int32                   `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success *int32                   `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewGetCountResult() *GetCountResult {
@@ -8041,10 +8041,10 @@ func (p *GetCountResult) String() string {
 }
 
 type MultigetSliceArgs struct {
-	Keys             [][]byte         `thrift:"keys,1,required"`
-	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required"`
-	Predicate        *SlicePredicate  `thrift:"predicate,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	Keys             [][]byte         `thrift:"keys,1,required" json:"keys"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required" json:"column_parent"`
+	Predicate        *SlicePredicate  `thrift:"predicate,3,required" json:"predicate"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewMultigetSliceArgs() *MultigetSliceArgs {
@@ -8271,10 +8271,10 @@ func (p *MultigetSliceArgs) String() string {
 }
 
 type MultigetSliceResult struct {
-	Success map[string][]*ColumnOrSuperColumn `thrift:"success,0"`
-	Ire     *InvalidRequestException          `thrift:"ire,1"`
-	Ue      *UnavailableException             `thrift:"ue,2"`
-	Te      *TimedOutException                `thrift:"te,3"`
+	Success map[string][]*ColumnOrSuperColumn `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException          `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException             `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException                `thrift:"te,3" json:"te"`
 }
 
 func NewMultigetSliceResult() *MultigetSliceResult {
@@ -8547,10 +8547,10 @@ func (p *MultigetSliceResult) String() string {
 }
 
 type MultigetCountArgs struct {
-	Keys             [][]byte         `thrift:"keys,1,required"`
-	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required"`
-	Predicate        *SlicePredicate  `thrift:"predicate,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	Keys             [][]byte         `thrift:"keys,1,required" json:"keys"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required" json:"column_parent"`
+	Predicate        *SlicePredicate  `thrift:"predicate,3,required" json:"predicate"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewMultigetCountArgs() *MultigetCountArgs {
@@ -8777,10 +8777,10 @@ func (p *MultigetCountArgs) String() string {
 }
 
 type MultigetCountResult struct {
-	Success map[string]int32         `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success map[string]int32         `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewMultigetCountResult() *MultigetCountResult {
@@ -9035,10 +9035,10 @@ func (p *MultigetCountResult) String() string {
 }
 
 type GetRangeSlicesArgs struct {
-	ColumnParent     *ColumnParent    `thrift:"column_parent,1,required"`
-	Predicate        *SlicePredicate  `thrift:"predicate,2,required"`
-	RangeA1          *KeyRange        `thrift:"range,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,1,required" json:"column_parent"`
+	Predicate        *SlicePredicate  `thrift:"predicate,2,required" json:"predicate"`
+	RangeA1          *KeyRange        `thrift:"range,3,required" json:"range"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewGetRangeSlicesArgs() *GetRangeSlicesArgs {
@@ -9254,10 +9254,10 @@ func (p *GetRangeSlicesArgs) String() string {
 }
 
 type GetRangeSlicesResult struct {
-	Success []*KeySlice              `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success []*KeySlice              `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewGetRangeSlicesResult() *GetRangeSlicesResult {
@@ -9501,10 +9501,10 @@ func (p *GetRangeSlicesResult) String() string {
 }
 
 type GetPagedSliceArgs struct {
-	ColumnFamily     string           `thrift:"column_family,1,required"`
-	RangeA1          *KeyRange        `thrift:"range,2,required"`
-	StartColumn      []byte           `thrift:"start_column,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	ColumnFamily     string           `thrift:"column_family,1,required" json:"column_family"`
+	RangeA1          *KeyRange        `thrift:"range,2,required" json:"range"`
+	StartColumn      []byte           `thrift:"start_column,3,required" json:"start_column"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewGetPagedSliceArgs() *GetPagedSliceArgs {
@@ -9704,10 +9704,10 @@ func (p *GetPagedSliceArgs) String() string {
 }
 
 type GetPagedSliceResult struct {
-	Success []*KeySlice              `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success []*KeySlice              `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewGetPagedSliceResult() *GetPagedSliceResult {
@@ -9951,10 +9951,10 @@ func (p *GetPagedSliceResult) String() string {
 }
 
 type GetIndexedSlicesArgs struct {
-	ColumnParent     *ColumnParent    `thrift:"column_parent,1,required"`
-	IndexClause      *IndexClause     `thrift:"index_clause,2,required"`
-	ColumnPredicate  *SlicePredicate  `thrift:"column_predicate,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,1,required" json:"column_parent"`
+	IndexClause      *IndexClause     `thrift:"index_clause,2,required" json:"index_clause"`
+	ColumnPredicate  *SlicePredicate  `thrift:"column_predicate,3,required" json:"column_predicate"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewGetIndexedSlicesArgs() *GetIndexedSlicesArgs {
@@ -10170,10 +10170,10 @@ func (p *GetIndexedSlicesArgs) String() string {
 }
 
 type GetIndexedSlicesResult struct {
-	Success []*KeySlice              `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success []*KeySlice              `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewGetIndexedSlicesResult() *GetIndexedSlicesResult {
@@ -10417,10 +10417,10 @@ func (p *GetIndexedSlicesResult) String() string {
 }
 
 type InsertArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required"`
-	Column           *Column          `thrift:"column,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required" json:"column_parent"`
+	Column           *Column          `thrift:"column,3,required" json:"column"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewInsertArgs() *InsertArgs {
@@ -10626,9 +10626,9 @@ func (p *InsertArgs) String() string {
 }
 
 type InsertResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewInsertResult() *InsertResult {
@@ -10812,10 +10812,10 @@ func (p *InsertResult) String() string {
 }
 
 type AddArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required"`
-	Column           *CounterColumn   `thrift:"column,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	ColumnParent     *ColumnParent    `thrift:"column_parent,2,required" json:"column_parent"`
+	Column           *CounterColumn   `thrift:"column,3,required" json:"column"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4,required" json:"consistency_level"`
 }
 
 func NewAddArgs() *AddArgs {
@@ -11021,9 +11021,9 @@ func (p *AddArgs) String() string {
 }
 
 type AddResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewAddResult() *AddResult {
@@ -11207,12 +11207,12 @@ func (p *AddResult) String() string {
 }
 
 type CasArgs struct {
-	Key                    []byte           `thrift:"key,1,required"`
-	ColumnFamily           string           `thrift:"column_family,2,required"`
-	Expected               []*Column        `thrift:"expected,3"`
-	Updates                []*Column        `thrift:"updates,4"`
-	SerialConsistencyLevel ConsistencyLevel `thrift:"serial_consistency_level,5,required"`
-	CommitConsistencyLevel ConsistencyLevel `thrift:"commit_consistency_level,6,required"`
+	Key                    []byte           `thrift:"key,1,required" json:"key"`
+	ColumnFamily           string           `thrift:"column_family,2,required" json:"column_family"`
+	Expected               []*Column        `thrift:"expected,3" json:"expected"`
+	Updates                []*Column        `thrift:"updates,4" json:"updates"`
+	SerialConsistencyLevel ConsistencyLevel `thrift:"serial_consistency_level,5,required" json:"serial_consistency_level"`
+	CommitConsistencyLevel ConsistencyLevel `thrift:"commit_consistency_level,6,required" json:"commit_consistency_level"`
 }
 
 func NewCasArgs() *CasArgs {
@@ -11509,10 +11509,10 @@ func (p *CasArgs) String() string {
 }
 
 type CasResult struct {
-	Success *CASResult_              `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
-	Ue      *UnavailableException    `thrift:"ue,2"`
-	Te      *TimedOutException       `thrift:"te,3"`
+	Success *CASResult_              `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewCasResult() *CasResult {
@@ -11739,10 +11739,10 @@ func (p *CasResult) String() string {
 }
 
 type RemoveArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	ColumnPath       *ColumnPath      `thrift:"column_path,2,required"`
-	Timestamp        int64            `thrift:"timestamp,3,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	ColumnPath       *ColumnPath      `thrift:"column_path,2,required" json:"column_path"`
+	Timestamp        int64            `thrift:"timestamp,3,required" json:"timestamp"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,4" json:"consistency_level"`
 }
 
 func NewRemoveArgs() *RemoveArgs {
@@ -11940,9 +11940,9 @@ func (p *RemoveArgs) String() string {
 }
 
 type RemoveResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewRemoveResult() *RemoveResult {
@@ -12126,9 +12126,9 @@ func (p *RemoveResult) String() string {
 }
 
 type RemoveCounterArgs struct {
-	Key              []byte           `thrift:"key,1,required"`
-	Path             *ColumnPath      `thrift:"path,2,required"`
-	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,3,required"`
+	Key              []byte           `thrift:"key,1,required" json:"key"`
+	Path             *ColumnPath      `thrift:"path,2,required" json:"path"`
+	ConsistencyLevel ConsistencyLevel `thrift:"consistency_level,3,required" json:"consistency_level"`
 }
 
 func NewRemoveCounterArgs() *RemoveCounterArgs {
@@ -12293,9 +12293,9 @@ func (p *RemoveCounterArgs) String() string {
 }
 
 type RemoveCounterResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewRemoveCounterResult() *RemoveCounterResult {
@@ -12479,8 +12479,8 @@ func (p *RemoveCounterResult) String() string {
 }
 
 type BatchMutateArgs struct {
-	MutationMap      map[string]map[string][]*Mutation `thrift:"mutation_map,1,required"`
-	ConsistencyLevel ConsistencyLevel                  `thrift:"consistency_level,2,required"`
+	MutationMap      map[string]map[string][]*Mutation `thrift:"mutation_map,1,required" json:"mutation_map"`
+	ConsistencyLevel ConsistencyLevel                  `thrift:"consistency_level,2,required" json:"consistency_level"`
 }
 
 func NewBatchMutateArgs() *BatchMutateArgs {
@@ -12681,9 +12681,9 @@ func (p *BatchMutateArgs) String() string {
 }
 
 type BatchMutateResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewBatchMutateResult() *BatchMutateResult {
@@ -12867,8 +12867,8 @@ func (p *BatchMutateResult) String() string {
 }
 
 type AtomicBatchMutateArgs struct {
-	MutationMap      map[string]map[string][]*Mutation `thrift:"mutation_map,1,required"`
-	ConsistencyLevel ConsistencyLevel                  `thrift:"consistency_level,2,required"`
+	MutationMap      map[string]map[string][]*Mutation `thrift:"mutation_map,1,required" json:"mutation_map"`
+	ConsistencyLevel ConsistencyLevel                  `thrift:"consistency_level,2,required" json:"consistency_level"`
 }
 
 func NewAtomicBatchMutateArgs() *AtomicBatchMutateArgs {
@@ -13069,9 +13069,9 @@ func (p *AtomicBatchMutateArgs) String() string {
 }
 
 type AtomicBatchMutateResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewAtomicBatchMutateResult() *AtomicBatchMutateResult {
@@ -13255,7 +13255,7 @@ func (p *AtomicBatchMutateResult) String() string {
 }
 
 type TruncateArgs struct {
-	Cfname string `thrift:"cfname,1,required"`
+	Cfname string `thrift:"cfname,1,required" json:"cfname"`
 }
 
 func NewTruncateArgs() *TruncateArgs {
@@ -13343,9 +13343,9 @@ func (p *TruncateArgs) String() string {
 }
 
 type TruncateResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
-	Ue  *UnavailableException    `thrift:"ue,2"`
-	Te  *TimedOutException       `thrift:"te,3"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
+	Ue  *UnavailableException    `thrift:"ue,2" json:"ue"`
+	Te  *TimedOutException       `thrift:"te,3" json:"te"`
 }
 
 func NewTruncateResult() *TruncateResult {
@@ -13581,8 +13581,8 @@ func (p *DescribeSchemaVersionsArgs) String() string {
 }
 
 type DescribeSchemaVersionsResult struct {
-	Success map[string][]string      `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success map[string][]string      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeSchemaVersionsResult() *DescribeSchemaVersionsResult {
@@ -13823,8 +13823,8 @@ func (p *DescribeKeyspacesArgs) String() string {
 }
 
 type DescribeKeyspacesResult struct {
-	Success []*KsDef                 `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success []*KsDef                 `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeKeyspacesResult() *DescribeKeyspacesResult {
@@ -14036,7 +14036,7 @@ func (p *DescribeClusterNameArgs) String() string {
 }
 
 type DescribeClusterNameResult struct {
-	Success *string `thrift:"success,0"`
+	Success *string `thrift:"success,0" json:"success"`
 }
 
 func NewDescribeClusterNameResult() *DescribeClusterNameResult {
@@ -14187,7 +14187,7 @@ func (p *DescribeVersionArgs) String() string {
 }
 
 type DescribeVersionResult struct {
-	Success *string `thrift:"success,0"`
+	Success *string `thrift:"success,0" json:"success"`
 }
 
 func NewDescribeVersionResult() *DescribeVersionResult {
@@ -14286,7 +14286,7 @@ func (p *DescribeVersionResult) String() string {
 }
 
 type DescribeRingArgs struct {
-	Keyspace string `thrift:"keyspace,1,required"`
+	Keyspace string `thrift:"keyspace,1,required" json:"keyspace"`
 }
 
 func NewDescribeRingArgs() *DescribeRingArgs {
@@ -14374,8 +14374,8 @@ func (p *DescribeRingArgs) String() string {
 }
 
 type DescribeRingResult struct {
-	Success []*TokenRange            `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success []*TokenRange            `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeRingResult() *DescribeRingResult {
@@ -14533,7 +14533,7 @@ func (p *DescribeRingResult) String() string {
 }
 
 type DescribeLocalRingArgs struct {
-	Keyspace string `thrift:"keyspace,1,required"`
+	Keyspace string `thrift:"keyspace,1,required" json:"keyspace"`
 }
 
 func NewDescribeLocalRingArgs() *DescribeLocalRingArgs {
@@ -14621,8 +14621,8 @@ func (p *DescribeLocalRingArgs) String() string {
 }
 
 type DescribeLocalRingResult struct {
-	Success []*TokenRange            `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success []*TokenRange            `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeLocalRingResult() *DescribeLocalRingResult {
@@ -14832,8 +14832,8 @@ func (p *DescribeTokenMapArgs) String() string {
 }
 
 type DescribeTokenMapResult struct {
-	Success map[string]string        `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success map[string]string        `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeTokenMapResult() *DescribeTokenMapResult {
@@ -15054,7 +15054,7 @@ func (p *DescribePartitionerArgs) String() string {
 }
 
 type DescribePartitionerResult struct {
-	Success *string `thrift:"success,0"`
+	Success *string `thrift:"success,0" json:"success"`
 }
 
 func NewDescribePartitionerResult() *DescribePartitionerResult {
@@ -15205,7 +15205,7 @@ func (p *DescribeSnitchArgs) String() string {
 }
 
 type DescribeSnitchResult struct {
-	Success *string `thrift:"success,0"`
+	Success *string `thrift:"success,0" json:"success"`
 }
 
 func NewDescribeSnitchResult() *DescribeSnitchResult {
@@ -15304,7 +15304,7 @@ func (p *DescribeSnitchResult) String() string {
 }
 
 type DescribeKeyspaceArgs struct {
-	Keyspace string `thrift:"keyspace,1,required"`
+	Keyspace string `thrift:"keyspace,1,required" json:"keyspace"`
 }
 
 func NewDescribeKeyspaceArgs() *DescribeKeyspaceArgs {
@@ -15392,9 +15392,9 @@ func (p *DescribeKeyspaceArgs) String() string {
 }
 
 type DescribeKeyspaceResult struct {
-	Success *KsDef                   `thrift:"success,0"`
-	Nfe     *NotFoundException       `thrift:"nfe,1"`
-	Ire     *InvalidRequestException `thrift:"ire,2"`
+	Success *KsDef                   `thrift:"success,0" json:"success"`
+	Nfe     *NotFoundException       `thrift:"nfe,1" json:"nfe"`
+	Ire     *InvalidRequestException `thrift:"ire,2" json:"ire"`
 }
 
 func NewDescribeKeyspaceResult() *DescribeKeyspaceResult {
@@ -15580,10 +15580,10 @@ func (p *DescribeKeyspaceResult) String() string {
 }
 
 type DescribeSplitsArgs struct {
-	CfName       string `thrift:"cfName,1,required"`
-	StartToken   string `thrift:"start_token,2,required"`
-	EndToken     string `thrift:"end_token,3,required"`
-	KeysPerSplit int32  `thrift:"keys_per_split,4,required"`
+	CfName       string `thrift:"cfName,1,required" json:"cfName"`
+	StartToken   string `thrift:"start_token,2,required" json:"start_token"`
+	EndToken     string `thrift:"end_token,3,required" json:"end_token"`
+	KeysPerSplit int32  `thrift:"keys_per_split,4,required" json:"keys_per_split"`
 }
 
 func NewDescribeSplitsArgs() *DescribeSplitsArgs {
@@ -15770,8 +15770,8 @@ func (p *DescribeSplitsArgs) String() string {
 }
 
 type DescribeSplitsResult struct {
-	Success []string                 `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success []string                 `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeSplitsResult() *DescribeSplitsResult {
@@ -15983,7 +15983,7 @@ func (p *TraceNextQueryArgs) String() string {
 }
 
 type TraceNextQueryResult struct {
-	Success []byte `thrift:"success,0"`
+	Success []byte `thrift:"success,0" json:"success"`
 }
 
 func NewTraceNextQueryResult() *TraceNextQueryResult {
@@ -16079,10 +16079,10 @@ func (p *TraceNextQueryResult) String() string {
 }
 
 type DescribeSplitsExArgs struct {
-	CfName       string `thrift:"cfName,1,required"`
-	StartToken   string `thrift:"start_token,2,required"`
-	EndToken     string `thrift:"end_token,3,required"`
-	KeysPerSplit int32  `thrift:"keys_per_split,4,required"`
+	CfName       string `thrift:"cfName,1,required" json:"cfName"`
+	StartToken   string `thrift:"start_token,2,required" json:"start_token"`
+	EndToken     string `thrift:"end_token,3,required" json:"end_token"`
+	KeysPerSplit int32  `thrift:"keys_per_split,4,required" json:"keys_per_split"`
 }
 
 func NewDescribeSplitsExArgs() *DescribeSplitsExArgs {
@@ -16269,8 +16269,8 @@ func (p *DescribeSplitsExArgs) String() string {
 }
 
 type DescribeSplitsExResult struct {
-	Success []*CfSplit               `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success []*CfSplit               `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewDescribeSplitsExResult() *DescribeSplitsExResult {
@@ -16428,7 +16428,7 @@ func (p *DescribeSplitsExResult) String() string {
 }
 
 type SystemAddColumnFamilyArgs struct {
-	CfDef *CfDef `thrift:"cf_def,1,required"`
+	CfDef *CfDef `thrift:"cf_def,1,required" json:"cf_def"`
 }
 
 func NewSystemAddColumnFamilyArgs() *SystemAddColumnFamilyArgs {
@@ -16532,9 +16532,9 @@ func (p *SystemAddColumnFamilyArgs) String() string {
 }
 
 type SystemAddColumnFamilyResult struct {
-	Success *string                      `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Sde     *SchemaDisagreementException `thrift:"sde,2"`
+	Success *string                      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Sde     *SchemaDisagreementException `thrift:"sde,2" json:"sde"`
 }
 
 func NewSystemAddColumnFamilyResult() *SystemAddColumnFamilyResult {
@@ -16719,7 +16719,7 @@ func (p *SystemAddColumnFamilyResult) String() string {
 }
 
 type SystemDropColumnFamilyArgs struct {
-	ColumnFamily string `thrift:"column_family,1,required"`
+	ColumnFamily string `thrift:"column_family,1,required" json:"column_family"`
 }
 
 func NewSystemDropColumnFamilyArgs() *SystemDropColumnFamilyArgs {
@@ -16807,9 +16807,9 @@ func (p *SystemDropColumnFamilyArgs) String() string {
 }
 
 type SystemDropColumnFamilyResult struct {
-	Success *string                      `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Sde     *SchemaDisagreementException `thrift:"sde,2"`
+	Success *string                      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Sde     *SchemaDisagreementException `thrift:"sde,2" json:"sde"`
 }
 
 func NewSystemDropColumnFamilyResult() *SystemDropColumnFamilyResult {
@@ -16994,7 +16994,7 @@ func (p *SystemDropColumnFamilyResult) String() string {
 }
 
 type SystemAddKeyspaceArgs struct {
-	KsDef *KsDef `thrift:"ks_def,1,required"`
+	KsDef *KsDef `thrift:"ks_def,1,required" json:"ks_def"`
 }
 
 func NewSystemAddKeyspaceArgs() *SystemAddKeyspaceArgs {
@@ -17092,9 +17092,9 @@ func (p *SystemAddKeyspaceArgs) String() string {
 }
 
 type SystemAddKeyspaceResult struct {
-	Success *string                      `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Sde     *SchemaDisagreementException `thrift:"sde,2"`
+	Success *string                      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Sde     *SchemaDisagreementException `thrift:"sde,2" json:"sde"`
 }
 
 func NewSystemAddKeyspaceResult() *SystemAddKeyspaceResult {
@@ -17279,7 +17279,7 @@ func (p *SystemAddKeyspaceResult) String() string {
 }
 
 type SystemDropKeyspaceArgs struct {
-	Keyspace string `thrift:"keyspace,1,required"`
+	Keyspace string `thrift:"keyspace,1,required" json:"keyspace"`
 }
 
 func NewSystemDropKeyspaceArgs() *SystemDropKeyspaceArgs {
@@ -17367,9 +17367,9 @@ func (p *SystemDropKeyspaceArgs) String() string {
 }
 
 type SystemDropKeyspaceResult struct {
-	Success *string                      `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Sde     *SchemaDisagreementException `thrift:"sde,2"`
+	Success *string                      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Sde     *SchemaDisagreementException `thrift:"sde,2" json:"sde"`
 }
 
 func NewSystemDropKeyspaceResult() *SystemDropKeyspaceResult {
@@ -17554,7 +17554,7 @@ func (p *SystemDropKeyspaceResult) String() string {
 }
 
 type SystemUpdateKeyspaceArgs struct {
-	KsDef *KsDef `thrift:"ks_def,1,required"`
+	KsDef *KsDef `thrift:"ks_def,1,required" json:"ks_def"`
 }
 
 func NewSystemUpdateKeyspaceArgs() *SystemUpdateKeyspaceArgs {
@@ -17652,9 +17652,9 @@ func (p *SystemUpdateKeyspaceArgs) String() string {
 }
 
 type SystemUpdateKeyspaceResult struct {
-	Success *string                      `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Sde     *SchemaDisagreementException `thrift:"sde,2"`
+	Success *string                      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Sde     *SchemaDisagreementException `thrift:"sde,2" json:"sde"`
 }
 
 func NewSystemUpdateKeyspaceResult() *SystemUpdateKeyspaceResult {
@@ -17839,7 +17839,7 @@ func (p *SystemUpdateKeyspaceResult) String() string {
 }
 
 type SystemUpdateColumnFamilyArgs struct {
-	CfDef *CfDef `thrift:"cf_def,1,required"`
+	CfDef *CfDef `thrift:"cf_def,1,required" json:"cf_def"`
 }
 
 func NewSystemUpdateColumnFamilyArgs() *SystemUpdateColumnFamilyArgs {
@@ -17943,9 +17943,9 @@ func (p *SystemUpdateColumnFamilyArgs) String() string {
 }
 
 type SystemUpdateColumnFamilyResult struct {
-	Success *string                      `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Sde     *SchemaDisagreementException `thrift:"sde,2"`
+	Success *string                      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Sde     *SchemaDisagreementException `thrift:"sde,2" json:"sde"`
 }
 
 func NewSystemUpdateColumnFamilyResult() *SystemUpdateColumnFamilyResult {
@@ -18130,8 +18130,8 @@ func (p *SystemUpdateColumnFamilyResult) String() string {
 }
 
 type ExecuteCqlQueryArgs struct {
-	Query       []byte      `thrift:"query,1,required"`
-	Compression Compression `thrift:"compression,2,required"`
+	Query       []byte      `thrift:"query,1,required" json:"query"`
+	Compression Compression `thrift:"compression,2,required" json:"compression"`
 }
 
 func NewExecuteCqlQueryArgs() *ExecuteCqlQueryArgs {
@@ -18253,11 +18253,11 @@ func (p *ExecuteCqlQueryArgs) String() string {
 }
 
 type ExecuteCqlQueryResult struct {
-	Success *CqlResult_                  `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Ue      *UnavailableException        `thrift:"ue,2"`
-	Te      *TimedOutException           `thrift:"te,3"`
-	Sde     *SchemaDisagreementException `thrift:"sde,4"`
+	Success *CqlResult_                  `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException        `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException           `thrift:"te,3" json:"te"`
+	Sde     *SchemaDisagreementException `thrift:"sde,4" json:"sde"`
 }
 
 func NewExecuteCqlQueryResult() *ExecuteCqlQueryResult {
@@ -18527,9 +18527,9 @@ func (p *ExecuteCqlQueryResult) String() string {
 }
 
 type ExecuteCql3QueryArgs struct {
-	Query       []byte           `thrift:"query,1,required"`
-	Compression Compression      `thrift:"compression,2,required"`
-	Consistency ConsistencyLevel `thrift:"consistency,3,required"`
+	Query       []byte           `thrift:"query,1,required" json:"query"`
+	Compression Compression      `thrift:"compression,2,required" json:"compression"`
+	Consistency ConsistencyLevel `thrift:"consistency,3,required" json:"consistency"`
 }
 
 func NewExecuteCql3QueryArgs() *ExecuteCql3QueryArgs {
@@ -18685,11 +18685,11 @@ func (p *ExecuteCql3QueryArgs) String() string {
 }
 
 type ExecuteCql3QueryResult struct {
-	Success *CqlResult_                  `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Ue      *UnavailableException        `thrift:"ue,2"`
-	Te      *TimedOutException           `thrift:"te,3"`
-	Sde     *SchemaDisagreementException `thrift:"sde,4"`
+	Success *CqlResult_                  `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException        `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException           `thrift:"te,3" json:"te"`
+	Sde     *SchemaDisagreementException `thrift:"sde,4" json:"sde"`
 }
 
 func NewExecuteCql3QueryResult() *ExecuteCql3QueryResult {
@@ -18959,8 +18959,8 @@ func (p *ExecuteCql3QueryResult) String() string {
 }
 
 type PrepareCqlQueryArgs struct {
-	Query       []byte      `thrift:"query,1,required"`
-	Compression Compression `thrift:"compression,2,required"`
+	Query       []byte      `thrift:"query,1,required" json:"query"`
+	Compression Compression `thrift:"compression,2,required" json:"compression"`
 }
 
 func NewPrepareCqlQueryArgs() *PrepareCqlQueryArgs {
@@ -19082,8 +19082,8 @@ func (p *PrepareCqlQueryArgs) String() string {
 }
 
 type PrepareCqlQueryResult struct {
-	Success *CqlPreparedResult_      `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success *CqlPreparedResult_      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewPrepareCqlQueryResult() *PrepareCqlQueryResult {
@@ -19224,8 +19224,8 @@ func (p *PrepareCqlQueryResult) String() string {
 }
 
 type PrepareCql3QueryArgs struct {
-	Query       []byte      `thrift:"query,1,required"`
-	Compression Compression `thrift:"compression,2,required"`
+	Query       []byte      `thrift:"query,1,required" json:"query"`
+	Compression Compression `thrift:"compression,2,required" json:"compression"`
 }
 
 func NewPrepareCql3QueryArgs() *PrepareCql3QueryArgs {
@@ -19347,8 +19347,8 @@ func (p *PrepareCql3QueryArgs) String() string {
 }
 
 type PrepareCql3QueryResult struct {
-	Success *CqlPreparedResult_      `thrift:"success,0"`
-	Ire     *InvalidRequestException `thrift:"ire,1"`
+	Success *CqlPreparedResult_      `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewPrepareCql3QueryResult() *PrepareCql3QueryResult {
@@ -19489,8 +19489,8 @@ func (p *PrepareCql3QueryResult) String() string {
 }
 
 type ExecutePreparedCqlQueryArgs struct {
-	ItemId int32    `thrift:"itemId,1,required"`
-	Values [][]byte `thrift:"values,2,required"`
+	ItemId int32    `thrift:"itemId,1,required" json:"itemId"`
+	Values [][]byte `thrift:"values,2,required" json:"values"`
 }
 
 func NewExecutePreparedCqlQueryArgs() *ExecutePreparedCqlQueryArgs {
@@ -19632,11 +19632,11 @@ func (p *ExecutePreparedCqlQueryArgs) String() string {
 }
 
 type ExecutePreparedCqlQueryResult struct {
-	Success *CqlResult_                  `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Ue      *UnavailableException        `thrift:"ue,2"`
-	Te      *TimedOutException           `thrift:"te,3"`
-	Sde     *SchemaDisagreementException `thrift:"sde,4"`
+	Success *CqlResult_                  `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException        `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException           `thrift:"te,3" json:"te"`
+	Sde     *SchemaDisagreementException `thrift:"sde,4" json:"sde"`
 }
 
 func NewExecutePreparedCqlQueryResult() *ExecutePreparedCqlQueryResult {
@@ -19906,9 +19906,9 @@ func (p *ExecutePreparedCqlQueryResult) String() string {
 }
 
 type ExecutePreparedCql3QueryArgs struct {
-	ItemId      int32            `thrift:"itemId,1,required"`
-	Values      [][]byte         `thrift:"values,2,required"`
-	Consistency ConsistencyLevel `thrift:"consistency,3,required"`
+	ItemId      int32            `thrift:"itemId,1,required" json:"itemId"`
+	Values      [][]byte         `thrift:"values,2,required" json:"values"`
+	Consistency ConsistencyLevel `thrift:"consistency,3,required" json:"consistency"`
 }
 
 func NewExecutePreparedCql3QueryArgs() *ExecutePreparedCql3QueryArgs {
@@ -20084,11 +20084,11 @@ func (p *ExecutePreparedCql3QueryArgs) String() string {
 }
 
 type ExecutePreparedCql3QueryResult struct {
-	Success *CqlResult_                  `thrift:"success,0"`
-	Ire     *InvalidRequestException     `thrift:"ire,1"`
-	Ue      *UnavailableException        `thrift:"ue,2"`
-	Te      *TimedOutException           `thrift:"te,3"`
-	Sde     *SchemaDisagreementException `thrift:"sde,4"`
+	Success *CqlResult_                  `thrift:"success,0" json:"success"`
+	Ire     *InvalidRequestException     `thrift:"ire,1" json:"ire"`
+	Ue      *UnavailableException        `thrift:"ue,2" json:"ue"`
+	Te      *TimedOutException           `thrift:"te,3" json:"te"`
+	Sde     *SchemaDisagreementException `thrift:"sde,4" json:"sde"`
 }
 
 func NewExecutePreparedCql3QueryResult() *ExecutePreparedCql3QueryResult {
@@ -20358,7 +20358,7 @@ func (p *ExecutePreparedCql3QueryResult) String() string {
 }
 
 type SetCqlVersionArgs struct {
-	Version string `thrift:"version,1,required"`
+	Version string `thrift:"version,1,required" json:"version"`
 }
 
 func NewSetCqlVersionArgs() *SetCqlVersionArgs {
@@ -20446,7 +20446,7 @@ func (p *SetCqlVersionArgs) String() string {
 }
 
 type SetCqlVersionResult struct {
-	Ire *InvalidRequestException `thrift:"ire,1"`
+	Ire *InvalidRequestException `thrift:"ire,1" json:"ire"`
 }
 
 func NewSetCqlVersionResult() *SetCqlVersionResult {

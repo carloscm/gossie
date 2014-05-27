@@ -1,2 +1,2 @@
 #!/bin/sh
-thrift --gen go cassandra.thrift
+thrift -out src --gen go:thrift_import=github.com/apache/thrift/lib/go/thrift cassandra.thrift

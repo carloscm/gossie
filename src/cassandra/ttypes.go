@@ -6,7 +6,7 @@ package cassandra
 import (
 	"bytes"
 	"fmt"
-	"git.apache.org/thrift.git/lib/go/thrift"
+	"github.com/apache/thrift/lib/go/thrift"
 )
 
 // (needed to ensure safety because of naive import list construction.)
@@ -275,10 +275,10 @@ func CqlResultTypeFromString(s string) (CqlResultType, error) {
 func CqlResultTypePtr(v CqlResultType) *CqlResultType { return &v }
 
 type Column struct {
-	Name      []byte `thrift:"name,1,required"`
-	Value     []byte `thrift:"value,2"`
-	Timestamp *int64 `thrift:"timestamp,3"`
-	Ttl       *int32 `thrift:"ttl,4"`
+	Name      []byte `thrift:"name,1,required" json:"name"`
+	Value     []byte `thrift:"value,2" json:"value"`
+	Timestamp *int64 `thrift:"timestamp,3" json:"timestamp"`
+	Ttl       *int32 `thrift:"ttl,4" json:"ttl"`
 }
 
 func NewColumn() *Column {
@@ -495,8 +495,8 @@ func (p *Column) String() string {
 }
 
 type SuperColumn struct {
-	Name    []byte    `thrift:"name,1,required"`
-	Columns []*Column `thrift:"columns,2,required"`
+	Name    []byte    `thrift:"name,1,required" json:"name"`
+	Columns []*Column `thrift:"columns,2,required" json:"columns"`
 }
 
 func NewSuperColumn() *SuperColumn {
@@ -636,8 +636,8 @@ func (p *SuperColumn) String() string {
 }
 
 type CounterColumn struct {
-	Name  []byte `thrift:"name,1,required"`
-	Value int64  `thrift:"value,2,required"`
+	Name  []byte `thrift:"name,1,required" json:"name"`
+	Value int64  `thrift:"value,2,required" json:"value"`
 }
 
 func NewCounterColumn() *CounterColumn {
@@ -758,8 +758,8 @@ func (p *CounterColumn) String() string {
 }
 
 type CounterSuperColumn struct {
-	Name    []byte           `thrift:"name,1,required"`
-	Columns []*CounterColumn `thrift:"columns,2,required"`
+	Name    []byte           `thrift:"name,1,required" json:"name"`
+	Columns []*CounterColumn `thrift:"columns,2,required" json:"columns"`
 }
 
 func NewCounterSuperColumn() *CounterSuperColumn {
@@ -899,10 +899,10 @@ func (p *CounterSuperColumn) String() string {
 }
 
 type ColumnOrSuperColumn struct {
-	Column             *Column             `thrift:"column,1"`
-	SuperColumn        *SuperColumn        `thrift:"super_column,2"`
-	CounterColumn      *CounterColumn      `thrift:"counter_column,3"`
-	CounterSuperColumn *CounterSuperColumn `thrift:"counter_super_column,4"`
+	Column             *Column             `thrift:"column,1" json:"column"`
+	SuperColumn        *SuperColumn        `thrift:"super_column,2" json:"super_column"`
+	CounterColumn      *CounterColumn      `thrift:"counter_column,3" json:"counter_column"`
+	CounterSuperColumn *CounterSuperColumn `thrift:"counter_super_column,4" json:"counter_super_column"`
 }
 
 func NewColumnOrSuperColumn() *ColumnOrSuperColumn {
@@ -1185,7 +1185,7 @@ func (p *NotFoundException) Error() string {
 }
 
 type InvalidRequestException struct {
-	Why string `thrift:"why,1,required"`
+	Why string `thrift:"why,1,required" json:"why"`
 }
 
 func NewInvalidRequestException() *InvalidRequestException {
@@ -1333,9 +1333,9 @@ func (p *UnavailableException) Error() string {
 }
 
 type TimedOutException struct {
-	AcknowledgedBy         *int32 `thrift:"acknowledged_by,1"`
-	AcknowledgedByBatchlog *bool  `thrift:"acknowledged_by_batchlog,2"`
-	PaxosInProgress        *bool  `thrift:"paxos_in_progress,3"`
+	AcknowledgedBy         *int32 `thrift:"acknowledged_by,1" json:"acknowledged_by"`
+	AcknowledgedByBatchlog *bool  `thrift:"acknowledged_by_batchlog,2" json:"acknowledged_by_batchlog"`
+	PaxosInProgress        *bool  `thrift:"paxos_in_progress,3" json:"paxos_in_progress"`
 }
 
 func NewTimedOutException() *TimedOutException {
@@ -1526,7 +1526,7 @@ func (p *TimedOutException) Error() string {
 }
 
 type AuthenticationException struct {
-	Why string `thrift:"why,1,required"`
+	Why string `thrift:"why,1,required" json:"why"`
 }
 
 func NewAuthenticationException() *AuthenticationException {
@@ -1618,7 +1618,7 @@ func (p *AuthenticationException) Error() string {
 }
 
 type AuthorizationException struct {
-	Why string `thrift:"why,1,required"`
+	Why string `thrift:"why,1,required" json:"why"`
 }
 
 func NewAuthorizationException() *AuthorizationException {
@@ -1768,8 +1768,8 @@ func (p *SchemaDisagreementException) Error() string {
 type ColumnParent struct {
 	// unused field # 1
 	// unused field # 2
-	ColumnFamily string `thrift:"column_family,3,required"`
-	SuperColumn  []byte `thrift:"super_column,4"`
+	ColumnFamily string `thrift:"column_family,3,required" json:"column_family"`
+	SuperColumn  []byte `thrift:"super_column,4" json:"super_column"`
 }
 
 func NewColumnParent() *ColumnParent {
@@ -1900,9 +1900,9 @@ func (p *ColumnParent) String() string {
 type ColumnPath struct {
 	// unused field # 1
 	// unused field # 2
-	ColumnFamily string `thrift:"column_family,3,required"`
-	SuperColumn  []byte `thrift:"super_column,4"`
-	Column       []byte `thrift:"column,5"`
+	ColumnFamily string `thrift:"column_family,3,required" json:"column_family"`
+	SuperColumn  []byte `thrift:"super_column,4" json:"super_column"`
+	Column       []byte `thrift:"column,5" json:"column"`
 }
 
 func NewColumnPath() *ColumnPath {
@@ -2072,10 +2072,10 @@ func (p *ColumnPath) String() string {
 }
 
 type SliceRange struct {
-	Start    []byte `thrift:"start,1,required"`
-	Finish   []byte `thrift:"finish,2,required"`
-	Reversed bool   `thrift:"reversed,3,required"`
-	Count    int32  `thrift:"count,4,required"`
+	Start    []byte `thrift:"start,1,required" json:"start"`
+	Finish   []byte `thrift:"finish,2,required" json:"finish"`
+	Reversed bool   `thrift:"reversed,3,required" json:"reversed"`
+	Count    int32  `thrift:"count,4,required" json:"count"`
 }
 
 func NewSliceRange() *SliceRange {
@@ -2264,8 +2264,8 @@ func (p *SliceRange) String() string {
 }
 
 type SlicePredicate struct {
-	ColumnNames [][]byte    `thrift:"column_names,1"`
-	SliceRange  *SliceRange `thrift:"slice_range,2"`
+	ColumnNames [][]byte    `thrift:"column_names,1" json:"column_names"`
+	SliceRange  *SliceRange `thrift:"slice_range,2" json:"slice_range"`
 }
 
 func NewSlicePredicate() *SlicePredicate {
@@ -2427,9 +2427,9 @@ func (p *SlicePredicate) String() string {
 }
 
 type IndexExpression struct {
-	ColumnName []byte        `thrift:"column_name,1,required"`
-	Op         IndexOperator `thrift:"op,2,required"`
-	Value      []byte        `thrift:"value,3,required"`
+	ColumnName []byte        `thrift:"column_name,1,required" json:"column_name"`
+	Op         IndexOperator `thrift:"op,2,required" json:"op"`
+	Value      []byte        `thrift:"value,3,required" json:"value"`
 }
 
 func NewIndexExpression() *IndexExpression {
@@ -2584,9 +2584,9 @@ func (p *IndexExpression) String() string {
 }
 
 type IndexClause struct {
-	Expressions []*IndexExpression `thrift:"expressions,1,required"`
-	StartKey    []byte             `thrift:"start_key,2,required"`
-	Count       int32              `thrift:"count,3,required"`
+	Expressions []*IndexExpression `thrift:"expressions,1,required" json:"expressions"`
+	StartKey    []byte             `thrift:"start_key,2,required" json:"start_key"`
+	Count       int32              `thrift:"count,3,required" json:"count"`
 }
 
 func NewIndexClause() *IndexClause {
@@ -2761,12 +2761,12 @@ func (p *IndexClause) String() string {
 }
 
 type KeyRange struct {
-	StartKey   []byte             `thrift:"start_key,1"`
-	EndKey     []byte             `thrift:"end_key,2"`
-	StartToken *string            `thrift:"start_token,3"`
-	EndToken   *string            `thrift:"end_token,4"`
-	Count      int32              `thrift:"count,5,required"`
-	RowFilter  []*IndexExpression `thrift:"row_filter,6"`
+	StartKey   []byte             `thrift:"start_key,1" json:"start_key"`
+	EndKey     []byte             `thrift:"end_key,2" json:"end_key"`
+	StartToken *string            `thrift:"start_token,3" json:"start_token"`
+	EndToken   *string            `thrift:"end_token,4" json:"end_token"`
+	Count      int32              `thrift:"count,5,required" json:"count"`
+	RowFilter  []*IndexExpression `thrift:"row_filter,6" json:"row_filter"`
 }
 
 func NewKeyRange() *KeyRange {
@@ -3086,8 +3086,8 @@ func (p *KeyRange) String() string {
 }
 
 type KeySlice struct {
-	Key     []byte                 `thrift:"key,1,required"`
-	Columns []*ColumnOrSuperColumn `thrift:"columns,2,required"`
+	Key     []byte                 `thrift:"key,1,required" json:"key"`
+	Columns []*ColumnOrSuperColumn `thrift:"columns,2,required" json:"columns"`
 }
 
 func NewKeySlice() *KeySlice {
@@ -3227,8 +3227,8 @@ func (p *KeySlice) String() string {
 }
 
 type KeyCount struct {
-	Key   []byte `thrift:"key,1,required"`
-	Count int32  `thrift:"count,2,required"`
+	Key   []byte `thrift:"key,1,required" json:"key"`
+	Count int32  `thrift:"count,2,required" json:"count"`
 }
 
 func NewKeyCount() *KeyCount {
@@ -3349,9 +3349,9 @@ func (p *KeyCount) String() string {
 }
 
 type Deletion struct {
-	Timestamp   *int64          `thrift:"timestamp,1"`
-	SuperColumn []byte          `thrift:"super_column,2"`
-	Predicate   *SlicePredicate `thrift:"predicate,3"`
+	Timestamp   *int64          `thrift:"timestamp,1" json:"timestamp"`
+	SuperColumn []byte          `thrift:"super_column,2" json:"super_column"`
+	Predicate   *SlicePredicate `thrift:"predicate,3" json:"predicate"`
 }
 
 func NewDeletion() *Deletion {
@@ -3534,8 +3534,8 @@ func (p *Deletion) String() string {
 }
 
 type Mutation struct {
-	ColumnOrSupercolumn *ColumnOrSuperColumn `thrift:"column_or_supercolumn,1"`
-	Deletion            *Deletion            `thrift:"deletion,2"`
+	ColumnOrSupercolumn *ColumnOrSuperColumn `thrift:"column_or_supercolumn,1" json:"column_or_supercolumn"`
+	Deletion            *Deletion            `thrift:"deletion,2" json:"deletion"`
 }
 
 func NewMutation() *Mutation {
@@ -3676,9 +3676,9 @@ func (p *Mutation) String() string {
 }
 
 type EndpointDetails struct {
-	Host       string  `thrift:"host,1"`
-	Datacenter string  `thrift:"datacenter,2"`
-	Rack       *string `thrift:"rack,3"`
+	Host       string  `thrift:"host,1" json:"host"`
+	Datacenter string  `thrift:"datacenter,2" json:"datacenter"`
+	Rack       *string `thrift:"rack,3" json:"rack"`
 }
 
 func NewEndpointDetails() *EndpointDetails {
@@ -3843,8 +3843,8 @@ func (p *EndpointDetails) String() string {
 }
 
 type CASResult_ struct {
-	Success       bool      `thrift:"success,1,required"`
-	CurrentValues []*Column `thrift:"current_values,2"`
+	Success       bool      `thrift:"success,1,required" json:"success"`
+	CurrentValues []*Column `thrift:"current_values,2" json:"current_values"`
 }
 
 func NewCASResult_() *CASResult_ {
@@ -3992,11 +3992,11 @@ func (p *CASResult_) String() string {
 }
 
 type TokenRange struct {
-	StartToken      string             `thrift:"start_token,1,required"`
-	EndToken        string             `thrift:"end_token,2,required"`
-	Endpoints       []string           `thrift:"endpoints,3,required"`
-	RpcEndpoints    []string           `thrift:"rpc_endpoints,4"`
-	EndpointDetails []*EndpointDetails `thrift:"endpoint_details,5"`
+	StartToken      string             `thrift:"start_token,1,required" json:"start_token"`
+	EndToken        string             `thrift:"end_token,2,required" json:"end_token"`
+	Endpoints       []string           `thrift:"endpoints,3,required" json:"endpoints"`
+	RpcEndpoints    []string           `thrift:"rpc_endpoints,4" json:"rpc_endpoints"`
+	EndpointDetails []*EndpointDetails `thrift:"endpoint_details,5" json:"endpoint_details"`
 }
 
 func NewTokenRange() *TokenRange {
@@ -4293,7 +4293,7 @@ func (p *TokenRange) String() string {
 }
 
 type AuthenticationRequest struct {
-	Credentials map[string]string `thrift:"credentials,1,required"`
+	Credentials map[string]string `thrift:"credentials,1,required" json:"credentials"`
 }
 
 func NewAuthenticationRequest() *AuthenticationRequest {
@@ -4411,11 +4411,11 @@ func (p *AuthenticationRequest) String() string {
 }
 
 type ColumnDef struct {
-	Name            []byte            `thrift:"name,1,required"`
-	ValidationClass string            `thrift:"validation_class,2,required"`
-	IndexType       *IndexType        `thrift:"index_type,3"`
-	IndexName       *string           `thrift:"index_name,4"`
-	IndexOptions    map[string]string `thrift:"index_options,5"`
+	Name            []byte            `thrift:"name,1,required" json:"name"`
+	ValidationClass string            `thrift:"validation_class,2,required" json:"validation_class"`
+	IndexType       *IndexType        `thrift:"index_type,3" json:"index_type"`
+	IndexName       *string           `thrift:"index_name,4" json:"index_name"`
+	IndexOptions    map[string]string `thrift:"index_options,5" json:"index_options"`
 }
 
 func NewColumnDef() *ColumnDef {
@@ -4696,8 +4696,8 @@ func (p *ColumnDef) String() string {
 }
 
 type TriggerDef struct {
-	Name    string            `thrift:"name,1,required"`
-	Options map[string]string `thrift:"options,2,required"`
+	Name    string            `thrift:"name,1,required" json:"name"`
+	Options map[string]string `thrift:"options,2,required" json:"options"`
 }
 
 func NewTriggerDef() *TriggerDef {
@@ -4848,49 +4848,49 @@ func (p *TriggerDef) String() string {
 }
 
 type CfDef struct {
-	Keyspace   string `thrift:"keyspace,1,required"`
-	Name       string `thrift:"name,2,required"`
-	ColumnType string `thrift:"column_type,3"`
+	Keyspace   string `thrift:"keyspace,1,required" json:"keyspace"`
+	Name       string `thrift:"name,2,required" json:"name"`
+	ColumnType string `thrift:"column_type,3" json:"column_type"`
 	// unused field # 4
-	ComparatorType    string  `thrift:"comparator_type,5"`
-	SubcomparatorType *string `thrift:"subcomparator_type,6"`
+	ComparatorType    string  `thrift:"comparator_type,5" json:"comparator_type"`
+	SubcomparatorType *string `thrift:"subcomparator_type,6" json:"subcomparator_type"`
 	// unused field # 7
-	Comment      *string  `thrift:"comment,8"`
-	RowCacheSize *float64 `thrift:"row_cache_size,9"`
+	Comment      *string  `thrift:"comment,8" json:"comment"`
+	RowCacheSize *float64 `thrift:"row_cache_size,9" json:"row_cache_size"`
 	// unused field # 10
-	KeyCacheSize                 *float64          `thrift:"key_cache_size,11"`
-	ReadRepairChance             *float64          `thrift:"read_repair_chance,12"`
-	ColumnMetadata               []*ColumnDef      `thrift:"column_metadata,13"`
-	GcGraceSeconds               *int32            `thrift:"gc_grace_seconds,14"`
-	DefaultValidationClass       *string           `thrift:"default_validation_class,15"`
-	Id                           *int32            `thrift:"id,16"`
-	MinCompactionThreshold       *int32            `thrift:"min_compaction_threshold,17"`
-	MaxCompactionThreshold       *int32            `thrift:"max_compaction_threshold,18"`
-	RowCacheSavePeriodInSeconds  *int32            `thrift:"row_cache_save_period_in_seconds,19"`
-	KeyCacheSavePeriodInSeconds  *int32            `thrift:"key_cache_save_period_in_seconds,20"`
-	MemtableFlushAfterMins       *int32            `thrift:"memtable_flush_after_mins,21"`
-	MemtableThroughputInMb       *int32            `thrift:"memtable_throughput_in_mb,22"`
-	MemtableOperationsInMillions *float64          `thrift:"memtable_operations_in_millions,23"`
-	ReplicateOnWrite             *bool             `thrift:"replicate_on_write,24"`
-	MergeShardsChance            *float64          `thrift:"merge_shards_chance,25"`
-	KeyValidationClass           *string           `thrift:"key_validation_class,26"`
-	RowCacheProvider             *string           `thrift:"row_cache_provider,27"`
-	KeyAlias                     []byte            `thrift:"key_alias,28"`
-	CompactionStrategy           *string           `thrift:"compaction_strategy,29"`
-	CompactionStrategyOptions    map[string]string `thrift:"compaction_strategy_options,30"`
-	RowCacheKeysToSave           *int32            `thrift:"row_cache_keys_to_save,31"`
-	CompressionOptions           map[string]string `thrift:"compression_options,32"`
-	BloomFilterFpChance          *float64          `thrift:"bloom_filter_fp_chance,33"`
-	Caching                      string            `thrift:"caching,34"`
+	KeyCacheSize                 *float64          `thrift:"key_cache_size,11" json:"key_cache_size"`
+	ReadRepairChance             *float64          `thrift:"read_repair_chance,12" json:"read_repair_chance"`
+	ColumnMetadata               []*ColumnDef      `thrift:"column_metadata,13" json:"column_metadata"`
+	GcGraceSeconds               *int32            `thrift:"gc_grace_seconds,14" json:"gc_grace_seconds"`
+	DefaultValidationClass       *string           `thrift:"default_validation_class,15" json:"default_validation_class"`
+	Id                           *int32            `thrift:"id,16" json:"id"`
+	MinCompactionThreshold       *int32            `thrift:"min_compaction_threshold,17" json:"min_compaction_threshold"`
+	MaxCompactionThreshold       *int32            `thrift:"max_compaction_threshold,18" json:"max_compaction_threshold"`
+	RowCacheSavePeriodInSeconds  *int32            `thrift:"row_cache_save_period_in_seconds,19" json:"row_cache_save_period_in_seconds"`
+	KeyCacheSavePeriodInSeconds  *int32            `thrift:"key_cache_save_period_in_seconds,20" json:"key_cache_save_period_in_seconds"`
+	MemtableFlushAfterMins       *int32            `thrift:"memtable_flush_after_mins,21" json:"memtable_flush_after_mins"`
+	MemtableThroughputInMb       *int32            `thrift:"memtable_throughput_in_mb,22" json:"memtable_throughput_in_mb"`
+	MemtableOperationsInMillions *float64          `thrift:"memtable_operations_in_millions,23" json:"memtable_operations_in_millions"`
+	ReplicateOnWrite             *bool             `thrift:"replicate_on_write,24" json:"replicate_on_write"`
+	MergeShardsChance            *float64          `thrift:"merge_shards_chance,25" json:"merge_shards_chance"`
+	KeyValidationClass           *string           `thrift:"key_validation_class,26" json:"key_validation_class"`
+	RowCacheProvider             *string           `thrift:"row_cache_provider,27" json:"row_cache_provider"`
+	KeyAlias                     []byte            `thrift:"key_alias,28" json:"key_alias"`
+	CompactionStrategy           *string           `thrift:"compaction_strategy,29" json:"compaction_strategy"`
+	CompactionStrategyOptions    map[string]string `thrift:"compaction_strategy_options,30" json:"compaction_strategy_options"`
+	RowCacheKeysToSave           *int32            `thrift:"row_cache_keys_to_save,31" json:"row_cache_keys_to_save"`
+	CompressionOptions           map[string]string `thrift:"compression_options,32" json:"compression_options"`
+	BloomFilterFpChance          *float64          `thrift:"bloom_filter_fp_chance,33" json:"bloom_filter_fp_chance"`
+	Caching                      string            `thrift:"caching,34" json:"caching"`
 	// unused field # 35
 	// unused field # 36
-	DclocalReadRepairChance float64       `thrift:"dclocal_read_repair_chance,37"`
-	PopulateIoCacheOnFlush  *bool         `thrift:"populate_io_cache_on_flush,38"`
-	MemtableFlushPeriodInMs *int32        `thrift:"memtable_flush_period_in_ms,39"`
-	DefaultTimeToLive       *int32        `thrift:"default_time_to_live,40"`
-	IndexInterval           *int32        `thrift:"index_interval,41"`
-	SpeculativeRetry        string        `thrift:"speculative_retry,42"`
-	Triggers                []*TriggerDef `thrift:"triggers,43"`
+	DclocalReadRepairChance float64       `thrift:"dclocal_read_repair_chance,37" json:"dclocal_read_repair_chance"`
+	PopulateIoCacheOnFlush  *bool         `thrift:"populate_io_cache_on_flush,38" json:"populate_io_cache_on_flush"`
+	MemtableFlushPeriodInMs *int32        `thrift:"memtable_flush_period_in_ms,39" json:"memtable_flush_period_in_ms"`
+	DefaultTimeToLive       *int32        `thrift:"default_time_to_live,40" json:"default_time_to_live"`
+	IndexInterval           *int32        `thrift:"index_interval,41" json:"index_interval"`
+	SpeculativeRetry        string        `thrift:"speculative_retry,42" json:"speculative_retry"`
+	Triggers                []*TriggerDef `thrift:"triggers,43" json:"triggers"`
 }
 
 func NewCfDef() *CfDef {
@@ -6671,12 +6671,12 @@ func (p *CfDef) String() string {
 }
 
 type KsDef struct {
-	Name              string            `thrift:"name,1,required"`
-	StrategyClass     string            `thrift:"strategy_class,2,required"`
-	StrategyOptions   map[string]string `thrift:"strategy_options,3"`
-	ReplicationFactor *int32            `thrift:"replication_factor,4"`
-	CfDefs            []*CfDef          `thrift:"cf_defs,5,required"`
-	DurableWrites     bool              `thrift:"durable_writes,6"`
+	Name              string            `thrift:"name,1,required" json:"name"`
+	StrategyClass     string            `thrift:"strategy_class,2,required" json:"strategy_class"`
+	StrategyOptions   map[string]string `thrift:"strategy_options,3" json:"strategy_options"`
+	ReplicationFactor *int32            `thrift:"replication_factor,4" json:"replication_factor"`
+	CfDefs            []*CfDef          `thrift:"cf_defs,5,required" json:"cf_defs"`
+	DurableWrites     bool              `thrift:"durable_writes,6" json:"durable_writes"`
 }
 
 func NewKsDef() *KsDef {
@@ -7015,8 +7015,8 @@ func (p *KsDef) String() string {
 }
 
 type CqlRow struct {
-	Key     []byte    `thrift:"key,1,required"`
-	Columns []*Column `thrift:"columns,2,required"`
+	Key     []byte    `thrift:"key,1,required" json:"key"`
+	Columns []*Column `thrift:"columns,2,required" json:"columns"`
 }
 
 func NewCqlRow() *CqlRow {
@@ -7156,10 +7156,10 @@ func (p *CqlRow) String() string {
 }
 
 type CqlMetadata struct {
-	NameTypes        map[string]string `thrift:"name_types,1,required"`
-	ValueTypes       map[string]string `thrift:"value_types,2,required"`
-	DefaultNameType  string            `thrift:"default_name_type,3,required"`
-	DefaultValueType string            `thrift:"default_value_type,4,required"`
+	NameTypes        map[string]string `thrift:"name_types,1,required" json:"name_types"`
+	ValueTypes       map[string]string `thrift:"value_types,2,required" json:"value_types"`
+	DefaultNameType  string            `thrift:"default_name_type,3,required" json:"default_name_type"`
+	DefaultValueType string            `thrift:"default_value_type,4,required" json:"default_value_type"`
 }
 
 func NewCqlMetadata() *CqlMetadata {
@@ -7406,10 +7406,10 @@ func (p *CqlMetadata) String() string {
 }
 
 type CqlResult_ struct {
-	TypeA1 CqlResultType `thrift:"type,1,required"`
-	Rows   []*CqlRow     `thrift:"rows,2"`
-	Num    *int32        `thrift:"num,3"`
-	Schema *CqlMetadata  `thrift:"schema,4"`
+	TypeA1 CqlResultType `thrift:"type,1,required" json:"type"`
+	Rows   []*CqlRow     `thrift:"rows,2" json:"rows"`
+	Num    *int32        `thrift:"num,3" json:"num"`
+	Schema *CqlMetadata  `thrift:"schema,4" json:"schema"`
 }
 
 func NewCqlResult_() *CqlResult_ {
@@ -7645,10 +7645,10 @@ func (p *CqlResult_) String() string {
 }
 
 type CqlPreparedResult_ struct {
-	ItemId        int32    `thrift:"itemId,1,required"`
-	Count         int32    `thrift:"count,2,required"`
-	VariableTypes []string `thrift:"variable_types,3"`
-	VariableNames []string `thrift:"variable_names,4"`
+	ItemId        int32    `thrift:"itemId,1,required" json:"itemId"`
+	Count         int32    `thrift:"count,2,required" json:"count"`
+	VariableTypes []string `thrift:"variable_types,3" json:"variable_types"`
+	VariableNames []string `thrift:"variable_names,4" json:"variable_names"`
 }
 
 func NewCqlPreparedResult_() *CqlPreparedResult_ {
@@ -7893,9 +7893,9 @@ func (p *CqlPreparedResult_) String() string {
 }
 
 type CfSplit struct {
-	StartToken string `thrift:"start_token,1,required"`
-	EndToken   string `thrift:"end_token,2,required"`
-	RowCount   int64  `thrift:"row_count,3,required"`
+	StartToken string `thrift:"start_token,1,required" json:"start_token"`
+	EndToken   string `thrift:"end_token,2,required" json:"end_token"`
+	RowCount   int64  `thrift:"row_count,3,required" json:"row_count"`
 }
 
 func NewCfSplit() *CfSplit {
