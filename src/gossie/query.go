@@ -95,7 +95,7 @@ func newQuery(cp *connectionPool, m Mapping) *query {
 		reader:      cp.Reader().Cf(m.Cf()),
 		columnLimit: DEFAULT_COLUMN_LIMIT,
 		rowLimit:    DEFAULT_ROW_LIMIT,
-		components:  make([]interface{}, 0),
+		// components:  make([]interface{}, 0),
 	}
 }
 
@@ -189,7 +189,7 @@ func (q *query) MultiGet(keys []interface{}) (Result, error) {
 		}
 	}
 
-	return &result{query: *q, buffer: rows}, nil
+	return &result{columnLimit: q.columnLimit, mapping: q.mapping, buffer: rows}, nil
 }
 
 func (q *query) RangeGet(r *Range) (Result, error) {
@@ -198,7 +198,7 @@ func (q *query) RangeGet(r *Range) (Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &result{query: *q, buffer: rows}, nil
+	return &result{columnLimit: q.columnLimit, mapping: q.mapping, buffer: rows}, nil
 }
 
 func (q *query) buildSlice(reader Reader) error {
@@ -238,10 +238,11 @@ func (q *query) buildSlice(reader Reader) error {
 }
 
 type result struct {
-	query
-	buffer   []*Row
-	row      *Row
-	position int
+	columnLimit int //from query
+	mapping     Mapping
+	buffer      []*Row
+	row         *Row
+	position    int
 }
 
 func (r *result) feedRow() error {
