@@ -268,6 +268,9 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 		if len(composite) > 0 {
 			columnName = append(composite, packComposite(columnName, eocEquals)...)
 		}
+		if f.skipEmpty && f.isEmpty(v) {
+			continue
+		}
 		columnValue, err := f.marshalValue(v)
 		if err != nil {
 			return nil, err

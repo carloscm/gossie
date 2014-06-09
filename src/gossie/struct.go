@@ -20,6 +20,7 @@ type field struct {
 	index         int
 	cassandraName string
 	cassandraType TypeDesc
+	skipEmpty     bool
 }
 
 var recognizedGlobalTags []string = []string{"mapping", "cf", "key", "cols", "value"}
@@ -49,7 +50,12 @@ func newField(index int, sf reflect.StructField) (*field, error) {
 		cassandraName = tagName
 	}
 
-	return &field{name, index, cassandraName, cassandraType}, nil
+	skipEmpty := false
+	if tagSkipEmpty := sf.Tag.Get("skipempty"); tagSkipEmpty == "true" {
+		skipEmpty = true
+	}
+
+	return &field{name, index, cassandraName, cassandraType, skipEmpty}, nil
 }
 
 func (f *field) marshalName() ([]byte, error) {
@@ -67,6 +73,11 @@ func (f *field) marshalValue(structValue *reflect.Value) ([]byte, error) {
 		return nil, errors.New(fmt.Sprint("Error marshaling field value for field ", f.name, ":", err))
 	}
 	return b, nil
+}
+
+func (f *field) isEmpty(structValue *reflect.Value) bool {
+	v := structValue.Field(f.index)
+	return v.Interface() == reflect.Zero(v.Type()).Interface()
 }
 
 func (f *field) unmarshalValue(b []byte, structValue *reflect.Value) error {
