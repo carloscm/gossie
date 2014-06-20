@@ -366,6 +366,10 @@ func TestMarshalTime(t *testing.T) {
 	checkFullMarshal(t, b, LongType, &v, &r)
 	checkFullMarshal(t, b, DateType, &v, &r)
 
+	v = time.Unix(12345, 0)
+	b = []byte("12345")
+	checkFullMarshal(t, b, AsciiNumericType, &v, &r)
+
 	errorMarshal(t, v, UUIDType)
 	errorMarshal(t, v, AsciiType)
 	errorMarshal(t, v, UTF8Type)

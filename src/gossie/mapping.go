@@ -149,6 +149,10 @@ type sparseMapping struct {
 	componentsMap map[string]bool
 }
 
+func (s *sparseMapping) String() string {
+	return fmt.Sprintf("sparseMapping cf=%s key=%s components=%v si=%s", s.cf, s.key, s.components, *s.si)
+}
+
 func (m *sparseMapping) Cf() string {
 	return m.cf
 }
@@ -388,7 +392,7 @@ func (m *sparseMapping) Unmap(destination interface{}, provider RowProvider) err
 			if column.Value != nil {
 				err := f.unmarshalValue(column.Value, v)
 				if err != nil {
-					return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
+					return errors.New(fmt.Sprint("Error unmarshaling column: ", f, " value: ", column.Value, err))
 				}
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	enc "encoding/binary"
 	"errors"
+	"github.com/golang/glog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -27,9 +28,11 @@ import (
 	more error checking, pass along all strconv errors
 */
 
+type TypeDesc int
+
 const (
-	_ = iota
-	UnknownType
+	_                    = iota
+	UnknownType TypeDesc = iota
 	BytesType
 	AsciiType
 	UTF8Type
@@ -46,6 +49,7 @@ const (
 	DateType
 	CounterColumnType
 	CompositeType
+	AsciiNumericType // number in plain text
 )
 
 var (
@@ -56,8 +60,6 @@ var (
 	ErrorUnsupportedCassandraTypeUnmarshaling   = errors.New("Cannot unmarshal from Cassandra type")
 	ErrorCassandraTypeSerializationUnmarshaling = errors.New("Cassandra serialization is wrong for the type, cannot unmarshal")
 )
-
-type TypeDesc int
 
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
 	// plain nil case
@@ -244,6 +246,9 @@ func marshalTime(value time.Time, typeDesc TypeDesc) ([]byte, error) {
 		enc.BigEndian.PutUint32(b, uint32(valueI))
 		return b, nil
 
+	case AsciiNumericType:
+		valueI := value.Unix()
+		return marshalString(strconv.FormatInt(valueI, 10), UTF8Type)
 	}
 	return nil, ErrorUnsupportedMarshaling
 }
@@ -397,6 +402,7 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) error {
 }
 
 func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) error {
+	glog.Infof("Unmarshaling int64, b=%v typeDesc=%v", b, typeDesc)
 	switch typeDesc {
 	case LongType, BytesType, DateType, CounterColumnType:
 		if len(b) != 8 {
@@ -437,7 +443,19 @@ func unmarshalTime(b []byte, typeDesc TypeDesc, value *time.Time) error {
 		}
 		valueI := int64(enc.BigEndian.Uint32(b))
 		// 32 bit, so assume regular unix time
-		*value = time.Unix(valueI*1e9, 0)
+		*value = time.Unix(valueI, 0)
+		return nil
+
+	case AsciiNumericType:
+		var r string
+		if err := unmarshalString(b, AsciiType, &r); err != nil {
+			return err
+		}
+		valueI, err := strconv.ParseInt(r, 10, 64)
+		if err != nil {
+			return err
+		}
+		*value = time.Unix(valueI, 0)
 		return nil
 	}
 	return ErrorUnsupportedCassandraTypeUnmarshaling
@@ -667,6 +685,8 @@ func parseTypeDesc(cassType string) TypeDesc {
 		return DateType
 	case "CounterColumnType", "org.apache.cassandra.db.marshal.CounterColumnType":
 		return CounterColumnType
+	case "AsciiNumericType":
+		return AsciiNumericType
 	}
 	return BytesType
 }
