@@ -427,6 +427,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 		kr.RowFilter = r.expressions
 	}
 	sp := r.buildPredicate()
+	sp.SliceRange.Count = 10000
 
 	data := make(chan *Row)
 	rerr := make(chan error)
@@ -448,7 +449,7 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				rerr <- err
 				return
 			}
-			glog.V(2).Infof("Key slice vector size ", len(ksv))
+			glog.V(2).Infof("Key slice vector size %d", len(ksv))
 			if len(ksv) == 0 {
 				//phew. done
 				return
@@ -462,10 +463,9 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 				return
 			}
 			kr.StartToken = nil
-			kr.StartKey = ksv[len(ksv)-1].Key //just in case it is mutable
+			kr.StartKey = ksv[len(ksv)-1].Key
 			glog.V(2).Infof("Next batch starts with %q", kr.StartKey)
 			for _, ks := range ksv {
-				glog.V(2).Infof("Raw row key %s columns %v", string(ks.Key), ks.Columns)
 				row := rowFromTListColumns(ks.Key, ks.Columns)
 				glog.V(2).Infof("Row %q", row)
 				if row != nil {

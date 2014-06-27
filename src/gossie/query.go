@@ -3,6 +3,7 @@ package gossie
 import (
 	"errors"
 	. "github.com/apesternikov/gossie/src/cassandra"
+	"github.com/golang/glog"
 )
 
 /*
@@ -332,6 +333,7 @@ func (r *StreamingResult) NextColumn() (*Column, error) {
 	}
 	c := r.row.Columns[r.position]
 	r.position++
+	glog.V(2).Infof("NextColumn name %s", c.GetName())
 	return c, nil
 }
 
