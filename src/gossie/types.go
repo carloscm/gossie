@@ -4,7 +4,6 @@ import (
 	"bytes"
 	enc "encoding/binary"
 	"errors"
-	"github.com/golang/glog"
 	"reflect"
 	"strconv"
 	"strings"
@@ -402,7 +401,6 @@ func unmarshalBool(b []byte, typeDesc TypeDesc, value *bool) error {
 }
 
 func unmarshalInt64(b []byte, typeDesc TypeDesc, value *int64) error {
-	glog.Infof("Unmarshaling int64, b=%v typeDesc=%v", b, typeDesc)
 	switch typeDesc {
 	case LongType, BytesType, DateType, CounterColumnType:
 		if len(b) != 8 {
