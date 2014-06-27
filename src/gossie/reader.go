@@ -211,6 +211,7 @@ func fullSlice() *SliceRange {
 	// workaround some uninitialized slice == nil quirks that trickle down into the generated thrift4go code
 	sr.Start = make([]byte, 0)
 	sr.Finish = make([]byte, 0)
+	sr.Count = 50000
 	return sr
 }
 
@@ -427,7 +428,9 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 		kr.RowFilter = r.expressions
 	}
 	sp := r.buildPredicate()
-	sp.SliceRange.Count = 10000
+	if sp.SliceRange != nil {
+		sp.SliceRange.Count = 10000
+	}
 
 	data := make(chan *Row)
 	rerr := make(chan error)
