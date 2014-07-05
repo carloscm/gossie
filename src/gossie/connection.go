@@ -44,12 +44,18 @@ type ConnectionPool interface {
 
 	// Close all the connections in the pool
 	Close()
+
+	// Run cassandra operation, retrying on error
+	Run(f func(client cassandra.Cassandra) error) error
+
+	// Run cassandra operation, retrying on error
+	RunWithRetries(f func(client cassandra.Cassandra) error, retries int) error
 }
 
 //package-private methods
-type connectionRunner interface {
-	run(t transaction) error
-	runWithRetries(t transaction, retries int) error
+type ConnectionRunner interface {
+	Run(f func(client cassandra.Cassandra) error) error
+	RunWithRetries(f func(client cassandra.Cassandra) error, retries int) error
 }
 
 // PoolOptions stores the options for the creation of a ConnectionPool
@@ -156,9 +162,9 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	}
 
 	var ksDef *cassandra.KsDef
-	err := cp.run(func(c *connection) error {
+	err := cp.Run(func(c cassandra.Cassandra) error {
 		var err error
-		ksDef, err = c.client.DescribeKeyspace(cp.keyspace)
+		ksDef, err = c.DescribeKeyspace(cp.keyspace)
 		return err
 	})
 
@@ -195,13 +201,11 @@ func (cp *connectionPool) bleeder(d time.Duration) {
 	}
 }
 
-type transaction func(*connection) error
-
-func (cp *connectionPool) run(t transaction) error {
-	return cp.runWithRetries(t, cp.options.Retries)
+func (cp *connectionPool) Run(f func(client cassandra.Cassandra) error) error {
+	return cp.RunWithRetries(f, cp.options.Retries)
 }
 
-func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
+func (cp *connectionPool) RunWithRetries(f func(client cassandra.Cassandra) error, retries int) error {
 	var c *connection
 	var err error
 
@@ -217,7 +221,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			}
 		}
 
-		err := t(c)
+		err := f(c.client)
 
 		if err != nil {
 			switch err.(type) {
@@ -236,7 +240,7 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			case *cassandra.UnavailableException:
 				// one or more replicas are unavailable for the operation at the required consistency level. this is potentially
 				// recoverable in a partitioned cluster by hoping to another connection/node and trying again
-				glog.Info("Node %s %s", c.node.node, err)
+				glog.Infof("Node %s %s", c.node.node, err)
 				cp.release(c)
 				c = nil
 				continue

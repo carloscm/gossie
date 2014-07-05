@@ -263,9 +263,9 @@ func (r *reader) Get(key []byte) (*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret []*ColumnOrSuperColumn
-	err := r.pool.run(func(c *connection) error {
+	err := r.pool.Run(func(c Cassandra) error {
 		var err error
-		ret, err = c.client.GetSlice(key, &r.columnParent, sp, r.consistencyLevel)
+		ret, err = c.GetSlice(key, &r.columnParent, sp, r.consistencyLevel)
 		return err
 	})
 
@@ -284,9 +284,9 @@ func (r *reader) Count(key []byte) (int, error) {
 	sp := r.buildPredicate()
 
 	var ret int32
-	err := r.pool.run(func(c *connection) error {
+	err := r.pool.Run(func(c Cassandra) error {
 		var err error
-		ret, err = c.client.GetCount(key, &r.columnParent, sp, r.consistencyLevel)
+		ret, err = c.GetCount(key, &r.columnParent, sp, r.consistencyLevel)
 		return err
 	})
 
@@ -309,9 +309,9 @@ func (r *reader) MultiGet(keys [][]byte) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret map[string][]*ColumnOrSuperColumn
-	err := r.pool.run(func(c *connection) error {
+	err := r.pool.Run(func(c Cassandra) error {
 		var err error
-		ret, err = c.client.MultigetSlice(keys, &r.columnParent, sp, r.consistencyLevel)
+		ret, err = c.MultigetSlice(keys, &r.columnParent, sp, r.consistencyLevel)
 		return err
 	})
 
@@ -334,9 +334,9 @@ func (r *reader) MultiCount(keys [][]byte) ([]*RowColumnCount, error) {
 	sp := r.buildPredicate()
 
 	var ret map[string]int32
-	err := r.pool.run(func(c *connection) error {
+	err := r.pool.Run(func(c Cassandra) error {
 		var err error
-		ret, err = c.client.MultigetCount(keys, &r.columnParent, sp, r.consistencyLevel)
+		ret, err = c.MultigetCount(keys, &r.columnParent, sp, r.consistencyLevel)
 		return err
 	})
 
@@ -366,9 +366,9 @@ func (r *reader) RangeGet(rang *Range) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret []*KeySlice
-	err := r.pool.run(func(c *connection) error {
+	err := r.pool.Run(func(c Cassandra) error {
 		var err error
-		ret, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
+		ret, err = c.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
 		return err
 	})
 
@@ -396,9 +396,9 @@ func (r *reader) IndexedGet(rang *IndexedRange) ([]*Row, error) {
 	sp := r.buildPredicate()
 
 	var ret []*KeySlice
-	err := r.pool.run(func(c *connection) error {
+	err := r.pool.Run(func(c Cassandra) error {
 		var err error
-		ret, err = c.client.GetIndexedSlices(&r.columnParent, ic, sp, r.consistencyLevel)
+		ret, err = c.GetIndexedSlices(&r.columnParent, ic, sp, r.consistencyLevel)
 		return err
 	})
 
@@ -441,9 +441,9 @@ func (r *reader) RangeScan() (<-chan *Row, <-chan error) {
 
 		for {
 			var ksv []*KeySlice
-			err := r.pool.run(func(c *connection) error {
+			err := r.pool.Run(func(c Cassandra) error {
 				var err error
-				ksv, err = c.client.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
+				ksv, err = c.GetRangeSlices(&r.columnParent, sp, kr, r.consistencyLevel)
 				return err
 			})
 
@@ -488,9 +488,9 @@ func (r *reader) WideRowScan(key, startColumn []byte, batchSize int32, callback 
 
 	var ret []*KeySlice
 	for {
-		err := r.pool.run(func(c *connection) error {
+		err := r.pool.Run(func(c Cassandra) error {
 			var err error
-			ret, err = c.client.GetPagedSlice(r.columnParent.ColumnFamily, keyRange, startColumn, r.consistencyLevel)
+			ret, err = c.GetPagedSlice(r.columnParent.ColumnFamily, keyRange, startColumn, r.consistencyLevel)
 			return err
 		})
 

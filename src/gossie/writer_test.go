@@ -11,12 +11,12 @@ type stubTransactionRunner struct {
 	conn *connection
 }
 
-func (s *stubTransactionRunner) run(t transaction) error {
-	t(s.conn)
+func (s *stubTransactionRunner) Run(t func(client Cassandra) error) error {
+	t(s.conn.client)
 	return nil
 }
-func (s *stubTransactionRunner) runWithRetries(t transaction, retries int) error {
-	t(s.conn)
+func (s *stubTransactionRunner) RunWithRetries(t func(client Cassandra) error, retries int) error {
+	t(s.conn.client)
 	return nil
 }
 

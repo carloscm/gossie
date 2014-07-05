@@ -37,13 +37,13 @@ type Writer interface {
 }
 
 type writer struct {
-	pool             connectionRunner
+	pool             ConnectionRunner
 	consistencyLevel cassandra.ConsistencyLevel
 	writers          map[string]map[string][]*cassandra.Mutation
 	usedCounters     bool
 }
 
-func newWriter(cp connectionRunner, cl cassandra.ConsistencyLevel) *writer {
+func newWriter(cp ConnectionRunner, cl cassandra.ConsistencyLevel) *writer {
 	return &writer{
 		pool:             cp,
 		consistencyLevel: cl,
@@ -143,11 +143,11 @@ func (w *writer) DeleteSlice(cf string, key []byte, slice *Slice) Writer {
 */
 
 func (w *writer) Run() error {
-	toRun := func(c *connection) error {
-		return c.client.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
+	toRun := func(c cassandra.Cassandra) error {
+		return c.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
 	}
 	if w.usedCounters {
-		return w.pool.runWithRetries(toRun, 1)
+		return w.pool.RunWithRetries(toRun, 1)
 	}
-	return w.pool.run(toRun)
+	return w.pool.Run(toRun)
 }

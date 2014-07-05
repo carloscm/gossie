@@ -5,6 +5,29 @@ import (
 	"testing"
 )
 
+func TestReasonableTwoMapping(t *testing.T) {
+	m2, err := NewMapping(&ReasonableTwo{})
+	if err != nil {
+		t.Fatal("Error building mapping:", err)
+	}
+	t.Log("mapping:", m2)
+
+	r100 := &ReasonableTwo{
+		Username: "batchuser1",
+		TweetID:  int64(1),
+		Version:  int64(2),
+		Lat:      1.00002,
+		Lon:      -38.11,
+		Body:     "hey this thing appears to work, nice!",
+	}
+	row, err := m2.Map(r100)
+	if err != nil {
+		t.Fatal("Error marshalling:", err)
+	}
+	t.Log("row:", row)
+
+}
+
 func TestBatch(t *testing.T) {
 	cp, err := NewConnectionPool(localEndpointPool, keyspace, PoolOptions{Size: 1, Timeout: shortTimeout})
 	if err != nil {

@@ -166,8 +166,8 @@ func TestRun(t *testing.T) {
 	var gotConnection bool
 
 	check := func(_ire, _ue, _te, _err, expectedError bool) {
-		err := cp.run(func(c *connection) error {
-			gotConnection = c.client != nil
+		err := cp.Run(func(c cassandra.Cassandra) error {
+			gotConnection = c != nil
 			var err error
 			switch {
 			case _ire:
