@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/apesternikov/gossie/src/cassandra"
+	"github.com/golang/glog"
 	"reflect"
 	"strings"
 )
@@ -150,7 +151,7 @@ type sparseMapping struct {
 }
 
 func (s *sparseMapping) String() string {
-	return fmt.Sprintf("sparseMapping cf=%s key=%s components=%v si=%s", s.cf, s.key, s.components, *s.si)
+	return fmt.Sprintf("sparseMapping cf=%s key=%s components=%v si=%v", s.cf, s.key, s.components, *s.si)
 }
 
 func (m *sparseMapping) Cf() string {
@@ -257,14 +258,19 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 			return nil, err
 		}
 		if len(composite) > 0 {
-			columnName = append(composite, packComposite(columnName, eocEquals)...)
+			bv := make([]byte, 0, len(composite)+len(columnName)+3)
+			bv = append(bv, composite...)
+			bv = append(bv, packComposite(columnName, eocEquals)...)
+			columnName = bv
 		}
 		columnValue, err := f.marshalValue(v)
 		if err != nil {
 			return nil, err
 		}
+		glog.V(1).Infof("column name %v value %v", columnName, columnValue)
 		row.Columns = append(row.Columns, &Column{Name: columnName, Value: columnValue})
 	}
+	glog.V(1).Infof("returning columns %v", row.Columns)
 
 	return row, nil
 }

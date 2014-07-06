@@ -24,7 +24,7 @@ func TestReasonableTwoMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal("Error marshalling:", err)
 	}
-	t.Log("row:", row)
+	t.Log("row:", row.Columns)
 
 }
 

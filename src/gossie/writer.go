@@ -3,6 +3,7 @@ package gossie
 import (
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/apesternikov/gossie/src/cassandra"
+	"github.com/golang/glog"
 )
 
 // Writer is the interface for all the write operations over Cassandra.
@@ -144,7 +145,11 @@ func (w *writer) DeleteSlice(cf string, key []byte, slice *Slice) Writer {
 
 func (w *writer) Run() error {
 	toRun := func(c cassandra.Cassandra) error {
-		return c.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
+		err := c.BatchMutate(w.writers, cassandra.ConsistencyLevel(w.consistencyLevel))
+		if err != nil {
+			glog.Errorf("error updating batch %s, batch is %v", err, w.writers)
+		}
+		return err
 	}
 	if w.usedCounters {
 		return w.pool.RunWithRetries(toRun, 1)
