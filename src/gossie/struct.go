@@ -77,7 +77,12 @@ func (f *field) marshalValue(structValue *reflect.Value) ([]byte, error) {
 
 func (f *field) isEmpty(structValue *reflect.Value) bool {
 	v := structValue.Field(f.index)
-	return v.Interface() == reflect.Zero(v.Type()).Interface()
+	switch v.Kind() {
+	case reflect.Slice: // for []byte
+		return v.IsNil() || v.Len() == 0
+	default:
+		return v.Interface() == reflect.Zero(v.Type()).Interface()
+	}
 }
 
 func (f *field) unmarshalValue(b []byte, structValue *reflect.Value) error {
