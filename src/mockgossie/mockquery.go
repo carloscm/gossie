@@ -16,31 +16,49 @@ type MockQuery struct {
 
 var _ Query = &MockQuery{}
 
-func (*MockQuery) ConsistencyLevel(ConsistencyLevel) Query    { panic("ConsistencyLevel not implemented") }
-func (m *MockQuery) Limit(c, r int) Query                     { m.columnLimit = c; m.rowLimit = r; return m }
-func (*MockQuery) Reversed(bool) Query                        { panic("Reversed not implemented") }
-func (m *MockQuery) Components(c ...interface{}) Query        { m.components = c; return m }
-func (*MockQuery) Between(start, end interface{}) Query       { panic("Between not implemented") }
-func (*MockQuery) MultiGet(key []interface{}) (Result, error) { panic("Get not implemented") }
-func (*MockQuery) RangeGet(*Range) (Result, error)            { panic("RangeGet not implemented") }
-func (*MockQuery) RangeOne(destination interface{}) error     { panic("RangeOne not implemented") }
+func (*MockQuery) ConsistencyLevel(ConsistencyLevel) Query { panic("ConsistencyLevel not implemented") }
+func (m *MockQuery) Limit(c, r int) Query                  { m.columnLimit = c; m.rowLimit = r; return m }
+func (*MockQuery) Reversed(bool) Query                     { panic("Reversed not implemented") }
+func (m *MockQuery) Components(c ...interface{}) Query     { m.components = c; return m }
+func (*MockQuery) Between(start, end interface{}) Query    { panic("Between not implemented") }
+func (*MockQuery) RangeOne(destination interface{}) error  { panic("RangeOne not implemented") }
 func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
 	panic("Where not implemented")
 }
 
-func (m *MockQuery) Get(key interface{}) (Result, error) {
+func (m *MockQuery) RangeGet(r *Range) (Result, error) {
+	rows := m.pool.Rows(m.mapping.Cf())
+	count := r.Count
+	started := false
+	keys := make([]interface{}, 0)
+	for _, row := range rows {
+		if started || r.Start == nil || bytes.Equal(row.Key, r.Start) {
+			started = true
+			keys = append(keys, row.Key)
+			count--
+		}
+		if count <= 0 || (r.End != nil && bytes.Equal(row.Key, r.End)) {
+			break
+		}
+	}
+	return m.MultiGet(keys)
+}
+
+func (m *MockQuery) MultiGet(keys []interface{}) (Result, error) {
 	rows := m.pool.Rows(m.mapping.Cf())
 
-	k, err := m.mapping.MarshalKey(key)
-	if err != nil {
-		return nil, err
-	}
-
 	buffer := make([]*Row, 0)
-	for _, r := range rows {
-		if bytes.Equal(r.Key, k) {
-			checkExpired(r)
-			buffer = append(buffer, r)
+	for _, key := range keys {
+		k, err := m.mapping.MarshalKey(key)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, r := range rows {
+			if bytes.Equal(r.Key, k) {
+				checkExpired(r)
+				buffer = append(buffer, r)
+			}
 		}
 	}
 
@@ -48,6 +66,10 @@ func (m *MockQuery) Get(key interface{}) (Result, error) {
 		MockQuery: *m,
 		buffer:    buffer,
 	}, nil
+}
+
+func (m *MockQuery) Get(key interface{}) (Result, error) {
+	return m.MultiGet([]interface{}{key})
 }
 
 func (m *MockQuery) GetOne(key interface{}, destination interface{}) error {
