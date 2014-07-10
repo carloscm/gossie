@@ -2,6 +2,7 @@ package mockgossie
 
 import (
 	"bytes"
+
 	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
@@ -21,7 +22,6 @@ func (m *MockQuery) Limit(c, r int) Query                  { m.columnLimit = c; 
 func (*MockQuery) Reversed(bool) Query                     { panic("Reversed not implemented") }
 func (m *MockQuery) Components(c ...interface{}) Query     { m.components = c; return m }
 func (*MockQuery) Between(start, end interface{}) Query    { panic("Between not implemented") }
-func (*MockQuery) RangeOne(destination interface{}) error  { panic("RangeOne not implemented") }
 func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
 	panic("Where not implemented")
 }
@@ -74,6 +74,16 @@ func (m *MockQuery) Get(key interface{}) (Result, error) {
 
 func (m *MockQuery) GetOne(key interface{}, destination interface{}) error {
 	res, err := m.Get(key)
+	if err != nil {
+		return err
+	}
+	return res.Next(destination)
+}
+
+var rangeOne = &Range{Count: 1}
+
+func (m *MockQuery) RangeOne(destination interface{}) error {
+	res, err := m.RangeGet(rangeOne)
 	if err != nil {
 		return err
 	}
