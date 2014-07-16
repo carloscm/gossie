@@ -2,6 +2,7 @@
 package gossie
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -64,6 +65,7 @@ type PoolOptions struct {
 	Grace            int                        // if a node is blacklisted try to contact it again after Grace seconds
 	Retries          int                        // retry queries for Retries times before raising an error
 	Authentication   map[string]string          // if one or more keys are present, login() is called with the values from Authentication
+	TLSConfig        *tls.Config                // present if using SSL, otherwise nil
 }
 
 var DefaultPoolOptions = PoolOptions{
@@ -74,7 +76,8 @@ var DefaultPoolOptions = PoolOptions{
 	BleederInterval:  time.Second * 2,
 	Grace:            5,
 	Retries:          5,
-	// Authentication   is empty
+	// Authentication is empty
+	// TLSConfig is empty
 }
 
 const (
@@ -125,6 +128,9 @@ func (o *PoolOptions) mergeFrom(r *PoolOptions) {
 	}
 	if r.Authentication != nil {
 		o.Authentication = r.Authentication
+	}
+	if r.TLSConfig != nil {
+		o.TLSConfig = r.TLSConfig
 	}
 }
 
@@ -292,7 +298,7 @@ func (cp *connectionPool) acquire() (*connection, error) {
 	if ok {
 		return c, nil
 	}
-	c, err = newConnection(n, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
+	c, err = newConnection(n, cp.keyspace, cp.options.Timeout, cp.options.Authentication, cp.options.TLSConfig)
 	if err == ErrorConnectionTimeout {
 		n.blacklist()
 	}
@@ -340,13 +346,12 @@ func (cp *connectionPool) Close() {
 }
 
 type connection struct {
-	socket    *thrift.TSocket
 	transport *thrift.TFramedTransport
 	client    cassandra.Cassandra
 	node      *node
 }
 
-func newConnection(n *node, keyspace string, timeout time.Duration, authentication map[string]string) (*connection, error) {
+func newConnection(n *node, keyspace string, timeout time.Duration, authentication map[string]string, tlsConfig *tls.Config) (*connection, error) {
 
 	addr, err := net.ResolveTCPAddr("tcp", n.node)
 	if err != nil {
@@ -354,10 +359,14 @@ func newConnection(n *node, keyspace string, timeout time.Duration, authenticati
 	}
 
 	c := &connection{node: n}
+	if tlsConfig == nil {
+		socket := thrift.NewTSocketFromAddrTimeout(addr, timeout)
+		c.transport = thrift.NewTFramedTransport(socket)
+	} else {
+		sslSocket := thrift.NewTSSLSocketFromAddrTimeout(addr, tlsConfig, timeout)
+		c.transport = thrift.NewTFramedTransport(sslSocket)
+	}
 
-	c.socket = thrift.NewTSocketFromAddrTimeout(addr, timeout)
-
-	c.transport = thrift.NewTFramedTransport(c.socket)
 	protocol := thrift.NewTBinaryProtocolTransport(c.transport)
 	c.client = cassandra.NewCassandraClientProtocol(c.transport, protocol, protocol)
 
