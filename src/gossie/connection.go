@@ -65,6 +65,7 @@ type PoolOptions struct {
 	Grace            int                        // if a node is blacklisted try to contact it again after Grace seconds
 	Retries          int                        // retry queries for Retries times before raising an error
 	Authentication   map[string]string          // if one or more keys are present, login() is called with the values from Authentication
+	TLSConfig        *tls.Config                // present if using SSL, otherwise nil
 }
 
 var DefaultPoolOptions = PoolOptions{
@@ -75,7 +76,8 @@ var DefaultPoolOptions = PoolOptions{
 	BleederInterval:  time.Second * 2,
 	Grace:            5,
 	Retries:          5,
-	// Authentication   is empty
+	// Authentication is empty
+	// TLSConfig is empty
 }
 
 const (
@@ -127,6 +129,9 @@ func (o *PoolOptions) mergeFrom(r *PoolOptions) {
 	if r.Authentication != nil {
 		o.Authentication = r.Authentication
 	}
+	if r.TLSConfig != nil {
+		o.TLSConfig = r.TLSConfig
+	}
 }
 
 type node struct {
@@ -136,27 +141,25 @@ type node struct {
 }
 
 type connectionPool struct {
-	keyspace  string
-	options   PoolOptions
-	schema    *Schema
-	nodes     []*node
-	tlsConfig *tls.Config
+	keyspace string
+	options  PoolOptions
+	schema   *Schema
+	nodes    []*node
 }
 
 var nowfunc func() time.Time = time.Now
 
 // NewConnectionPool creates a new connection pool for the given nodes and keyspace.
 // nodes is in the format of "host:port" strings.
-func NewConnectionPool(nodes []string, keyspace string, options PoolOptions, tlsConfig *tls.Config) (ConnectionPool, error) {
+func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (ConnectionPool, error) {
 	if len(nodes) <= 0 {
 		return nil, errors.New("At least one node is required")
 	}
 
 	cp := &connectionPool{
-		keyspace:  keyspace,
-		options:   DefaultPoolOptions,
-		nodes:     make([]*node, len(nodes)),
-		tlsConfig: tlsConfig,
+		keyspace: keyspace,
+		options:  DefaultPoolOptions,
+		nodes:    make([]*node, len(nodes)),
 	}
 	cp.options.mergeFrom(&options)
 
@@ -295,7 +298,7 @@ func (cp *connectionPool) acquire() (*connection, error) {
 	if ok {
 		return c, nil
 	}
-	c, err = newConnection(n, cp.keyspace, cp.options.Timeout, cp.options.Authentication, cp.tlsConfig)
+	c, err = newConnection(n, cp.keyspace, cp.options.Timeout, cp.options.Authentication, cp.options.TLSConfig)
 	if err == ErrorConnectionTimeout {
 		n.blacklist()
 	}
@@ -343,8 +346,6 @@ func (cp *connectionPool) Close() {
 }
 
 type connection struct {
-	socket    *thrift.TSocket
-	sslSocket *thrift.TSSLSocket
 	transport *thrift.TFramedTransport
 	client    cassandra.Cassandra
 	node      *node
@@ -359,11 +360,11 @@ func newConnection(n *node, keyspace string, timeout time.Duration, authenticati
 
 	c := &connection{node: n}
 	if tlsConfig == nil {
-		c.socket = thrift.NewTSocketFromAddrTimeout(addr, timeout)
-		c.transport = thrift.NewTFramedTransport(c.socket)
+		socket := thrift.NewTSocketFromAddrTimeout(addr, timeout)
+		c.transport = thrift.NewTFramedTransport(socket)
 	} else {
-		c.sslSocket = thrift.NewTSSLSocketFromAddrTimeout(addr, tlsConfig, timeout)
-		c.transport = thrift.NewTFramedTransport(c.sslSocket)
+		sslSocket := thrift.NewTSSLSocketFromAddrTimeout(addr, tlsConfig, timeout)
+		c.transport = thrift.NewTFramedTransport(sslSocket)
 	}
 
 	protocol := thrift.NewTBinaryProtocolTransport(c.transport)
