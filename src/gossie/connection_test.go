@@ -18,12 +18,12 @@ func TestConnection(t *testing.T) {
 	   }
 	*/
 	n := &node{node: localEndpoint}
-	c, err := newConnection(n, "NotExists", shortTimeout, map[string]string{})
+	c, err := newConnection(n, "NotExists", shortTimeout, map[string]string{}, nil)
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
-	c, err = newConnection(n, keyspace, shortTimeout, map[string]string{})
+	c, err = newConnection(n, keyspace, shortTimeout, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
