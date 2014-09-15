@@ -44,6 +44,13 @@ func errorMarshal(t *testing.T, value interface{}, typeDesc TypeDesc) {
 	}
 }
 
+func errorUnmarshal(t *testing.T, b []byte, value interface{}, typeDesc TypeDesc) {
+	err := Unmarshal(b, typeDesc, value)
+	if err == nil {
+		t.Error("Error expected for unmarshaling, got none")
+	}
+}
+
 func TestMarshalWrongType(t *testing.T) {
 	type no int
 	var v no = 1
@@ -373,4 +380,55 @@ func TestMarshalTime(t *testing.T) {
 	errorMarshal(t, v, DecimalType)
 	errorMarshal(t, v, BooleanType)
 	errorMarshal(t, v, DoubleType)
+}
+
+type CustomType bool
+
+func (t *CustomType) Marshal() ([]byte, error) {
+	if t == nil {
+		return nil, ErrorUnsupportedMarshaling
+	}
+	b := make([]byte, 1)
+	if *t == true {
+		b[0] = 't'
+	} else {
+		b[0] = 'f'
+	}
+	return b, nil
+}
+
+func (t *CustomType) Unmarshal(b []byte) error {
+	if len(b) < 1 {
+		return ErrorCassandraTypeSerializationUnmarshaling
+	}
+	switch b[0] {
+	case 't':
+		*t = true
+		return nil
+	case 'f':
+		*t = false
+		return nil
+	}
+	return ErrorCassandraTypeSerializationUnmarshaling
+}
+
+func TestMarshalCustom(t *testing.T) {
+	var b []byte
+	var v CustomType = true
+	var vv CustomType
+	var r CustomType
+
+	b = []byte{'t'}
+	checkFullMarshal(t, b, BytesType, &v, &r)
+
+	v = false
+	b = []byte{'f'}
+	checkFullMarshal(t, b, BytesType, &v, &r)
+	checkFullMarshal(t, b, BytesType, &vv, &r)
+
+	var pv *CustomType
+	errorMarshal(t, pv, BytesType)
+
+	b = []byte{'c'}
+	errorUnmarshal(t, b, vv, BytesType)
 }

@@ -59,7 +59,20 @@ var (
 
 type TypeDesc int
 
+type Marshaller interface {
+	Marshal() ([]byte, error)
+}
+
+type Unmarshaller interface {
+	Unmarshal([]byte) error
+}
+
 func Marshal(value interface{}, typeDesc TypeDesc) ([]byte, error) {
+	// use custom marshaller
+	if v, ok := value.(Marshaller); ok {
+		return v.Marshal()
+	}
+
 	// plain nil case
 	if value == nil {
 		return nil, ErrorUnsupportedNilMarshaling
@@ -311,6 +324,11 @@ func marshalFloat64(value float64, typeDesc TypeDesc) ([]byte, error) {
 }
 
 func Unmarshal(b []byte, typeDesc TypeDesc, value interface{}) error {
+	// use custom unmarshaller
+	if v, ok := value.(Unmarshaller); ok {
+		return v.Unmarshal(b)
+	}
+
 	switch v := value.(type) {
 	case *[]byte:
 		*v = b
