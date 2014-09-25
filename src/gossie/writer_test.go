@@ -30,7 +30,6 @@ func TestWriterInsert(t *testing.T) {
 	//expectingBatch := thrift.NewTMap(k, v, s)
 	cli.EXPECT().BatchMutate(gomock.Any(), ConsistencyLevel_ONE)
 	conn := &connection{
-		socket:    nil,
 		transport: nil,
 		client:    cli,
 		node:      &node{node: "node"},
