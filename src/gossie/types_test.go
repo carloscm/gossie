@@ -384,7 +384,7 @@ func TestMarshalTime(t *testing.T) {
 
 type CustomType bool
 
-func (t *CustomType) Marshal() ([]byte, error) {
+func (t *CustomType) MarshalCassandra() ([]byte, error) {
 	if t == nil {
 		return nil, ErrorUnsupportedMarshaling
 	}
@@ -397,7 +397,7 @@ func (t *CustomType) Marshal() ([]byte, error) {
 	return b, nil
 }
 
-func (t *CustomType) Unmarshal(b []byte) error {
+func (t *CustomType) UnmarshalCassandra(b []byte) error {
 	if len(b) < 1 {
 		return ErrorCassandraTypeSerializationUnmarshaling
 	}
