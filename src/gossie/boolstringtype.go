@@ -18,21 +18,24 @@ type boolStringType struct {
 }
 
 type boolStringMarshaler struct {
+	b bool
+}
+type boolStringUnmarshaler struct {
 	b *bool
 }
 
 func (b *boolStringType) Marshaler(v interface{}) Marshaler {
-	return &boolStringMarshaler{v.(*bool)}
+	return &boolStringMarshaler{v.(bool)}
 }
 func (b *boolStringType) Unmarshaler(v interface{}) Unmarshaler {
-	return &boolStringMarshaler{v.(*bool)}
+	return &boolStringUnmarshaler{v.(*bool)}
 }
 
 func (m *boolStringMarshaler) MarshalCassandra() ([]byte, error) {
-	return []byte(strconv.FormatBool(*m.b)), nil
+	return []byte(strconv.FormatBool(m.b)), nil
 }
 
-func (m *boolStringMarshaler) UnmarshalCassandra(b []byte) error {
+func (m *boolStringUnmarshaler) UnmarshalCassandra(b []byte) error {
 	switch string(b) {
 	case "true":
 		*m.b = true
