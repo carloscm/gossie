@@ -36,7 +36,8 @@ type GossieType interface {
 // Allows you to specify `marshal:"json"` for example to use the jsonType GossieType
 // This makes it easier to use common custom encodings
 var gossieTypes = map[string]GossieType{
-	"json": &jsonType{},
+	"json":       &jsonType{},
+	"boolstring": &boolStringType{},
 }
 
 // Register a custom GossieType to be used with the given "marshal" struct tag
