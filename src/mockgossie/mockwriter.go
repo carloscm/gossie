@@ -117,7 +117,27 @@ func (w *MockWriter) DeltaCounters(cf string, row *Row) Writer {
 }
 
 func (w *MockWriter) Delete(cf string, key []byte) Writer {
-	panic("Not Implemented")
+	rows := w.pool.Rows(cf)
+
+	t := now()
+
+	i := sort.Search(len(rows), func(i int) bool { return bytes.Compare(rows[i].Key, key) >= 0 })
+	if i < len(rows) && bytes.Equal(rows[i].Key, key) {
+		// Row exists, delete the columns
+		e := rows[i]
+		cols := e.Columns
+		for index, c := range cols {
+			if t >= *c.Timestamp {
+				// TODO store tombstone?
+				copy(cols[index:], cols[index+1:])
+				cols[len(cols)-1] = nil
+				cols = cols[:len(cols)-1]
+			}
+		}
+		e.Columns = cols
+	}
+
+	return w
 }
 
 func (w *MockWriter) DeleteColumns(cf string, key []byte, columns [][]byte) Writer {
