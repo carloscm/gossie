@@ -24,10 +24,10 @@ type boolStringUnmarshaler struct {
 	b *bool
 }
 
-func (b *boolStringType) Marshaler(v interface{}) Marshaler {
+func (b *boolStringType) Marshaler(v interface{}, tagArgs *string) Marshaler {
 	return &boolStringMarshaler{v.(bool)}
 }
-func (b *boolStringType) Unmarshaler(v interface{}) Unmarshaler {
+func (b *boolStringType) Unmarshaler(v interface{}, tagArgs *string) Unmarshaler {
 	return &boolStringUnmarshaler{v.(*bool)}
 }
 

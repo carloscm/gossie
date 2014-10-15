@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 )
 
@@ -16,21 +17,26 @@ type structInspection struct {
 }
 
 type field struct {
-	name          string
-	index         int
-	cassandraName string
-	gossieType    GossieType
-	cassandraType TypeDesc
-	skipEmpty     bool
+	name           string
+	index          int
+	cassandraName  string
+	gossieType     GossieType
+	gossieTypeArgs *string
+	cassandraType  TypeDesc
+	skipEmpty      bool
 }
 
 var recognizedGlobalTags []string = []string{"mapping", "cf", "key", "cols", "value", "marshal"}
 
 type GossieType interface {
 	// Marshaler should wrap the struct value in a gossie.Marshaler
-	Marshaler(value interface{}) Marshaler
+	// tagArgs are the arguments provided in the tag, such as `marshal:"json,{}"`
+	// the `{}` would be the tagArgs
+	Marshaler(value interface{}, tagArgs *string) Marshaler
 	// Unmarshaler should wrap the struct value in a gossie.Unmarshaler
-	Unmarshaler(value interface{}) Unmarshaler
+	// tagArgs are the arguments provided in the tag, such as `marshal:"json,{}"`
+	// the `{}` would be the tagArgs
+	Unmarshaler(value interface{}, tagArgs *string) Unmarshaler
 }
 
 // Allows you to specify `marshal:"json"` for example to use the jsonType GossieType
@@ -59,8 +65,13 @@ func newField(index int, sf reflect.StructField) (*field, error) {
 
 	// Check if a specific GossieType has been requested
 	var gossieType GossieType
+	var gossieTypeArgs *string
 	if tagMarshal := sf.Tag.Get("marshal"); tagMarshal != "" {
-		gossieType = gossieTypes[tagMarshal]
+		parts := strings.SplitN(tagMarshal, ",", 2)
+		gossieType = gossieTypes[parts[0]]
+		if len(parts) > 1 {
+			gossieTypeArgs = &parts[1]
+		}
 		if gossieType == nil {
 			return nil, fmt.Errorf("Unregistered marshal type: %v", tagMarshal)
 		}
@@ -89,7 +100,7 @@ func newField(index int, sf reflect.StructField) (*field, error) {
 		skipEmpty = true
 	}
 
-	return &field{name, index, cassandraName, gossieType, cassandraType, skipEmpty}, nil
+	return &field{name, index, cassandraName, gossieType, gossieTypeArgs, cassandraType, skipEmpty}, nil
 }
 
 func (f *field) marshalName() ([]byte, error) {
@@ -104,7 +115,7 @@ func (f *field) marshalValue(structValue *reflect.Value) ([]byte, error) {
 	v := structValue.Field(f.index)
 	vi := v.Interface()
 	if f.gossieType != nil {
-		vi = f.gossieType.Marshaler(vi)
+		vi = f.gossieType.Marshaler(vi, f.gossieTypeArgs)
 	}
 	b, err := Marshal(vi, f.cassandraType)
 	if err != nil {
@@ -131,7 +142,7 @@ func (f *field) unmarshalValue(b []byte, structValue *reflect.Value) error {
 	vp := v.Addr()
 	vpi := vp.Interface()
 	if f.gossieType != nil {
-		vpi = f.gossieType.Unmarshaler(vpi)
+		vpi = f.gossieType.Unmarshaler(vpi, f.gossieTypeArgs)
 	}
 	err := Unmarshal(b, f.cassandraType, vpi)
 	if err != nil {
