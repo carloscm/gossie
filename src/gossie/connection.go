@@ -47,7 +47,12 @@ type ConnectionPool interface {
 
 	// Close all the connections in the pool
 	Close()
+
+	// Attach a function that can wrap the internal cassandra clients for tracing
+	WithTracer(tracer Tracer) ConnectionPool
 }
+
+type Tracer func(ConnectionPool, cassandra.Cassandra) cassandra.Cassandra
 
 //package-private methods
 type connectionRunner interface {
@@ -145,6 +150,7 @@ type connectionPool struct {
 	options  PoolOptions
 	schema   *Schema
 	nodes    []*node
+	tracer   Tracer
 }
 
 var nowfunc func() time.Time = time.Now
@@ -191,6 +197,16 @@ func NewConnectionPool(nodes []string, keyspace string, options PoolOptions) (Co
 	return cp, nil
 }
 
+func (cp *connectionPool) WithTracer(tracer Tracer) ConnectionPool {
+	return &connectionPool{
+		keyspace: cp.keyspace,
+		options:  cp.options,
+		schema:   cp.schema,
+		nodes:    cp.nodes,
+		tracer:   tracer,
+	}
+}
+
 func (cp *connectionPool) bleeder(d time.Duration) {
 	l := len(cp.nodes)
 	c := time.Tick(d)
@@ -229,7 +245,15 @@ func (cp *connectionPool) runWithRetries(t transaction, retries int) error {
 			}
 		}
 
-		err := t(c)
+		tc := c
+		if cp.tracer != nil {
+			tc = &connection{
+				node:      c.node,
+				client:    cp.tracer(cp, c.client),
+				transport: c.transport,
+			}
+		}
+		err := t(tc)
 
 		if err != nil {
 			switch err.(type) {

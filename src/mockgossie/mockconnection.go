@@ -38,6 +38,8 @@ func (m *MockConnectionPool) Writer() Writer { return newWriter(m) }
 func (m *MockConnectionPool) Batch() Batch   { return newBatch(m) }
 func (*MockConnectionPool) Close()           {}
 
+func (m *MockConnectionPool) WithTracer(Tracer) ConnectionPool { return m }
+
 func (m *MockConnectionPool) Query(mapping Mapping) Query {
 	return &MockQuery{
 		pool:        m,
