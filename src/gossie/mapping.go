@@ -20,6 +20,9 @@ type Mapping interface {
 	// Cf returns the column family name
 	Cf() string
 
+	// Returns true for compact mapping
+	Compact() bool
+
 	// MarshalKey marshals the passed key value into a []byte
 	MarshalKey(key interface{}) ([]byte, error)
 
@@ -151,6 +154,10 @@ type sparseMapping struct {
 
 func (m *sparseMapping) Cf() string {
 	return m.cf
+}
+
+func (m *sparseMapping) Compact() bool {
+	return false
 }
 
 func (m *sparseMapping) MarshalField(field string, value interface{}) ([]byte, error) {
@@ -429,6 +436,10 @@ type compactMapping struct {
 
 func (m *compactMapping) Cf() string {
 	return m.cf
+}
+
+func (m *compactMapping) Compact() bool {
+	return true
 }
 
 func (m *compactMapping) Map(source interface{}) (*Row, error) {

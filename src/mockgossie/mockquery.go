@@ -2,17 +2,27 @@ package mockgossie
 
 import (
 	"bytes"
+	enc "encoding/binary"
 
 	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
 )
 
+const (
+	eocEquals  byte = 0
+	eocGreater byte = 1
+	eocLower   byte = 0xff
+)
+
 type MockQuery struct {
-	pool        *MockConnectionPool
-	mapping     Mapping
-	components  []interface{}
-	columnLimit int
-	rowLimit    int
+	pool         *MockConnectionPool
+	mapping      Mapping
+	components   []interface{}
+	betweenStart interface{}
+	betweenEnd   interface{}
+	columnLimit  int
+	rowLimit     int
+	reversed     bool
 }
 
 var _ Query = &MockQuery{}
@@ -21,9 +31,13 @@ func (*MockQuery) ConsistencyLevel(ConsistencyLevel) Query { panic("ConsistencyL
 func (m *MockQuery) Limit(c, r int) Query                  { m.columnLimit = c; m.rowLimit = r; return m }
 func (*MockQuery) Reversed(bool) Query                     { panic("Reversed not implemented") }
 func (m *MockQuery) Components(c ...interface{}) Query     { m.components = c; return m }
-func (*MockQuery) Between(start, end interface{}) Query    { panic("Between not implemented") }
 func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
 	panic("Where not implemented")
+}
+
+func (m *MockQuery) Between(start, end interface{}) Query {
+	m.betweenStart, m.betweenEnd = start, end
+	return m
 }
 
 func (m *MockQuery) RangeGet(r *Range) (Result, error) {
@@ -57,11 +71,11 @@ func (m *MockQuery) MultiGet(keys []interface{}) (Result, error) {
 		for _, r := range rows {
 			if bytes.Equal(r.Key, k) {
 				checkExpired(r)
-				if m.components != nil {
-					panic("not implemented")
-				} else {
-					buffer = append(buffer, r)
+				r, err = m.sliceRow(r)
+				if err != nil {
+					return nil, err
 				}
+				buffer = append(buffer, r)
 			}
 		}
 	}
@@ -70,6 +84,86 @@ func (m *MockQuery) MultiGet(keys []interface{}) (Result, error) {
 		MockQuery: *m,
 		buffer:    buffer,
 	}, nil
+}
+
+func (m *MockQuery) sliceRow(r *Row) (*Row, error) {
+	if m.components != nil {
+		slice, err := m.buildSlice()
+		if err != nil {
+			return nil, err
+		}
+		cr := *r
+		cr.Columns = []*Column{}
+		for _, c := range r.Columns {
+			if len(slice.Start) > 0 && bytes.Compare(slice.Start, c.Name) < 0 {
+				continue
+			}
+			if len(slice.End) > 0 && bytes.Compare(slice.End, c.Name) > 0 {
+				continue
+			}
+			cr.Columns = append(cr.Columns, c)
+		}
+		r = &cr
+	}
+	return r, nil
+}
+
+func (q *MockQuery) buildSlice() (*Slice, error) {
+	var start, end []byte
+
+	components := q.components
+	if q.betweenStart != nil {
+		components = append(components, q.betweenStart)
+	}
+
+	if q.mapping.Compact() && len(q.components) == 1 {
+		if len(components) == 1 {
+			c := components[0]
+			b, err := q.mapping.MarshalComponent(c, 0)
+			if err != nil {
+				return nil, err
+			}
+			start = b
+			end = b
+		} else if q.betweenEnd != nil {
+			b, err := q.mapping.MarshalComponent(q.betweenEnd, 0)
+			if err != nil {
+				return nil, err
+			}
+			end = b
+		}
+	} else if len(components) > 0 {
+		last := len(components) - 1
+		for i, c := range components {
+			b, err := q.mapping.MarshalComponent(c, i)
+			if err != nil {
+				return nil, err
+			}
+			start = append(start, packComposite(b, eocEquals)...)
+			if i == last {
+				if q.betweenEnd != nil {
+					b, err := q.mapping.MarshalComponent(q.betweenEnd, i)
+					if err != nil {
+						return nil, err
+					}
+					end = append(end, packComposite(b, eocEquals)...)
+				} else {
+					end = append(end, packComposite(b, eocGreater)...)
+				}
+			} else {
+				end = append(end, packComposite(b, eocEquals)...)
+			}
+		}
+	}
+
+	return &Slice{Start: start, End: end, Count: q.columnLimit, Reversed: q.reversed}, nil
+}
+
+func packComposite(component []byte, eoc byte) []byte {
+	r := make([]byte, 2)
+	enc.BigEndian.PutUint16(r, uint16(len(component)))
+	r = append(r, component...)
+	return append(r, eoc)
 }
 
 func (m *MockQuery) Get(key interface{}) (Result, error) {
