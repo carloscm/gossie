@@ -95,10 +95,10 @@ func (m *MockQuery) sliceRow(r *Row) (*Row, error) {
 		cr := *r
 		cr.Columns = []*Column{}
 		for _, c := range r.Columns {
-			if len(slice.Start) > 0 && bytes.Compare(slice.Start, c.Name) < 0 {
+			if len(slice.Start) > 0 && bytes.Compare(slice.Start, c.Name) > 0 {
 				continue
 			}
-			if len(slice.End) > 0 && bytes.Compare(slice.End, c.Name) > 0 {
+			if len(slice.End) > 0 && bytes.Compare(slice.End, c.Name) < 0 {
 				continue
 			}
 			cr.Columns = append(cr.Columns, c)
