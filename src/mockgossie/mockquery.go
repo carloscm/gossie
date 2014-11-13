@@ -57,7 +57,11 @@ func (m *MockQuery) MultiGet(keys []interface{}) (Result, error) {
 		for _, r := range rows {
 			if bytes.Equal(r.Key, k) {
 				checkExpired(r)
-				buffer = append(buffer, r)
+				if m.components != nil {
+					panic("not implemented")
+				} else {
+					buffer = append(buffer, r)
+				}
 			}
 		}
 	}
