@@ -454,7 +454,7 @@ func (m *compactMapping) Map(source interface{}) (*Row, error) {
 		}
 		row.Columns = append(row.Columns, &Column{Name: composite, Value: columnValue})
 	} else {
-		row.Columns = append(row.Columns, &Column{Name: composite, Value: nil})
+		row.Columns = append(row.Columns, &Column{Name: composite, Value: make([]byte, 0, 0)})
 	}
 	return row, nil
 }
