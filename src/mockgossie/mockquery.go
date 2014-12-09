@@ -29,8 +29,11 @@ var _ Query = &MockQuery{}
 
 func (*MockQuery) ConsistencyLevel(ConsistencyLevel) Query { panic("ConsistencyLevel not implemented") }
 func (m *MockQuery) Limit(c, r int) Query                  { m.columnLimit = c; m.rowLimit = r; return m }
-func (*MockQuery) Reversed(bool) Query                     { panic("Reversed not implemented") }
 func (m *MockQuery) Components(c ...interface{}) Query     { m.components = c; return m }
+func (m *MockQuery) Reversed(r bool) Query {
+	m.reversed = r
+	return m
+}
 func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
 	panic("Where not implemented")
 }
@@ -225,7 +228,12 @@ func (r *result) NextColumn() (*Column, error) {
 			return nil, EndBeforeLimit
 		}
 	}
-	c := r.row.Columns[r.position]
+	var c *Column
+	if r.MockQuery.reversed {
+		c = r.row.Columns[len(r.row.Columns)-1-r.position]
+	} else {
+		c = r.row.Columns[r.position]
+	}
 	r.position++
 	return c, nil
 }
