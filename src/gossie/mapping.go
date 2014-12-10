@@ -23,6 +23,8 @@ type Mapping interface {
 	// Returns true for compact mapping
 	Compact() bool
 
+	Components() []string
+
 	// MarshalKey marshals the passed key value into a []byte
 	MarshalKey(key interface{}) ([]byte, error)
 
@@ -158,6 +160,10 @@ func (m *sparseMapping) Cf() string {
 
 func (m *sparseMapping) Compact() bool {
 	return false
+}
+
+func (m *sparseMapping) Components() []string {
+	return m.components
 }
 
 func (m *sparseMapping) MarshalField(field string, value interface{}) ([]byte, error) {
