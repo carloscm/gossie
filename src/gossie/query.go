@@ -249,20 +249,20 @@ func (q *query) buildSlice(reader Reader) error {
 				end = append(end, packComposite(b, eocEquals)...)
 			}
 		}
-		if q.betweenStart != nil {
-			b, err := q.mapping.MarshalComponent(q.betweenStart, len(components))
-			if err != nil {
-				return err
-			}
-			start = append(end, packComposite(b, eocEquals)...)
+	}
+	if q.betweenStart != nil {
+		b, err := q.mapping.MarshalComponent(q.betweenStart, len(components))
+		if err != nil {
+			return err
 		}
-		if q.betweenEnd != nil {
-			b, err := q.mapping.MarshalComponent(q.betweenEnd, len(components))
-			if err != nil {
-				return err
-			}
-			end = append(end, packComposite(b, eocEquals)...)
+		start = append(end, packComposite(b, eocEquals)...)
+	}
+	if q.betweenEnd != nil {
+		b, err := q.mapping.MarshalComponent(q.betweenEnd, len(components))
+		if err != nil {
+			return err
 		}
+		end = append(end, packComposite(b, eocEquals)...)
 	}
 
 	reader.Slice(&Slice{Start: start, End: end, Count: q.columnLimit, Reversed: q.reversed})
