@@ -240,7 +240,7 @@ func (q *query) buildSlice(reader Reader) error {
 			}
 			start = append(start, packComposite(b, eocEquals)...)
 			if i == last {
-				if q.betweenEnd != nil {
+				if q.betweenEnd == nil {
 					end = append(end, packComposite(b, eocGreater)...)
 				} else {
 					end = append(end, packComposite(b, eocEquals)...)
