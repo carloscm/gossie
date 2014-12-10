@@ -11,7 +11,7 @@ func TestBoolStringMarshaler(t *testing.T) {
 	ret := &CustomBoolStringType{}
 
 	b := []byte(`true`)
-	jv := &boolStringMarshaler{&v.B}
-	jret := &boolStringMarshaler{&ret.B}
+	jv := &boolStringMarshaler{v.B}
+	jret := &boolStringMarshaler{ret.B}
 	checkFullMarshal(t, b, BytesType, jv, jret)
 }

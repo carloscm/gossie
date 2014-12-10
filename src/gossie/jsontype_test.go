@@ -11,7 +11,7 @@ func TestJsonMarshaler(t *testing.T) {
 	ret := &CustomJsonType{}
 
 	b := []byte(`{"foo":"bar"}`)
-	jv := &jsonMarshaler{&v.B}
-	jret := &jsonMarshaler{&ret.B}
+	jv := &jsonMarshaler{&v.B, nil}
+	jret := &jsonMarshaler{&ret.B, nil}
 	checkFullMarshal(t, b, BytesType, jv, jret)
 }
