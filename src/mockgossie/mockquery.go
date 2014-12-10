@@ -115,11 +115,8 @@ func (q *MockQuery) buildSlice() (*Slice, error) {
 	var start, end []byte
 
 	components := q.components
-	if q.betweenStart != nil {
-		components = append(components, q.betweenStart)
-	}
 
-	if q.mapping.Compact() && len(q.components) == 1 {
+	if q.mapping.Compact() && len(q.mapping.Components()) == 1 {
 		if len(components) == 1 {
 			c := components[0]
 			b, err := q.mapping.MarshalComponent(c, 0)
@@ -128,12 +125,21 @@ func (q *MockQuery) buildSlice() (*Slice, error) {
 			}
 			start = b
 			end = b
-		} else if q.betweenEnd != nil {
-			b, err := q.mapping.MarshalComponent(q.betweenEnd, 0)
-			if err != nil {
-				return nil, err
+		} else {
+			if q.betweenStart != nil {
+				b, err := q.mapping.MarshalComponent(q.betweenStart, 0)
+				if err != nil {
+					return nil, err
+				}
+				start = b
 			}
-			end = b
+			if q.betweenEnd != nil {
+				b, err := q.mapping.MarshalComponent(q.betweenEnd, 0)
+				if err != nil {
+					return nil, err
+				}
+				end = b
+			}
 		}
 	} else if len(components) > 0 {
 		last := len(components) - 1
@@ -144,19 +150,29 @@ func (q *MockQuery) buildSlice() (*Slice, error) {
 			}
 			start = append(start, packComposite(b, eocEquals)...)
 			if i == last {
-				if q.betweenEnd != nil {
-					b, err := q.mapping.MarshalComponent(q.betweenEnd, i)
-					if err != nil {
-						return nil, err
-					}
-					end = append(end, packComposite(b, eocEquals)...)
-				} else {
+				if q.betweenEnd == nil {
 					end = append(end, packComposite(b, eocGreater)...)
+				} else {
+					end = append(end, packComposite(b, eocEquals)...)
 				}
 			} else {
 				end = append(end, packComposite(b, eocEquals)...)
 			}
 		}
+	}
+	if q.betweenStart != nil {
+		b, err := q.mapping.MarshalComponent(q.betweenStart, len(components))
+		if err != nil {
+			return nil, err
+		}
+		start = append(end, packComposite(b, eocEquals)...)
+	}
+	if q.betweenEnd != nil {
+		b, err := q.mapping.MarshalComponent(q.betweenEnd, len(components))
+		if err != nil {
+			return nil, err
+		}
+		end = append(end, packComposite(b, eocEquals)...)
 	}
 
 	return &Slice{Start: start, End: end, Count: q.columnLimit, Reversed: q.reversed}, nil
