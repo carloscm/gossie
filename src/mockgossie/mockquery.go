@@ -40,10 +40,10 @@ func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
 }
 
 func (m *MockQuery) Between(start, end interface{}) Query {
-	if reflect.ValueOf(start).IsNil() {
+	if start != nil && reflect.ValueOf(start).IsNil() {
 		start = nil
 	}
-	if reflect.ValueOf(end).IsNil() {
+	if end != nil && reflect.ValueOf(end).IsNil() {
 		end = nil
 	}
 	m.betweenStart, m.betweenEnd = start, end
