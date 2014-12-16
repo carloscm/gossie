@@ -2,6 +2,8 @@ package gossie
 
 import (
 	"errors"
+	"reflect"
+
 	. "github.com/wadey/gossie/src/cassandra"
 )
 
@@ -121,6 +123,12 @@ func (q *query) Components(components ...interface{}) Query {
 }
 
 func (q *query) Between(start, end interface{}) Query {
+	if reflect.ValueOf(start).IsNil() {
+		start = nil
+	}
+	if reflect.ValueOf(end).IsNil() {
+		end = nil
+	}
 	q.betweenStart = start
 	q.betweenEnd = end
 	return q

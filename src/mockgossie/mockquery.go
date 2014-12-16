@@ -3,6 +3,7 @@ package mockgossie
 import (
 	"bytes"
 	enc "encoding/binary"
+	"reflect"
 
 	. "github.com/wadey/gossie/src/cassandra"
 	. "github.com/wadey/gossie/src/gossie"
@@ -39,6 +40,12 @@ func (*MockQuery) Where(field string, op Operator, value interface{}) Query {
 }
 
 func (m *MockQuery) Between(start, end interface{}) Query {
+	if reflect.ValueOf(start).IsNil() {
+		start = nil
+	}
+	if reflect.ValueOf(end).IsNil() {
+		end = nil
+	}
 	m.betweenStart, m.betweenEnd = start, end
 	return m
 }
