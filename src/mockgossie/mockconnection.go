@@ -13,6 +13,7 @@ package mockgossie
 
 import (
 	"bytes"
+	"sort"
 
 	"github.com/apache/thrift/lib/go/thrift"
 	. "github.com/wadey/gossie/src/cassandra"
@@ -119,7 +120,7 @@ func (m *MockConnectionPool) LoadCF(cf string, dump CFDump) {
 	rows := []*Row{}
 	t := thrift.Int64Ptr(now())
 	for key, columns := range dump {
-		cols := []*Column{}
+		cols := Columns{}
 
 		for name, value := range columns {
 			cols = append(cols, &Column{
@@ -128,6 +129,7 @@ func (m *MockConnectionPool) LoadCF(cf string, dump CFDump) {
 				Timestamp: t,
 			})
 		}
+		sort.Sort(cols)
 		rows = append(rows, &Row{
 			Key:     []byte(key),
 			Columns: cols,
