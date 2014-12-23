@@ -97,10 +97,13 @@ func (m *MockQuery) MultiGet(keys []interface{}) (Result, error) {
 }
 
 func (m *MockQuery) sliceRow(r *Row) (*Row, error) {
-	if m.components != nil {
+	if m.components != nil || m.betweenStart != nil || m.betweenEnd != nil {
 		slice, err := m.buildSlice()
 		if err != nil {
 			return nil, err
+		}
+		if m.reversed {
+			slice.Start, slice.End = slice.End, slice.Start
 		}
 		cr := *r
 		cr.Columns = []*Column{}
