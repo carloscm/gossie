@@ -1,9 +1,11 @@
-# This repo is not maintained anymore
+# This is a fork
 
-I've moved on from Cassandra, both for professional reasons and because I do not agree with the path the project is taking. For this reason I haven't worked on Gossie for months and I declare this repo unmaintained. I will keep it intact to avoid breaking imports.
+This is a fork of the original Gossie library created by carloscm.
 
-Happy forking!
+Some of the changes / additions in this fork:
 
+- the `mockgossie` package, which implements an in-memory store for your tests.
+- fix singular compact column names: https://github.com/wadey/gossie/commit/4518cec59bf4ecd13323e41c3d5b8ddc289a5f04
 
 # About
 
@@ -12,13 +14,10 @@ Gossie is a Go library for Apache Cassandra. It includes a wrapper for the Cassa
 
 # Requirements
 
-The official Apache Thrift libraries for Go are outdated and buggy. For now the active development happens in thrift4go:
-https://github.com/pomack/thrift4go
-
-Install thrift4go:
+Install thrift:
 
 ```
-go get "github.com/pomack/thrift4go/lib/go/src/thrift"
+go get git.apache.org/thrift.git/lib/go/thrift
 ```
 
 
@@ -29,8 +28,8 @@ There is no need to generate a Cassandra Thrift binding, I am providing one with
 For application usage issue two `go get` commands, one for the bindings and another for Gossie
 
 ```
-go get "github.com/carloscm/gossie/src/cassandra"
-go get "github.com/carloscm/gossie/src/gossie"
+go get "github.com/wadey/gossie/src/cassandra"
+go get "github.com/wadey/gossie/src/gossie"
 ```
 
 If you want to fork and do development on Gossie itself the main command you need to run is something like (from the root of the Gossie folder):
@@ -53,7 +52,7 @@ Gossie follows the Go 1.0 packaging conventions. Import Gossie into your code li
 
 ```Go
 import (
-	"github.com/carloscm/gossie/src/gossie"
+	"github.com/wadey/gossie/src/gossie"
 )
 ````
 
@@ -62,7 +61,7 @@ import (
 To create a connection use the method NewConnectionPool, passing a list of nodes, the desired keyspace, and a PoolOptions with the various connection options you can tune.
 
 ```Go
-pool, err := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: 3000})
+pool, err := gossie.NewConnectionPool([]string{"localhost:9160"}, "Example", gossie.PoolOptions{Size: 50, Timeout: time.Second * 3})
 if err != nil {
 	// do something
 }
@@ -108,12 +107,12 @@ type Tweet struct {
 	Body    string
 }
 
-mapping, err = gossie.NewMapping(&Tweet{})
+mapping := gossie.MustNewMapping(&Tweet{})
 row, err = mapping.Map(&Tweet{"userid", 10000000000004, "Author Name", "Hey this thing rocks!"})
 err = pool.Writer().Insert("Timeline", row).Run()
 ````
 
-When calling NewMapping() you can tag your struct fiels with `name`, `type` and `skip`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie.
+When calling [Must]NewMapping() you can tag your struct fiels with `name`, `type`, `skip` and `skipempty`. The `name` field tag will change the column name to its value when the field it appears on is (un)marhsaled to/from a Cassandra row column. The `type` field tag allows to override the default type Go<->Cassandra type mapping used by Gossie for the field it appears on. If `skip:"true"` is present the field will be ignored by Gossie. If `skipempty:"true"`, when the value is equal to the zero value for that type the column is skipped.
 
 The tags `mapping`, `cf`, `key`, `cols` and `value` can be used in any field in the struct to document a mapping. `mapping` is optional and can have a value of `sparse` (the default) or `compact`. See [CQL3.0](http://www.datastax.com/dev/blog/whats-new-in-cql-3-0) for more information. `cf` is the column family name. `key` is the field name in the struct that stores the Cassandra row key value. `cols` is optional and it is a list of struct fiels that build up the composite column name, if there is any. `value` is the field that stores the column value for compact storage rows, and it is ignored in sparse storage rows.
 

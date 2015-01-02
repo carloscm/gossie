@@ -2,9 +2,11 @@ package gossie
 
 import (
 	"errors"
-	"github.com/carloscm/gossie/src/cassandra"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/wadey/gossie/src/cassandra"
 )
 
 func TestConnection(t *testing.T) {
@@ -15,20 +17,18 @@ func TestConnection(t *testing.T) {
 	       t.Fatal("Invalid connection parameters did not return error")
 	   }
 	*/
-
-	c, err := newConnection(localEndpoint, "NotExists", shortTimeout, map[string]string{})
+	n := &node{node: localEndpoint}
+	c, err := newConnection(n, "NotExists", shortTimeout, map[string]string{}, nil)
 	if err == nil {
 		t.Fatal("Invalid keyspace did not return error")
 	}
 
-	c, err = newConnection(localEndpoint, keyspace, shortTimeout, map[string]string{})
+	c, err = newConnection(n, keyspace, shortTimeout, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	if c.keyspace != keyspace {
-		t.Fatal("Invalid keyspace")
-	}
+	assert.Equal(t, c.node, n)
 
 	c.close()
 }
@@ -63,9 +63,7 @@ func TestNewConnectionPool(t *testing.T) {
 		t.Fatal("Invalid keyspace")
 	}
 
-	if err = cp.Close(); err != nil {
-		t.Fatal("Error closing connection pool:", err)
-	}
+	cp.Close()
 }
 
 // possible test for users of SimpleAuthenticator
@@ -109,6 +107,14 @@ func TestNewConnectionPoolWithAuth(t *testing.T) {
 */
 
 func TestAcquireRelease(t *testing.T) {
+	oldnow := nowfunc
+	defer func() {
+		nowfunc = oldnow
+	}()
+	virtualtime := time.Now()
+	nowfunc = func() time.Time {
+		return virtualtime
+	}
 	var err error
 	var c *connection
 
@@ -117,37 +123,37 @@ func TestAcquireRelease(t *testing.T) {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 	cp := cpI.(*connectionPool)
+	n := cp.nodes[0]
 
-	check := func(expectedAvailable int, expectedError bool) {
-		if len(cp.available) != expectedAvailable {
-			t.Error("Available connection slots chan has wrong size")
-		}
-		if !expectedError && err != nil {
-			t.Error("The error condition did not match the expected one")
-		}
-	}
-
-	check(1, false)
+	assert.Equal(t, len(n.available.l), 1)
+	assert.NoError(t, err)
 
 	c, err = cp.acquire()
-	check(0, false)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 
 	cp.release(c)
-	check(1, false)
+	assert.Equal(t, len(n.available.l), 1)
+	assert.NoError(t, err)
 
 	c, err = cp.acquire()
-	check(0, false)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 
-	cp.blacklist(localEndpoint)
-	check(1, false)
-
-	c, err = cp.acquire()
-	check(1, true)
-
-	time.Sleep(2e9)
+	n.blacklist()
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 
 	c, err = cp.acquire()
-	check(0, false)
+	assert.Equal(t, len(n.available.l), 0)
+	assert.Error(t, err)
+	assert.Nil(t, c)
+
+	virtualtime = virtualtime.Add(time.Second * 2)
+
+	c, err = cp.acquire()
+	assert.Equal(t, len(n.available.l), 0)
+	assert.NoError(t, err)
 }
 
 func TestRun(t *testing.T) {
@@ -161,23 +167,20 @@ func TestRun(t *testing.T) {
 	var gotConnection bool
 
 	check := func(_ire, _ue, _te, _err, expectedError bool) {
-		err := cp.run(func(c *connection) *transactionError {
+		err := cp.run(func(c *connection) error {
 			gotConnection = c.client != nil
-			terr := &transactionError{}
-
-			if _ire {
-				terr.ire = &cassandra.InvalidRequestException{}
+			var err error
+			switch {
+			case _ire:
+				err = cassandra.NewInvalidRequestException()
+			case _ue:
+				err = cassandra.NewUnavailableException()
+			case _te:
+				err = cassandra.NewTimedOutException()
+			case _err:
+				err = errors.New("uh")
 			}
-			if _ue {
-				terr.ue = &cassandra.UnavailableException{}
-			}
-			if _te {
-				terr.te = &cassandra.TimedOutException{}
-			}
-			if _err {
-				terr.err = errors.New("uh")
-			}
-			return terr
+			return err
 		})
 
 		if !gotConnection {

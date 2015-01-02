@@ -1,7 +1,7 @@
 package gossie
 
 import (
-	"github.com/carloscm/gossie/src/cassandra"
+	"github.com/wadey/gossie/src/cassandra"
 )
 
 /*
@@ -28,14 +28,7 @@ func newSchema(ksDef *cassandra.KsDef) *Schema {
 	cfDefs := ksDef.CfDefs
 	schema := &Schema{ColumnFamilies: make(map[string]*ColumnFamily)}
 
-	for cfDefT := range cfDefs.Iter() {
-
-		// FIXME: this is weird, but happens a lot. thrift4go problem?
-		if cfDefT == nil {
-			continue
-		}
-
-		cfDef, _ := cfDefT.(*cassandra.CfDef)
+	for _, cfDef := range cfDefs {
 
 		if cfDef.ColumnType != "Standard" {
 			continue
@@ -44,17 +37,12 @@ func newSchema(ksDef *cassandra.KsDef) *Schema {
 		cf := &ColumnFamily{}
 
 		cf.DefaultComparator = parseTypeClass(cfDef.ComparatorType)
-		cf.DefaultValidator = parseTypeClass(cfDef.DefaultValidationClass)
-		cf.KeyValidator = parseTypeClass(cfDef.KeyValidationClass)
+		cf.DefaultValidator = parseTypeClass(*cfDef.DefaultValidationClass)
+		cf.KeyValidator = parseTypeClass(*cfDef.KeyValidationClass)
 
 		cf.NamedColumns = make(map[string]TypeClass)
 
-		for colDefT := range cfDef.ColumnMetadata.Iter() {
-			// FIXME: this is weird, but happens a lot. thrift4go problem?
-			if colDefT == nil {
-				continue
-			}
-			colDef, _ := colDefT.(*cassandra.ColumnDef)
+		for _, colDef := range cfDef.ColumnMetadata {
 			name := string(colDef.Name[0:(len(colDef.Name))])
 			cf.NamedColumns[name] = parseTypeClass(colDef.ValidationClass)
 		}

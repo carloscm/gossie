@@ -6,12 +6,13 @@ import (
 
 func TestSchema(t *testing.T) {
 
-	c, err := newConnection(localEndpoint, keyspace, standardTimeout, map[string]string{})
+	n := &node{node: localEndpoint}
+	c, err := newConnection(n, keyspace, standardTimeout, map[string]string{}, nil)
 	if err != nil {
 		t.Fatal("Error connecting to Cassandra:", err)
 	}
 
-	ksDef, _, _, _ := c.client.DescribeKeyspace(keyspace)
+	ksDef, _ := c.client.DescribeKeyspace(keyspace)
 
 	schema := newSchema(ksDef)
 	defer c.close()

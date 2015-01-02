@@ -3,6 +3,9 @@ package gossie
 import (
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 /*
@@ -194,7 +197,7 @@ func TestMap(t *testing.T) {
 				Columns: []*Column{
 					&Column{
 						Name:  []byte{0, 8, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0},
-						Value: []byte{},
+						Value: nil,
 					},
 				},
 			},
@@ -224,4 +227,62 @@ func TestMap(t *testing.T) {
 	for _, shell := range shells {
 		shell.checkFullMap(t)
 	}
+}
+
+func TestMarshalStringKey(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	bv, err := mE.MarshalKey("keyhere")
+	assert.NoError(t, err)
+	assert.Equal(t, string(bv), "keyhere")
+}
+
+func TestMarshalIntKey(t *testing.T) {
+	mE := MustNewMapping(&tagsA{})
+	bv, err := mE.MarshalKey(1)
+	assert.NoError(t, err)
+	assert.Equal(t, bv, []byte{0, 0, 0, 0, 0, 0, 0, 1})
+}
+
+func TestMarshalFieldNoField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	bv, err := mE.MarshalField("NoSuchFIeld", "keyhere")
+	assert.Error(t, err)
+	assert.Nil(t, bv)
+}
+
+func TestMarshalStringField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	bv, err := mE.MarshalField("Key", "keyhere")
+	assert.NoError(t, err)
+	assert.Equal(t, string(bv), "keyhere")
+}
+
+func TestMarshalIntField(t *testing.T) {
+	mE := MustNewMapping(&tagsA{})
+	bv, err := mE.MarshalField("B", 1)
+	assert.NoError(t, err)
+	assert.Equal(t, bv, []byte{0, 0, 0, 0, 0, 0, 0, 1})
+}
+
+func TestUnmarshalFieldNoField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	var s string
+	err := mE.UnmarshalField("NoSuchFIeld", []byte{}, &s)
+	assert.Error(t, err)
+}
+
+func TestUnmarshalStringField(t *testing.T) {
+	mE := MustNewMapping(&everythingComp{})
+	var s string
+	err := mE.UnmarshalField("Key", []byte("keyhere"), &s)
+	assert.NoError(t, err)
+	assert.Equal(t, s, "keyhere")
+}
+
+func TestUnmarshalIntField(t *testing.T) {
+	mE := MustNewMapping(&tagsA{})
+	var i int
+	err := mE.UnmarshalField("B", []byte{0, 0, 0, 0, 0, 0, 0, 1}, &i)
+	assert.NoError(t, err)
+	assert.Equal(t, i, 1)
 }
