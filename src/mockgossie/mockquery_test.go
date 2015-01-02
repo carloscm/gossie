@@ -122,4 +122,20 @@ func TestQueryBetween(t *testing.T) {
 		&BetweenStruct{"key1", 300, "u3a"},
 		&BetweenStruct{"key1", 200, "u2"},
 	})
+
+	q.Limit(2, 1) // limit with reverse
+
+	q.Between(int64Ptr(400), nil)
+	assert.Equal(t, getAll(t, q), []*BetweenStruct{
+		&BetweenStruct{"key1", 300, "u3b"},
+		&BetweenStruct{"key1", 300, "u3a"},
+	})
+
+	q.Reversed(false) // limit no reverse
+
+	q.Between(int64Ptr(300), nil)
+	assert.Equal(t, getAll(t, q), []*BetweenStruct{
+		&BetweenStruct{"key1", 300, "u3a"},
+		&BetweenStruct{"key1", 300, "u3b"},
+	})
 }

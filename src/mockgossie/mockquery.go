@@ -97,7 +97,7 @@ func (m *MockQuery) MultiGet(keys []interface{}) (Result, error) {
 }
 
 func (m *MockQuery) sliceRow(r *Row) (*Row, error) {
-	if m.components != nil || m.betweenStart != nil || m.betweenEnd != nil {
+	if m.components != nil || m.betweenStart != nil || m.betweenEnd != nil || m.columnLimit != 0 {
 		slice, err := m.buildSlice()
 		if err != nil {
 			return nil, err
@@ -115,6 +115,13 @@ func (m *MockQuery) sliceRow(r *Row) (*Row, error) {
 				continue
 			}
 			cr.Columns = append(cr.Columns, c)
+		}
+		if slice.Count != 0 && len(cr.Columns) > slice.Count {
+			if m.reversed {
+				cr.Columns = cr.Columns[(len(cr.Columns) - slice.Count):len(cr.Columns)]
+			} else {
+				cr.Columns = cr.Columns[0:slice.Count]
+			}
 		}
 		r = &cr
 	}
@@ -175,7 +182,7 @@ func (q *MockQuery) buildSlice() (*Slice, error) {
 		if err != nil {
 			return nil, err
 		}
-		start = append(end, packComposite(b, eocEquals)...)
+		start = append(start, packComposite(b, eocEquals)...)
 	}
 	if q.betweenEnd != nil {
 		b, err := q.mapping.MarshalComponent(q.betweenEnd, len(components))
