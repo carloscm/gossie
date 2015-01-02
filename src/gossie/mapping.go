@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 /*
@@ -19,8 +20,19 @@ type Mapping interface {
 	// Cf returns the column family name
 	Cf() string
 
+	// Returns true for compact mapping
+	Compact() bool
+
+	Components() []string
+
 	// MarshalKey marshals the passed key value into a []byte
 	MarshalKey(key interface{}) ([]byte, error)
+
+	// MarshalField marshals the single field value into a []byte
+	MarshalField(field string, value interface{}) ([]byte, error)
+
+	// Unmarshal single field into value pointer
+	UnmarshalField(field string, data []byte, valuep interface{}) error
 
 	// MarshalComponent marshals the passed component value at the position into a []byte
 	MarshalComponent(component interface{}, position int) ([]byte, error)
@@ -112,6 +124,14 @@ func NewMapping(source interface{}) (Mapping, error) {
 	return nil, errors.New(fmt.Sprint("Unrecognized mapping type ", mapping, " in passed struct of type ", si.rtype.Name()))
 }
 
+func MustNewMapping(source interface{}) Mapping {
+	ret, err := NewMapping(source)
+	if err != nil {
+		panic(err)
+	}
+	return ret
+}
+
 func newSparseMapping(si *structInspection, cf string, keyField string, componentFields ...string) Mapping {
 	cm := make(map[string]bool, 0)
 	for _, f := range componentFields {
@@ -138,6 +158,38 @@ func (m *sparseMapping) Cf() string {
 	return m.cf
 }
 
+func (m *sparseMapping) Compact() bool {
+	return false
+}
+
+func (m *sparseMapping) Components() []string {
+	return m.components
+}
+
+func (m *sparseMapping) MarshalField(field string, value interface{}) ([]byte, error) {
+	f, ok := m.si.goFields[field]
+	if !ok {
+		return nil, fmt.Errorf("No such field %s", field)
+	}
+	b, err := Marshal(value, f.cassandraType)
+	if err != nil {
+		return nil, errors.New(fmt.Sprint("Error marshaling passed value for field ", f.name, ":", err))
+	}
+	return b, nil
+}
+
+func (m *sparseMapping) UnmarshalField(field string, b []byte, valuep interface{}) error {
+	f, ok := m.si.goFields[field]
+	if !ok {
+		return fmt.Errorf("No such field %s", field)
+	}
+	err := Unmarshal(b, f.cassandraType, valuep)
+	if err != nil {
+		return errors.New(fmt.Sprint("Error unmarshaling passed value for field ", f.name, ":", err))
+	}
+	return nil
+}
+
 func (m *sparseMapping) MarshalKey(key interface{}) ([]byte, error) {
 	f := m.si.goFields[m.key]
 	b, err := Marshal(key, f.cassandraType)
@@ -159,7 +211,7 @@ func (m *sparseMapping) MarshalComponent(component interface{}, position int) ([
 	return b, nil
 }
 
-func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *structInspection, []byte, error) {
+func (m *sparseMapping) startMap(source interface{}, compact bool) (*Row, *reflect.Value, *structInspection, []byte, error) {
 	v, si, err := validateAndInspectStruct(source)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -179,16 +231,29 @@ func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *str
 	}
 
 	// prepare composite, if needed
-	composite := make([]byte, 0)
-	for _, c := range m.components {
+	var composite []byte
+	if compact && len(m.components) == 1 {
+		c := m.components[0]
 		if f, found := si.goFields[c]; found {
-			b, err := f.marshalValue(v)
+			composite, err = f.marshalValue(v)
 			if err != nil {
 				return nil, nil, nil, nil, err
 			}
-			composite = append(composite, packComposite(b, eocEquals)...)
 		} else {
 			return nil, nil, nil, nil, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+		}
+	} else {
+		composite = make([]byte, 0)
+		for _, c := range m.components {
+			if f, found := si.goFields[c]; found {
+				b, err := f.marshalValue(v)
+				if err != nil {
+					return nil, nil, nil, nil, err
+				}
+				composite = append(composite, packComposite(b, eocEquals)...)
+			} else {
+				return nil, nil, nil, nil, errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+			}
 		}
 	}
 
@@ -196,7 +261,7 @@ func (m *sparseMapping) startMap(source interface{}) (*Row, *reflect.Value, *str
 }
 
 func (m *sparseMapping) Map(source interface{}) (*Row, error) {
-	row, v, si, composite, err := m.startMap(source)
+	row, v, si, composite, err := m.startMap(source, false)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +280,9 @@ func (m *sparseMapping) Map(source interface{}) (*Row, error) {
 		}
 		if len(composite) > 0 {
 			columnName = append(composite, packComposite(columnName, eocEquals)...)
+		}
+		if f.skipEmpty && f.isEmpty(v) {
+			continue
 		}
 		columnValue, err := f.marshalValue(v)
 		if err != nil {
@@ -346,9 +414,11 @@ func (m *sparseMapping) Unmap(destination interface{}, provider RowProvider) err
 			return errors.New(fmt.Sprint("Error unmarshaling composite field as UTF8Type for field name in struct ", v.Type().Name(), ", error: ", err))
 		}
 		if f, found := si.cassandraFields[name]; found {
-			err := f.unmarshalValue(column.Value, v)
-			if err != nil {
-				return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
+			if column.Value != nil {
+				err := f.unmarshalValue(column.Value, v)
+				if err != nil {
+					return errors.New(fmt.Sprint("Error unmarshaling column: ", name, " value: ", err))
+				}
 			}
 		}
 
@@ -374,8 +444,12 @@ func (m *compactMapping) Cf() string {
 	return m.cf
 }
 
+func (m *compactMapping) Compact() bool {
+	return true
+}
+
 func (m *compactMapping) Map(source interface{}) (*Row, error) {
-	row, v, si, composite, err := m.startMap(source)
+	row, v, si, composite, err := m.startMap(source, true)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +460,7 @@ func (m *compactMapping) Map(source interface{}) (*Row, error) {
 		}
 		row.Columns = append(row.Columns, &Column{Name: composite, Value: columnValue})
 	} else {
-		row.Columns = append(row.Columns, &Column{Name: composite, Value: []byte{}})
+		row.Columns = append(row.Columns, &Column{Name: composite, Value: make([]byte, 0, 0)})
 	}
 	return row, nil
 }
@@ -408,17 +482,31 @@ func (m *compactMapping) Unmap(destination interface{}, provider RowProvider) er
 		return err
 	}
 
-	components, err := m.extractComponents(column, v, 0)
-	if err != nil {
-		return err
-	}
-	if err := m.unmapComponents(v, si, components); err != nil {
-		return err
+	if len(m.components) == 1 {
+		c := m.components[0]
+		if f, found := si.goFields[c]; found {
+			err := f.unmarshalValue(column.Name, v)
+			if err != nil {
+				return err
+			}
+		} else {
+			return errors.New(fmt.Sprint("Mapping component field ", c, " not found in passed struct of type ", v.Type().Name()))
+		}
+	} else {
+		components, err := m.extractComponents(column, v, 0)
+		if err != nil {
+			return err
+		}
+		if err := m.unmapComponents(v, si, components); err != nil {
+			return err
+		}
 	}
 	if f, found := si.goFields[m.value]; found {
-		err := f.unmarshalValue(column.Value, v)
-		if err != nil {
-			return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
+		if column.Value != nil {
+			err := f.unmarshalValue(column.Value, v)
+			if err != nil {
+				return errors.New(fmt.Sprint("Error unmarshaling column for compact value: ", err))
+			}
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	. "github.com/wadey/gossie/src/cassandra"
 )
 
 type testColumn struct {
@@ -325,6 +326,30 @@ func TestWriterAndReader(t *testing.T) {
 		} else {
 			t.Error("Unexpected row returned in RangeGet call: ", k)
 		}
+	}
+
+	rowsc, errc := cp.Reader().Cf("AllTypes").RangeScan()
+	var inthechannel = 0
+	for row := range rowsc {
+		if row == nil {
+			t.Fatalf("Got nil from rows channel")
+		}
+		inthechannel++
+		k := string(row.Key)
+		if k == "row2" {
+			checkRow(t, buildAllTypesTestRow("row2"), row)
+		} else if k == "row1" {
+			checkRow(t, buildAllTypesAfterDeletesTestRow("row1"), row)
+		} else {
+			t.Error("Unexpected row returned in RangeGet call: ", k)
+		}
+	}
+	err = <-errc
+	if err != nil {
+		t.Error("Error running query: ", err)
+	}
+	if inthechannel != 2 {
+		t.Error("Expected 2 rows in RangeGet call, got ", len(rows))
 	}
 
 	rows, err = cp.Reader().Cf("AllTypes").Where([]byte("colAsciiType"), EQ, []byte("hi!")).IndexedGet(&IndexedRange{Count: 1000})
