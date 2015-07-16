@@ -111,8 +111,8 @@ func newStructInspection(t reflect.Type) (*structInspection, error) {
 	return si, nil
 }
 
-var structInspectionCache map[reflect.Type]*structInspection
-var structInspectionCacheMutex *sync.Mutex = new(sync.Mutex)
+var structInspectionCache map[reflect.Type]*structInspection = make(map[reflect.Type]*structInspection)
+var structInspectionCacheMutex sync.Mutex
 
 func inspectStruct(v *reflect.Value) (*structInspection, error) {
 	var si *structInspection
@@ -120,9 +120,6 @@ func inspectStruct(v *reflect.Value) (*structInspection, error) {
 	found := false
 	t := v.Type()
 	structInspectionCacheMutex.Lock()
-	if structInspectionCache == nil {
-		structInspectionCache = make(map[reflect.Type]*structInspection)
-	}
 	if si, found = structInspectionCache[t]; !found {
 		si, err = newStructInspection(t)
 		if err != nil {

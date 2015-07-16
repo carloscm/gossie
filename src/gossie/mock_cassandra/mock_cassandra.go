@@ -4,8 +4,8 @@
 package mock_cassandra
 
 import (
-	gomock "code.google.com/p/gomock/gomock"
 	cassandra "github.com/apesternikov/gossie/src/cassandra"
+	gomock "github.com/golang/mock/gomock"
 )
 
 // Mock of Cassandra interface
