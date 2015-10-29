@@ -3,14 +3,15 @@ package gossie
 import (
 	"errors"
 	"fmt"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/apesternikov/gossie/src/cassandra"
-	"github.com/golang/glog"
-	"math/rand"
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/apesternikov/gossie/src/cassandra"
+	"github.com/golang/glog"
 )
 
 /*
@@ -137,6 +138,7 @@ type node struct {
 type connectionPool struct {
 	keyspace string
 	options  PoolOptions
+	nextIdx  int64
 	schema   *Schema
 	nodes    []*node
 }
@@ -262,38 +264,29 @@ func (cp *connectionPool) RunWithRetries(f func(client cassandra.Cassandra) erro
 	return errors.New("Max retries hit trying to run a Cassandra transaction")
 }
 
-func (cp *connectionPool) randomNode(now int) (*node, error) {
-	n := len(cp.nodes)
-	i := rand.Int() % n
-
-	for tries := 0; tries < n; tries++ {
-		nodei := cp.nodes[i]
-		if nodei.lastFailure+cp.options.Grace < now {
-			return nodei, nil
-		}
-		i = (i + 1) % n
-	}
-
-	//TODO: try to acquire one anyway
-	return nil, errors.New("All nodes are marked down, cannot acquire new connection")
-}
-
 func (cp *connectionPool) acquire() (*connection, error) {
 
 	now := int(nowfunc().Unix())
-	n, err := cp.randomNode(now)
-	if err != nil {
-		return nil, err
+
+	n := int64(len(cp.nodes))
+	i := atomic.AddInt64(&cp.nextIdx, 1) % n
+
+	for tries := int64(0); tries < n; tries, i = tries+1, i+1 {
+		nodei := cp.nodes[i%n]
+		if nodei.lastFailure+cp.options.Grace < now {
+			if c, ok := nodei.available.Pop(); ok {
+				return c, nil
+			}
+			c, err := newConnection(nodei, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
+			if err == nil {
+				return c, nil
+			}
+			glog.Infof("Node %s connection error: %s, marking down", nodei.node, err.Error())
+			nodei.blacklist()
+		}
 	}
-	c, ok := n.available.Pop()
-	if ok {
-		return c, nil
-	}
-	c, err = newConnection(n, cp.keyspace, cp.options.Timeout, cp.options.Authentication)
-	if err == ErrorConnectionTimeout {
-		n.blacklist()
-	}
-	return c, err
+
+	return nil, errors.New("All nodes are marked down, cannot acquire new connection")
 }
 
 func (cp *connectionPool) release(c *connection) {

@@ -2,10 +2,11 @@ package gossie
 
 import (
 	"errors"
-	"github.com/apesternikov/gossie/src/cassandra"
-	"github.com/stretchrcom/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/apesternikov/gossie/src/cassandra"
+	"github.com/stretchrcom/testify/assert"
 )
 
 func TestConnection(t *testing.T) {
