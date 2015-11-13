@@ -83,7 +83,7 @@ func (w *writer) InsertTtl(cf string, row *Row, ttl int) Writer {
 		c.Name = col.Name
 		c.Value = col.Value
 		if ttl > 0 {
-			c.Ttl = thrift.Int32Ptr(int32(ttl))
+			c.TTL = thrift.Int32Ptr(int32(ttl))
 		}
 		if col.Timestamp != nil {
 			c.Timestamp = col.Timestamp
